@@ -32,6 +32,13 @@ app.use(express.json({ limit: '5mb' }))
 
 const PORT = 3002
 
+// Strip /crm prefix so /crm/api/* maps to /api/*
+app.use((req, res, next) => {
+  if (req.url.startsWith('/crm/api/')) req.url = req.url.slice(4)
+  else if (req.url === '/crm/api') req.url = '/api'
+  next()
+})
+
 // Public routes
 app.use('/api/auth', authRoutes)
 app.use('/api/webhooks', webhookRoutes)
