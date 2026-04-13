@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import fetch from 'node-fetch'
 import db from '../db.js'
 
 const router = Router()
