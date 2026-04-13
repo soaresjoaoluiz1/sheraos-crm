@@ -1,0 +1,118 @@
+import express from 'express'
+import cors from 'cors'
+import dotenv from 'dotenv'
+import fs from 'fs'
+import { fileURLToPath } from 'url'
+import { dirname, resolve } from 'path'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+dotenv.config({ path: resolve(__dirname, '../../.env') })
+
+import db from './db.js'
+import authRoutes from './routes/auth.js'
+import accountRoutes from './routes/accounts.js'
+import userRoutes from './routes/users.js'
+import funnelRoutes from './routes/funnels.js'
+import leadRoutes from './routes/leads.js'
+import messageRoutes from './routes/messages.js'
+import dashboardRoutes from './routes/dashboard.js'
+import webhookRoutes from './routes/webhooks.js'
+import integrationRoutes from './routes/integrations.js'
+import broadcastRoutes from './routes/broadcasts.js'
+import cadenceRoutes from './routes/cadences.js'
+import readyMessageRoutes from './routes/ready-messages.js'
+import qualificationRoutes from './routes/qualifications.js'
+import launchRoutes from './routes/launches.js'
+import { authenticate, scopeToAccount } from './middleware/auth.js'
+import { addSSEClient, removeSSEClient } from './sse.js'
+
+const app = express()
+app.use(cors())
+app.use(express.json({ limit: '5mb' }))
+
+const PORT = 3002
+
+// Public routes
+app.use('/api/auth', authRoutes)
+app.use('/api/webhooks', webhookRoutes)
+
+// Protected routes (all require auth)
+app.use('/api/accounts', authenticate, accountRoutes)
+app.use('/api/users', authenticate, userRoutes)
+app.use('/api/funnels', authenticate, scopeToAccount, funnelRoutes)
+app.use('/api/leads', authenticate, scopeToAccount, leadRoutes)
+app.use('/api/messages', authenticate, scopeToAccount, messageRoutes)
+app.use('/api/dashboard', authenticate, scopeToAccount, dashboardRoutes)
+app.use('/api/integrations', authenticate, scopeToAccount, integrationRoutes)
+app.use('/api/broadcasts', authenticate, scopeToAccount, broadcastRoutes)
+app.use('/api/cadences', authenticate, scopeToAccount, cadenceRoutes)
+app.use('/api/ready-messages', authenticate, scopeToAccount, readyMessageRoutes)
+app.use('/api/qualifications', authenticate, scopeToAccount, qualificationRoutes)
+app.use('/api/launches', authenticate, scopeToAccount, launchRoutes)
+
+// Settings: distribution rules
+app.get('/api/settings/distribution', authenticate, scopeToAccount, (req, res) => {
+  if (!req.accountId) return res.json({ rules: [] })
+  const rules = db.prepare('SELECT * FROM distribution_rules WHERE account_id = ?').all(req.accountId)
+  res.json({ rules })
+})
+
+app.post('/api/settings/distribution', authenticate, scopeToAccount, (req, res) => {
+  if (!req.accountId) return res.status(400).json({ error: 'account_id required' })
+  const { funnel_id, type, active_attendants } = req.body
+  if (!funnel_id || !type) return res.status(400).json({ error: 'funnel_id and type required' })
+
+  const existing = db.prepare('SELECT id FROM distribution_rules WHERE account_id = ? AND funnel_id = ?').get(req.accountId, funnel_id)
+  const attsJson = JSON.stringify(active_attendants || [])
+
+  if (existing) {
+    db.prepare("UPDATE distribution_rules SET type = ?, active_attendants = ?, updated_at = datetime('now') WHERE id = ?").run(type, attsJson, existing.id)
+  } else {
+    db.prepare('INSERT INTO distribution_rules (account_id, funnel_id, type, active_attendants) VALUES (?, ?, ?, ?)').run(req.accountId, funnel_id, type, attsJson)
+  }
+  res.json({ ok: true })
+})
+
+// SSE endpoint for real-time updates
+app.get('/api/events', async (req, res) => {
+  const token = req.query.token
+  if (!token) return res.status(401).end()
+
+  let user
+  try {
+    const jwtMod = await import('jsonwebtoken')
+    user = jwtMod.default.verify(token, process.env.JWT_SECRET || 'dros-crm-secret-2026')
+  } catch { return res.status(401).end() }
+
+  res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' })
+  res.write('data: {"type":"connected"}\n\n')
+
+  const accountId = user.account_id || 'admin'
+  addSSEClient(accountId, res)
+  req.on('close', () => removeSSEClient(accountId, res))
+})
+
+// ─── Production: serve built frontend ────────────────────────────
+const distPath = resolve(__dirname, '../dist')
+if (fs.existsSync(distPath)) {
+  app.use('/crm', (req, res, next) => {
+    // Cache immutable assets for 1 year
+    if (req.path.startsWith('/assets/')) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+    } else if (req.path.endsWith('.html') || req.path === '/') {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
+    }
+    next()
+  }, express.static(distPath))
+
+  // SPA fallback: any /crm/* route that doesn't match API → serve index.html
+  app.get('/crm/*', (req, res) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
+    res.sendFile(resolve(distPath, 'index.html'))
+  })
+  console.log('[Dros CRM] Serving frontend from /crm/')
+}
+
+app.listen(PORT, () => {
+  console.log(`[Dros CRM API] Running on http://localhost:${PORT}`)
+})
