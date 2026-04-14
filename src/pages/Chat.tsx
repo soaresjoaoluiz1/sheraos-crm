@@ -162,8 +162,12 @@ export default function Chat() {
               const stage = allStages.find(s => s.id === l.stage_id)
               return (
                 <div key={l.id} className={`chat-contact-item ${active ? 'active' : ''}`} onClick={() => setSelectedLeadId(l.id)}>
-                  <div className="chat-contact-avatar" style={{ background: stage ? `${stage.color}25` : '#FFB30025' }}>
-                    <User size={16} style={{ color: stage?.color || '#FFB300' }} />
+                  <div className="chat-contact-avatar" style={{ background: stage ? `${stage.color}25` : '#FFB30025', overflow: 'hidden' }}>
+                    {l.profile_pic_url ? (
+                      <img src={l.profile_pic_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                    ) : (
+                      <User size={16} style={{ color: stage?.color || '#FFB300' }} />
+                    )}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
@@ -194,8 +198,12 @@ export default function Chat() {
           ) : (
             <>
               <div className="chat-conversation-header">
-                <div className="chat-contact-avatar" style={{ background: `${currentStage?.color || '#FFB300'}25` }}>
-                  <User size={16} style={{ color: currentStage?.color || '#FFB300' }} />
+                <div className="chat-contact-avatar" style={{ background: `${currentStage?.color || '#FFB300'}25`, overflow: 'hidden' }}>
+                  {lead.profile_pic_url ? (
+                    <img src={lead.profile_pic_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                  ) : (
+                    <User size={16} style={{ color: currentStage?.color || '#FFB300' }} />
+                  )}
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 600, fontSize: 14 }}>{lead.name || 'Sem nome'}</div>

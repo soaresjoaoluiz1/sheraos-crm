@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import fetch from 'node-fetch'
 import db from '../db.js'
 import { requireRole } from '../middleware/auth.js'
 import { broadcastSSE } from '../sse.js'
@@ -169,6 +170,29 @@ router.put('/:id/assign', requireRole('super_admin', 'gerente'), (req, res) => {
   const updated = db.prepare('SELECT * FROM leads WHERE id = ?').get(lead.id)
   try { broadcastSSE(lead.account_id, 'lead:updated', updated) } catch {}
   res.json({ lead: updated })
+})
+
+// Refresh profile picture from Evolution API
+router.post('/:id/refresh-profile-pic', async (req, res) => {
+  const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id)
+  if (!lead || !lead.phone) return res.status(404).json({ error: 'Lead nao encontrado ou sem telefone' })
+  const instance = lead.instance_id
+    ? db.prepare('SELECT * FROM whatsapp_instances WHERE id = ?').get(lead.instance_id)
+    : db.prepare("SELECT * FROM whatsapp_instances WHERE account_id = ? AND status = 'connected' LIMIT 1").get(lead.account_id)
+  if (!instance) return res.status(400).json({ error: 'Sem instancia WhatsApp' })
+  try {
+    const r = await fetch(`${instance.api_url}/chat/fetchProfilePictureUrl/${instance.instance_name}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: instance.api_key },
+      body: JSON.stringify({ number: lead.phone }),
+    })
+    const data = await r.json()
+    const url = data?.profilePictureUrl || null
+    db.prepare("UPDATE leads SET profile_pic_url = ?, profile_pic_updated_at = datetime('now') WHERE id = ?").run(url, lead.id)
+    res.json({ profile_pic_url: url })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
 })
 
 // Add tag

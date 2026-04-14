@@ -29,7 +29,7 @@ export interface Lead {
   id: number; account_id: number; funnel_id: number; stage_id: number; attendant_id: number | null
   name: string | null; phone: string | null; email: string | null; city: string | null
   source: string | null; source_detail: string | null; notes: string | null
-  wa_remote_jid: string | null; instance_id: number | null; is_active: number; created_at: string; updated_at: string
+  wa_remote_jid: string | null; instance_id: number | null; profile_pic_url: string | null; is_active: number; created_at: string; updated_at: string
   stage_name?: string; stage_color?: string; attendant_name?: string; instance_name?: string
   last_message?: string; message_count?: number; tags?: Tag[]
 }
@@ -85,6 +85,7 @@ export const createLead = (accountId: number, data: Partial<Lead>) => apiFetch<{
 export const updateLead = (id: number, data: Partial<Lead>) => apiFetch(`/api/leads/${id}`, { method: 'PUT', body: JSON.stringify(data) })
 export const moveLeadStage = (id: number, stageId: number) => apiFetch(`/api/leads/${id}/stage`, { method: 'PUT', body: JSON.stringify({ stage_id: stageId }) })
 export const assignLead = (id: number, attendantId: number | null) => apiFetch(`/api/leads/${id}/assign`, { method: 'PUT', body: JSON.stringify({ attendant_id: attendantId }) })
+export const refreshProfilePic = (id: number) => apiFetch<{ profile_pic_url: string | null }>(`/api/leads/${id}/refresh-profile-pic`, { method: 'POST' })
 
 // Messages
 export const fetchMessages = (leadId: number, accountId: number) => apiFetch<{ messages: Message[] }>(`/api/messages/${leadId}?account_id=${accountId}`).then(d => d.messages)

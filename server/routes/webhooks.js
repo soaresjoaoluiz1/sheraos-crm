@@ -5,6 +5,22 @@ import { broadcastSSE } from '../sse.js'
 
 const router = Router()
 
+// Helper: fetch profile picture URL from Evolution (async, fire-and-forget)
+async function fetchAndSaveProfilePic(instance, phone, leadId) {
+  if (!instance || !phone || !leadId) return
+  try {
+    const r = await fetch(`${instance.api_url}/chat/fetchProfilePictureUrl/${instance.instance_name}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: instance.api_key },
+      body: JSON.stringify({ number: phone }),
+    })
+    const data = await r.json()
+    if (data?.profilePictureUrl) {
+      db.prepare("UPDATE leads SET profile_pic_url = ?, profile_pic_updated_at = datetime('now') WHERE id = ?").run(data.profilePictureUrl, leadId)
+    }
+  } catch {}
+}
+
 // Helper: get or create lead from phone
 function getOrCreateLead(accountId, phone, name, source, waJid, instanceId) {
   // Find existing by phone or wa_remote_jid
@@ -155,6 +171,11 @@ router.post('/evolution/:accountSlug', (req, res) => {
     // Get or create lead (pass instance_id so lead is linked to the WhatsApp number)
     const { lead, isNew } = getOrCreateLead(account.id, phone, pushName, 'whatsapp', dedupJid, waInstance?.id || null)
     if (!lead) return res.json({ ok: true })
+
+    // Fetch profile picture in background (no await)
+    if (waInstance && (isNew || !lead.profile_pic_url)) {
+      fetchAndSaveProfilePic(waInstance, phone, lead.id)
+    }
 
     // When attendant sends first message (fromMe=true) and lead is in first stage, advance to "Em Atendimento"
     if (!isNew && fromMe) {

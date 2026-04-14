@@ -353,6 +353,9 @@ addColumnIfNotExists('cadence_attempts', 'scheduled_time', 'TEXT')
 addColumnIfNotExists('cadence_attempts', 'auto_message', 'TEXT')
 // lead_cadences: track when each attempt was executed
 addColumnIfNotExists('lead_cadences', 'last_executed_at', 'TEXT')
+// leads: WhatsApp profile picture URL (cached, expires periodically)
+addColumnIfNotExists('leads', 'profile_pic_url', 'TEXT')
+addColumnIfNotExists('leads', 'profile_pic_updated_at', 'TEXT')
 
 // Seed super_admin if not exists
 const adminExists = db.prepare('SELECT id FROM users WHERE email = ?').get('admin@drosagencia.com.br')
