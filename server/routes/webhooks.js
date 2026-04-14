@@ -113,9 +113,12 @@ router.post('/evolution/:accountSlug', (req, res) => {
     const content = data.message?.conversation || data.message?.extendedTextMessage?.text || ''
     const timestamp = data.messageTimestamp ? new Date(parseInt(data.messageTimestamp) * 1000).toISOString() : new Date().toISOString()
 
-    // Extract phone from JID
-    const phone = remoteJid.replace('@s.whatsapp.net', '').replace('@g.us', '')
-    if (!phone || remoteJid.includes('@g.us')) return res.json({ ok: true }) // Skip group messages
+    // Extract phone from JID — skip groups, status, broadcasts, and @lid (legacy IDs that aren't real phone numbers)
+    if (!remoteJid || remoteJid.includes('@g.us') || remoteJid.includes('@broadcast') || remoteJid.includes('status@') || remoteJid.endsWith('@lid')) {
+      return res.json({ ok: true })
+    }
+    const phone = remoteJid.replace('@s.whatsapp.net', '').replace('@c.us', '')
+    if (!phone) return res.json({ ok: true })
 
     // Get or create lead (pass instance_id so lead is linked to the WhatsApp number)
     const { lead, isNew } = getOrCreateLead(account.id, phone, pushName, 'whatsapp', remoteJid, waInstance?.id || null)
