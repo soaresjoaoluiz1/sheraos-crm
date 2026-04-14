@@ -351,8 +351,9 @@ addColumnIfNotExists('cadence_attempts', 'delay_days', 'INTEGER NOT NULL DEFAULT
 addColumnIfNotExists('cadence_attempts', 'scheduled_time', 'TEXT')
 // cadence_attempts: auto-send message template (for WhatsApp auto)
 addColumnIfNotExists('cadence_attempts', 'auto_message', 'TEXT')
-// lead_cadences: track when each attempt was executed
+// lead_cadences: track when each attempt was executed/skipped
 addColumnIfNotExists('lead_cadences', 'last_executed_at', 'TEXT')
+addColumnIfNotExists('lead_cadences', 'last_executed_attempt_id', 'INTEGER')
 // leads: WhatsApp profile picture URL (cached, expires periodically)
 addColumnIfNotExists('leads', 'profile_pic_url', 'TEXT')
 addColumnIfNotExists('leads', 'profile_pic_updated_at', 'TEXT')

@@ -1,19 +1,28 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useAccount } from '../context/AccountContext'
 import { useSSE } from '../context/SSEContext'
-import { apiFetch } from '../lib/api'
+import { apiFetch, fetchTaskCounts } from '../lib/api'
 import {
   LayoutDashboard, Kanban, Users, MessageCircle, UserCog, GitBranch,
   Plug, Settings, Building2, LogOut, UsersRound, Menu, X,
-  ListOrdered, MessageSquarePlus, ClipboardList, Rocket,
+  ListOrdered, MessageSquarePlus, ClipboardList, Rocket, ListTodo,
 } from 'lucide-react'
 
 export default function Sidebar() {
   const { user, logout } = useAuth()
   const { accountId } = useAccount()
   const [newLeadsCount, setNewLeadsCount] = useState(0)
+  const [taskCount, setTaskCount] = useState(0)
+
+  const loadTaskCount = useCallback(() => {
+    if (!accountId) return
+    fetchTaskCounts(accountId).then(c => setTaskCount(c.overdue + c.today)).catch(() => {})
+  }, [accountId])
+  useEffect(() => { loadTaskCount() }, [loadTaskCount])
+  useSSE('task:updated', loadTaskCount)
+  useSSE('task:due', loadTaskCount)
   const [mobileOpen, setMobileOpen] = useState(false)
   if (!user) return null
 
@@ -78,6 +87,10 @@ export default function Sidebar() {
           )}
           <NavLink to="/chat" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={closeMobile}>
             <MessageCircle size={16} /> Chat
+          </NavLink>
+          <NavLink to="/tasks" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={closeMobile}>
+            <ListTodo size={16} /> Tarefas
+            {taskCount > 0 && <span className="nav-badge" style={{ background: '#FF6B6B' }}>{taskCount > 99 ? '99+' : taskCount}</span>}
           </NavLink>
           <NavLink to="/pipeline" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={closeMobile}>
             <Kanban size={16} /> Pipeline

@@ -60,15 +60,23 @@ async function processCadences() {
     if (now < target) continue
     if (row.last_executed_at) continue // Already executed this attempt
 
-    // Mark as executed
-    db.prepare("UPDATE lead_cadences SET last_executed_at = datetime('now') WHERE id = ?").run(row.id)
-
-    // If action_type is whatsapp/mensagem and auto_message is set, send it
+    // If has auto_message → execute automatically and advance
     if ((row.action_type === 'whatsapp' || row.action_type === 'mensagem') && row.auto_message && row.phone) {
       await sendCadenceMessage(row.account_id, row.phone, row.auto_message.replace(/\{\{name\}\}/g, row.lead_name || 'Cliente'))
+      // Mark executed and advance to next
+      const nextAttempt = db.prepare('SELECT id FROM cadence_attempts WHERE cadence_id = ? AND position > (SELECT position FROM cadence_attempts WHERE id = ?) ORDER BY position LIMIT 1').get(row.cadence_id, row.current_attempt_id)
+      if (nextAttempt) {
+        db.prepare("UPDATE lead_cadences SET current_attempt_id = ?, last_executed_at = datetime('now'), last_executed_attempt_id = ?, updated_at = datetime('now') WHERE id = ?").run(nextAttempt.id, row.current_attempt_id, row.id)
+      } else {
+        db.prepare("UPDATE lead_cadences SET status = 'completed', last_executed_at = datetime('now'), last_executed_attempt_id = ?, updated_at = datetime('now') WHERE id = ?").run(row.current_attempt_id, row.id)
+      }
+      broadcastSSE(row.account_id, 'task:updated', { lead_cadence_id: row.id })
+      console.log(`[Scheduler] Auto-executed: lead #${row.lead_id} (${row.action_type}) — msg sent`)
+    } else {
+      // Manual task → just notify the assigned attendant that it's due
+      broadcastSSE(row.account_id, 'task:due', { lead_cadence_id: row.id, lead_id: row.lead_id })
+      console.log(`[Scheduler] Task due: lead #${row.lead_id} attempt #${row.current_attempt_id} (${row.action_type})`)
     }
-
-    console.log(`[Scheduler] Cadence executed: lead #${row.lead_id} attempt #${row.current_attempt_id} (${row.action_type})`)
   }
 }
 

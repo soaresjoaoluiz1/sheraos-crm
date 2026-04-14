@@ -23,6 +23,7 @@ import cadenceRoutes from './routes/cadences.js'
 import readyMessageRoutes from './routes/ready-messages.js'
 import qualificationRoutes from './routes/qualifications.js'
 import launchRoutes from './routes/launches.js'
+import taskRoutes from './routes/tasks.js'
 import { authenticate, scopeToAccount } from './middleware/auth.js'
 import { addSSEClient, removeSSEClient } from './sse.js'
 import { startScheduler } from './scheduler.js'
@@ -57,6 +58,7 @@ app.use('/api/cadences', authenticate, scopeToAccount, cadenceRoutes)
 app.use('/api/ready-messages', authenticate, scopeToAccount, readyMessageRoutes)
 app.use('/api/qualifications', authenticate, scopeToAccount, qualificationRoutes)
 app.use('/api/launches', authenticate, scopeToAccount, launchRoutes)
+app.use('/api/tasks', authenticate, scopeToAccount, taskRoutes)
 
 // Settings: distribution rules
 app.get('/api/settings/distribution', authenticate, scopeToAccount, (req, res) => {

@@ -154,6 +154,28 @@ export const advanceLeadCadence = (lcId: number, accountId: number) => apiFetch(
 export const fetchLeadCadence = (leadId: number, accountId: number) => apiFetch<{ leadCadence: LeadCadence | null }>(`/api/cadences/lead/${leadId}?account_id=${accountId}`).then(d => d.leadCadence)
 
 // =============================================
+// Tasks (cadence steps that need execution)
+// =============================================
+
+export interface Task {
+  lead_cadence_id: number; lead_id: number; cadence_id: number; current_attempt_id: number; status: string
+  lead_name: string | null; lead_phone: string | null; profile_pic_url: string | null
+  attendant_id: number | null; attendant_name: string | null
+  stage_name: string | null; stage_color: string | null
+  cadence_name: string; attempt_position: number; total_attempts: number
+  action_type: string; attempt_description: string | null; attempt_instructions: string | null
+  delay_days: number; scheduled_time: string | null; auto_message: string | null
+  due_datetime: string; bucket: 'overdue' | 'today' | 'tomorrow' | 'week' | 'later'
+}
+export interface TaskCounts { overdue: number; today: number; tomorrow: number; week: number; total: number }
+export interface TaskGroups { overdue: Task[]; today: Task[]; tomorrow: Task[]; week: Task[]; later: Task[] }
+
+export const fetchMyTasks = (accountId: number) => apiFetch<TaskGroups>(`/api/tasks/my?account_id=${accountId}`)
+export const fetchTaskCounts = (accountId: number) => apiFetch<TaskCounts>(`/api/tasks/counts?account_id=${accountId}`)
+export const completeTask = (lcId: number, accountId: number) => apiFetch(`/api/tasks/${lcId}/complete?account_id=${accountId}`, { method: 'POST' })
+export const skipTask = (lcId: number, accountId: number) => apiFetch(`/api/tasks/${lcId}/skip?account_id=${accountId}`, { method: 'POST' })
+
+// =============================================
 // Ready Messages (quick templates)
 // =============================================
 
