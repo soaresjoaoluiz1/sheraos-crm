@@ -23,9 +23,9 @@ router.post('/', requireRole('super_admin', 'gerente'), (req, res) => {
   const cadenceId = result.lastInsertRowid
 
   if (attempts && Array.isArray(attempts)) {
-    const stmt = db.prepare('INSERT INTO cadence_attempts (cadence_id, position, action_type, description, instructions) VALUES (?, ?, ?, ?, ?)')
+    const stmt = db.prepare('INSERT INTO cadence_attempts (cadence_id, position, action_type, description, instructions, delay_days) VALUES (?, ?, ?, ?, ?, ?)')
     attempts.forEach((a, i) => {
-      stmt.run(cadenceId, i, a.action_type || 'mensagem', a.description || null, a.instructions || null)
+      stmt.run(cadenceId, i, a.action_type || 'mensagem', a.description || null, a.instructions || null, parseInt(a.delay_days) || 0)
     })
   }
 
@@ -67,9 +67,9 @@ router.put('/:id/attempts', requireRole('super_admin', 'gerente'), (req, res) =>
 
   const transaction = db.transaction(() => {
     db.prepare('DELETE FROM cadence_attempts WHERE cadence_id = ?').run(cadence.id)
-    const stmt = db.prepare('INSERT INTO cadence_attempts (cadence_id, position, action_type, description, instructions) VALUES (?, ?, ?, ?, ?)')
+    const stmt = db.prepare('INSERT INTO cadence_attempts (cadence_id, position, action_type, description, instructions, delay_days) VALUES (?, ?, ?, ?, ?, ?)')
     attempts.forEach((a, i) => {
-      stmt.run(cadence.id, i, a.action_type || 'mensagem', a.description || null, a.instructions || null)
+      stmt.run(cadence.id, i, a.action_type || 'mensagem', a.description || null, a.instructions || null, parseInt(a.delay_days) || 0)
     })
   })
   transaction()

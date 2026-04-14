@@ -346,6 +346,8 @@ addColumnIfNotExists('leads', 'instance_id', 'INTEGER REFERENCES whatsapp_instan
 // accounts: Evolution API credentials (shared across all instances)
 addColumnIfNotExists('accounts', 'evolution_api_url', 'TEXT')
 addColumnIfNotExists('accounts', 'evolution_api_key', 'TEXT')
+// cadence_attempts: days to wait before this attempt
+addColumnIfNotExists('cadence_attempts', 'delay_days', 'INTEGER NOT NULL DEFAULT 0')
 
 // Seed super_admin if not exists
 const adminExists = db.prepare('SELECT id FROM users WHERE email = ?').get('admin@drosagencia.com.br')

@@ -38,7 +38,7 @@ export default function Cadences() {
   const startEdit = (c: Cadence) => { setEditing(c); setEditAttempts(c.attempts.map(a => ({ ...a }))) }
   const addAttempt = () => setEditAttempts(prev => [...prev, { action_type: 'mensagem', description: '', instructions: '' }])
   const removeAttempt = (i: number) => setEditAttempts(prev => prev.filter((_, idx) => idx !== i))
-  const updateAttempt = (i: number, field: string, value: string) => setEditAttempts(prev => prev.map((a, idx) => idx === i ? { ...a, [field]: value } : a))
+  const updateAttempt = (i: number, field: string, value: string) => setEditAttempts(prev => prev.map((a, idx) => idx === i ? { ...a, [field]: field === 'delay_days' ? (parseInt(value) || 0) : value } : a))
 
   const saveAttempts = async () => {
     if (!editing || !accountId) return
@@ -91,6 +91,9 @@ export default function Cadences() {
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                             <Icon size={12} style={{ color: '#FFB300' }} />
                             <span style={{ fontSize: 12, fontWeight: 600, color: '#FFB300', textTransform: 'uppercase' }}>{at?.label || a.action_type}</span>
+                            <span style={{ fontSize: 10, color: '#9B96B0', marginLeft: 'auto' }}>
+                              {a.delay_days === 0 ? 'Imediato' : `Apos ${a.delay_days} dia${a.delay_days > 1 ? 's' : ''}`}
+                            </span>
                           </div>
                           {a.description && <div style={{ fontSize: 12, marginTop: 2 }}>{a.description}</div>}
                           {a.instructions && <div style={{ fontSize: 11, color: '#9B96B0', marginTop: 2 }}>{a.instructions}</div>}
@@ -117,10 +120,14 @@ export default function Cadences() {
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 24, color: '#9B96B0', fontSize: 12, fontWeight: 700, paddingTop: 8 }}>{i + 1}</div>
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
                     <div style={{ display: 'flex', gap: 6 }}>
-                      <select className="select" value={a.action_type || 'mensagem'} onChange={e => updateAttempt(i, 'action_type', e.target.value)} style={{ width: 140 }}>
+                      <select className="select" value={a.action_type || 'mensagem'} onChange={e => updateAttempt(i, 'action_type', e.target.value)} style={{ width: 130 }}>
                         {ACTION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                       </select>
                       <input className="input" value={a.description || ''} onChange={e => updateAttempt(i, 'description', e.target.value)} placeholder="Descricao" style={{ flex: 1 }} />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <input type="number" min={0} className="input" value={a.delay_days ?? 0} onChange={e => updateAttempt(i, 'delay_days', e.target.value)} placeholder="0" style={{ width: 60, textAlign: 'center' }} title="Dias ate executar esta etapa (a partir da anterior)" />
+                        <span style={{ fontSize: 11, color: '#9B96B0' }}>dias</span>
+                      </div>
                     </div>
                     <input className="input" value={a.instructions || ''} onChange={e => updateAttempt(i, 'instructions', e.target.value)} placeholder="Instrucoes (opcional)" style={{ fontSize: 12 }} />
                   </div>
