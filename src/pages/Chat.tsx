@@ -5,9 +5,9 @@ import { useSSE } from '../context/SSEContext'
 import {
   fetchWhatsAppInstances, fetchLeads, fetchLead, fetchFunnels, fetchUsers, fetchTags,
   sendMessage, updateLead, moveLeadStage, assignLead, addLeadNote, addLeadTag, removeLeadTag,
-  fetchLeadCadence, advanceLeadCadence,
+  fetchLeadCadence, advanceLeadCadence, fetchCadences, assignLeadCadence,
   type WhatsAppInstance, type Lead, type Message, type StageHistoryEntry, type LeadNote,
-  type Funnel, type User as UserType, type Tag, type LeadCadence,
+  type Funnel, type User as UserType, type Tag, type LeadCadence, type Cadence,
 } from '../lib/api'
 import {
   MessageCircle, Search, Send, Phone, User, Edit3, Save, X, Plus,
@@ -40,6 +40,8 @@ export default function Chat() {
   const [users, setUsers] = useState<UserType[]>([])
   const [tags, setTags] = useState<Tag[]>([])
   const [leadCadence, setLeadCadence] = useState<LeadCadence | null>(null)
+  const [cadences, setCadences] = useState<Cadence[]>([])
+  const [showCadenceMenu, setShowCadenceMenu] = useState(false)
   const [search, setSearch] = useState('')
   const [msgText, setMsgText] = useState('')
   const [noteText, setNoteText] = useState('')
@@ -57,6 +59,7 @@ export default function Chat() {
     fetchFunnels(accountId).then(setFunnels)
     fetchUsers(accountId).then(setUsers)
     fetchTags(accountId).then(setTags)
+    fetchCadences(accountId).then(setCadences)
   }, [accountId])
 
   // Load leads list (with optional instance filter)
@@ -128,6 +131,7 @@ export default function Chat() {
   const handleAddTag = async (tagId: number) => { if (lead) { await addLeadTag(lead.id, tagId); loadLead(); setShowTagMenu(false) } }
   const handleRemoveTag = async (tagId: number) => { if (lead) { await removeLeadTag(lead.id, tagId); loadLead() } }
   const handleAdvanceCadence = async () => { if (leadCadence && accountId) { await advanceLeadCadence(leadCadence.id, accountId); loadLead() } }
+  const handleAssignCadence = async (cadenceId: number) => { if (lead && accountId) { await assignLeadCadence(cadenceId, accountId, lead.id); setShowCadenceMenu(false); loadLead() } }
 
   const allStages = funnels.flatMap(f => f.stages || [])
   const currentStage = lead ? allStages.find(s => s.id === lead.stage_id) : null
@@ -329,21 +333,40 @@ export default function Chat() {
                   </div>
 
                   {/* Cadence */}
-                  {leadCadence && (
-                    <div className="card" style={{ padding: 12 }}>
-                      <div style={{ fontSize: 10, color: '#9B96B0', textTransform: 'uppercase', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 3 }}><ListOrdered size={10} /> Cadencia</div>
-                      <div style={{ fontSize: 12, fontWeight: 600 }}>{leadCadence.cadence_name}</div>
-                      {leadCadence.status === 'completed' ? (
-                        <div style={{ fontSize: 11, color: '#34C759', display: 'flex', alignItems: 'center', gap: 3, marginTop: 4 }}><Check size={10} /> Concluida</div>
-                      ) : (
-                        <>
-                          <div style={{ fontSize: 11, color: '#FFB300', marginTop: 2 }}>Etapa {(leadCadence.attempt_position ?? 0) + 1}/{leadCadence.total_attempts}: {leadCadence.action_type?.toUpperCase()}</div>
-                          {leadCadence.attempt_description && <div style={{ fontSize: 10, color: '#C8C4D4', marginTop: 2 }}>{leadCadence.attempt_description}</div>}
-                          <button className="btn btn-primary btn-sm" style={{ marginTop: 8, width: '100%', fontSize: 11 }} onClick={handleAdvanceCadence}><ChevronRight size={10} /> Avancar</button>
-                        </>
-                      )}
+                  <div className="card" style={{ padding: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <div style={{ fontSize: 10, color: '#9B96B0', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 3 }}><ListOrdered size={10} /> Cadencia</div>
+                      <div style={{ position: 'relative' }}>
+                        <button className="btn btn-secondary btn-sm" onClick={() => setShowCadenceMenu(!showCadenceMenu)} style={{ padding: '2px 8px', fontSize: 10 }}>{leadCadence ? 'Trocar' : 'Atribuir'}</button>
+                        {showCadenceMenu && (
+                          <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'var(--bg-card)', border: '1px solid var(--border-medium)', borderRadius: 8, padding: 4, zIndex: 50, minWidth: 180, maxHeight: 220, overflowY: 'auto' }}>
+                            {cadences.length === 0 && <div style={{ padding: 8, fontSize: 11, color: '#9B96B0' }}>Nenhuma cadencia. Crie em /cadences</div>}
+                            {cadences.map(c => (
+                              <button key={c.id} onClick={() => handleAssignCadence(c.id)} style={{ display: 'block', padding: '6px 10px', border: 'none', background: 'none', color: '#fff', fontSize: 11, cursor: 'pointer', borderRadius: 4, width: '100%', textAlign: 'left' }}>
+                                {c.name} <span style={{ color: '#6B6580' }}>({c.attempts.length} etapas)</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  )}
+                    {leadCadence ? (
+                      <>
+                        <div style={{ fontSize: 12, fontWeight: 600 }}>{leadCadence.cadence_name}</div>
+                        {leadCadence.status === 'completed' ? (
+                          <div style={{ fontSize: 11, color: '#34C759', display: 'flex', alignItems: 'center', gap: 3, marginTop: 4 }}><Check size={10} /> Concluida</div>
+                        ) : (
+                          <>
+                            <div style={{ fontSize: 11, color: '#FFB300', marginTop: 2 }}>Etapa {(leadCadence.attempt_position ?? 0) + 1}/{leadCadence.total_attempts}: {leadCadence.action_type?.toUpperCase()}</div>
+                            {leadCadence.attempt_description && <div style={{ fontSize: 10, color: '#C8C4D4', marginTop: 2 }}>{leadCadence.attempt_description}</div>}
+                            <button className="btn btn-primary btn-sm" style={{ marginTop: 8, width: '100%', fontSize: 11 }} onClick={handleAdvanceCadence}><ChevronRight size={10} /> Avancar</button>
+                          </>
+                        )}
+                      </>
+                    ) : (
+                      <div style={{ fontSize: 11, color: '#6B6580' }}>Nenhuma cadencia atribuida</div>
+                    )}
+                  </div>
                 </>
               )}
 
