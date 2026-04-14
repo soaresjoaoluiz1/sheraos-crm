@@ -260,6 +260,9 @@ th.right, td.right { text-align: right; }
   .chat-contacts { display: none; }
 }
 
+.spinning { animation: spin 1s linear infinite; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
 /* =========================================
    FUNNEL BARS
    ========================================= */

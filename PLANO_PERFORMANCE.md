@@ -180,6 +180,31 @@ EOF
 
 ---
 
+## TODO — Mídias (imagens, áudios, vídeos, documentos)
+
+**Problema:** Hoje o chat mostra só `*Midia*` genérico quando vem imagem/áudio/vídeo/documento. A Evolution API envia o conteúdo em base64 ou URL no payload do webhook, mas não armazenamos.
+
+**O que fazer:**
+1. No webhook (`server/routes/webhooks.js`), detectar tipo de mídia:
+   - `imageMessage`, `audioMessage`, `videoMessage`, `documentMessage`, `stickerMessage`
+2. Baixar da Evolution API via `/chat/getBase64FromMediaMessage/{instance}` ou salvar a URL direta
+3. Armazenar em `media_url` e `media_type` (já existe na tabela `messages`)
+4. Opções de storage:
+   - **Local:** salvar em `server/data/media/` e servir via rota `/media/:filename`
+   - **S3/Cloudinary:** upload pra CDN (melhor pra escala)
+5. No frontend (Chat + LeadDetail): renderizar:
+   - `image/*` → `<img>` com lightbox
+   - `audio/*` → `<audio controls>`
+   - `video/*` → `<video controls>`
+   - `document` → link pra download + preview
+6. Permitir **enviar mídia** via Evolution API (`/message/sendMedia/{instance}`)
+   - Botão anexo no chat input
+   - Upload drag-and-drop
+
+**Estimativa:** 3-4 horas (backend + frontend + UX)
+
+---
+
 ## Notas Adicionais
 
 - **Bundle frontend (~800KB):** aceitável pra dashboard com Recharts. Se quiser otimizar, lazy-load os charts com `React.lazy`.

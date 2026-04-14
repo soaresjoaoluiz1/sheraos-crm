@@ -50,4 +50,33 @@ router.post('/:leadId', async (req, res) => {
   }
 })
 
+// Fetch media on-demand from Evolution API (returns base64 data URL)
+router.get('/:leadId/media/:msgId', async (req, res) => {
+  try {
+    const message = db.prepare('SELECT * FROM messages WHERE id = ? AND lead_id = ?').get(req.params.msgId, req.params.leadId)
+    if (!message || !message.wa_msg_id) return res.status(404).json({ error: 'Mensagem nao encontrada' })
+    if (message.media_type === 'text') return res.status(400).json({ error: 'Sem midia' })
+
+    const lead = db.prepare('SELECT account_id, instance_id FROM leads WHERE id = ?').get(message.lead_id)
+    const instance = lead?.instance_id
+      ? db.prepare('SELECT * FROM whatsapp_instances WHERE id = ?').get(lead.instance_id)
+      : db.prepare('SELECT * FROM whatsapp_instances WHERE account_id = ? AND status = ? LIMIT 1').get(lead?.account_id, 'connected')
+    if (!instance) return res.status(400).json({ error: 'Sem instancia WhatsApp' })
+
+    const r = await fetch(`${instance.api_url}/chat/getBase64FromMediaMessage/${instance.instance_name}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: instance.api_key },
+      body: JSON.stringify({ message: { key: { id: message.wa_msg_id } }, convertToMp4: false }),
+    })
+    const data = await r.json()
+    if (!data.base64) return res.status(404).json({ error: 'Midia nao encontrada na Evolution' })
+
+    const mimeMap = { image: 'image/jpeg', video: 'video/mp4', audio: 'audio/ogg', document: 'application/pdf', sticker: 'image/webp' }
+    const mime = data.mimetype || mimeMap[message.media_type] || 'application/octet-stream'
+    res.json({ dataUrl: `data:${mime};base64,${data.base64}`, mime, type: message.media_type })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 export default router

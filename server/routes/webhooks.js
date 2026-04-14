@@ -111,8 +111,29 @@ router.post('/evolution/:accountSlug', (req, res) => {
     const fromMe = data.key?.fromMe || false
     const msgId = data.key?.id || ''
     const pushName = data.pushName || ''
-    const content = data.message?.conversation || data.message?.extendedTextMessage?.text || ''
     const timestamp = data.messageTimestamp ? new Date(parseInt(data.messageTimestamp) * 1000).toISOString() : new Date().toISOString()
+
+    // Detect message type + extract content/media info
+    const msg = data.message || {}
+    let content = ''
+    let mediaType = 'text'
+    let mediaUrl = null
+    let mediaCaption = ''
+    if (msg.conversation) {
+      content = msg.conversation
+    } else if (msg.extendedTextMessage?.text) {
+      content = msg.extendedTextMessage.text
+    } else if (msg.imageMessage) {
+      mediaType = 'image'; mediaUrl = msg.imageMessage.url || null; mediaCaption = msg.imageMessage.caption || ''; content = mediaCaption || '[Imagem]'
+    } else if (msg.videoMessage) {
+      mediaType = 'video'; mediaUrl = msg.videoMessage.url || null; mediaCaption = msg.videoMessage.caption || ''; content = mediaCaption || '[Video]'
+    } else if (msg.audioMessage) {
+      mediaType = 'audio'; mediaUrl = msg.audioMessage.url || null; content = '[Audio]'
+    } else if (msg.documentMessage) {
+      mediaType = 'document'; mediaUrl = msg.documentMessage.url || null; content = msg.documentMessage.fileName || '[Documento]'
+    } else if (msg.stickerMessage) {
+      mediaType = 'sticker'; mediaUrl = msg.stickerMessage.url || null; content = '[Sticker]'
+    }
 
     // Skip groups, status, broadcasts
     if (!remoteJid || remoteJid.includes('@g.us') || remoteJid.includes('@broadcast') || remoteJid.includes('status@')) {
@@ -151,9 +172,9 @@ router.post('/evolution/:accountSlug', (req, res) => {
     const existing = msgId ? db.prepare('SELECT id FROM messages WHERE wa_msg_id = ?').get(msgId) : null
     if (!existing) {
       db.prepare(`
-        INSERT INTO messages (lead_id, account_id, direction, content, sender_name, wa_msg_id, wa_timestamp)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(lead.id, account.id, fromMe ? 'outbound' : 'inbound', content, fromMe ? '' : pushName, msgId || null, timestamp)
+        INSERT INTO messages (lead_id, account_id, direction, content, media_type, media_url, sender_name, wa_msg_id, wa_timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(lead.id, account.id, fromMe ? 'outbound' : 'inbound', content, mediaType, mediaUrl, fromMe ? '' : pushName, msgId || null, timestamp)
     }
 
     // Auto stage detection: keywords in outbound messages advance stages

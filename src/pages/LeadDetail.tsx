@@ -12,6 +12,7 @@ import {
   type LeadCadence, type Cadence, type ReadyMessage, type LeadQualification,
 } from '../lib/api'
 import { ArrowLeft, Phone, Mail, MapPin, MessageCircle, Send, Clock, User, GitBranch, Edit3, Save, X, Plus, StickyNote, Tag as TagIcon, ListOrdered, Zap, ClipboardList, ChevronRight, Check } from 'lucide-react'
+import MessageMedia from '../components/MessageMedia'
 
 export default function LeadDetail() {
   const { id } = useParams()
@@ -290,7 +291,11 @@ export default function LeadDetail() {
                 {messages.length === 0 && <div style={{ textAlign: 'center', color: '#6B6580', padding: 40, fontSize: 13 }}>Nenhuma mensagem</div>}
                 {messages.map(m => (
                   <div key={m.id}>
-                    <div className={`chat-bubble ${m.direction}`}>{m.content || <em style={{ opacity: 0.5 }}>Midia</em>}</div>
+                    <div className={`chat-bubble ${m.direction}`}>
+                      {m.media_type && m.media_type !== 'text'
+                        ? <MessageMedia message={m} leadId={lead.id} />
+                        : (m.content || <em style={{ opacity: 0.5 }}>Sem conteudo</em>)}
+                    </div>
                     <div className="chat-bubble-time" style={{ textAlign: m.direction === 'outbound' ? 'right' : 'left' }}>
                       {m.sender_name && <span>{m.sender_name} · </span>}{new Date(m.created_at).toLocaleString('pt-BR')}
                     </div>
