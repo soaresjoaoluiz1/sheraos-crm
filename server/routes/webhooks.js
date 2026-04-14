@@ -107,21 +107,32 @@ router.post('/evolution/:accountSlug', (req, res) => {
     if (event !== 'messages.upsert' || !data) return res.json({ ok: true })
 
     const remoteJid = data.key?.remoteJid || ''
+    const senderPn = data.key?.senderPn || data.senderPn || ''
     const fromMe = data.key?.fromMe || false
     const msgId = data.key?.id || ''
     const pushName = data.pushName || ''
     const content = data.message?.conversation || data.message?.extendedTextMessage?.text || ''
     const timestamp = data.messageTimestamp ? new Date(parseInt(data.messageTimestamp) * 1000).toISOString() : new Date().toISOString()
 
-    // Extract phone from JID — skip groups, status, broadcasts, and @lid (legacy IDs that aren't real phone numbers)
-    if (!remoteJid || remoteJid.includes('@g.us') || remoteJid.includes('@broadcast') || remoteJid.includes('status@') || remoteJid.endsWith('@lid')) {
+    // Skip groups, status, broadcasts
+    if (!remoteJid || remoteJid.includes('@g.us') || remoteJid.includes('@broadcast') || remoteJid.includes('status@')) {
       return res.json({ ok: true })
     }
-    const phone = remoteJid.replace('@s.whatsapp.net', '').replace('@c.us', '')
+
+    // Prefer senderPn (real phone) over remoteJid (might be @lid = legacy ID)
+    // senderPn sempre vem como "5551999999999@s.whatsapp.net"
+    const realJid = senderPn || remoteJid
+    if (realJid.endsWith('@lid')) {
+      // No real phone number available — skip
+      return res.json({ ok: true })
+    }
+    const phone = realJid.replace('@s.whatsapp.net', '').replace('@c.us', '')
     if (!phone) return res.json({ ok: true })
+    // Use the normalized phone-based JID for consistent dedup
+    const dedupJid = `${phone}@s.whatsapp.net`
 
     // Get or create lead (pass instance_id so lead is linked to the WhatsApp number)
-    const { lead, isNew } = getOrCreateLead(account.id, phone, pushName, 'whatsapp', remoteJid, waInstance?.id || null)
+    const { lead, isNew } = getOrCreateLead(account.id, phone, pushName, 'whatsapp', dedupJid, waInstance?.id || null)
     if (!lead) return res.json({ ok: true })
 
     // When attendant sends first message (fromMe=true) and lead is in first stage, advance to "Em Atendimento"
