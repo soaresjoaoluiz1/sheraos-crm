@@ -76,8 +76,9 @@ router.post('/whatsapp', requireRole('super_admin', 'gerente'), async (req, res)
   try {
     const account = db.prepare('SELECT slug FROM accounts WHERE id = ?').get(req.accountId)
     // Use env or build from request
-    const serverUrl = process.env.WEBHOOK_BASE_URL || `${req.protocol}://${req.get('host')}`
-    const webhookUrl = `${serverUrl}/api/webhooks/evolution/${account.slug}`
+    const proto = req.get('x-forwarded-proto') || req.protocol
+    const serverUrl = process.env.WEBHOOK_BASE_URL || `${proto}://${req.get('host')}`
+    const webhookUrl = `${serverUrl}/crm/api/webhooks/evolution/${account.slug}`
     await fetch(`${baseUrl}/webhook/set/${instance_name}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', apikey: api_key },
@@ -198,6 +199,28 @@ router.delete('/whatsapp/:id', requireRole('super_admin', 'gerente'), async (req
   }
   db.prepare('DELETE FROM whatsapp_instances WHERE id = ?').run(req.params.id)
   res.json({ ok: true })
+})
+
+// ─── Re-set webhook URL on Evolution API ─────────────────────────
+router.post('/whatsapp/:id/setup-webhook', requireRole('super_admin', 'gerente'), async (req, res) => {
+  const instance = db.prepare('SELECT * FROM whatsapp_instances WHERE id = ?').get(req.params.id)
+  if (!instance) return res.status(404).json({ error: 'Instancia nao encontrada' })
+  const account = db.prepare('SELECT slug FROM accounts WHERE id = ?').get(instance.account_id)
+  const proto = req.get('x-forwarded-proto') || req.protocol
+  const serverUrl = process.env.WEBHOOK_BASE_URL || `${proto}://${req.get('host')}`
+  const webhookUrl = `${serverUrl}/crm/api/webhooks/evolution/${account.slug}`
+  try {
+    const r = await fetch(`${instance.api_url}/webhook/set/${instance.instance_name}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: instance.api_key },
+      body: JSON.stringify({ url: webhookUrl, webhook_by_events: false, events: ['MESSAGES_UPSERT'] }),
+    })
+    const data = await r.json()
+    console.log(`[Evolution Webhook] Updated ${instance.instance_name} → ${webhookUrl}`)
+    res.json({ ok: true, webhookUrl, response: data })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
 })
 
 // ─── Test connection (legacy, kept for compatibility) ────────────
