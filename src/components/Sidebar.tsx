@@ -47,7 +47,7 @@ export default function Sidebar() {
         <div className="sidebar-header">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-              <img src="/logo-dros.png" alt="Dros" className="sidebar-logo" />
+              <img src="https://drosagencia.com.br/wp-content/uploads/2025/12/DROS-LOGO-1-1024x1024.png" alt="Dros" className="sidebar-logo" />
               <div className="sidebar-subtitle">CRM</div>
             </div>
             <button className="sidebar-close-btn" onClick={closeMobile}><X size={18} /></button>
