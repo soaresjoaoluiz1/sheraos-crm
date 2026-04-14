@@ -42,13 +42,23 @@ export default function MessageMedia({ message, leadId }: Props) {
     setLoading(false)
   }
 
+  const [zoomed, setZoomed] = useState(false)
+
   // Render loaded media
   if (dataUrl) {
     if (mime.startsWith('image/')) {
       return (
-        <a href={dataUrl} target="_blank" rel="noopener noreferrer">
-          <img src={dataUrl} alt={label} style={{ maxWidth: 280, maxHeight: 280, borderRadius: 8, display: 'block', cursor: 'zoom-in' }} />
-        </a>
+        <>
+          <img src={dataUrl} alt={label} onClick={() => setZoomed(true)} style={{ maxWidth: 280, maxHeight: 280, borderRadius: 8, display: 'block', cursor: 'zoom-in' }} />
+          {zoomed && (
+            <div onClick={() => setZoomed(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out', padding: 20 }}>
+              <img src={dataUrl} alt={label} style={{ maxWidth: '95%', maxHeight: '95%', objectFit: 'contain', borderRadius: 8 }} />
+              <a href={dataUrl} download={`${label.toLowerCase()}.jpg`} onClick={e => e.stopPropagation()} style={{ position: 'absolute', top: 20, right: 20, padding: '8px 16px', background: 'rgba(255,255,255,0.15)', borderRadius: 8, color: '#fff', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+                <Download size={14} /> Baixar
+              </a>
+            </div>
+          )}
+        </>
       )
     }
     if (mime.startsWith('video/')) {
