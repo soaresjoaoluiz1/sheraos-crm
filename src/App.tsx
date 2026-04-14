@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard'
 import Pipeline from './pages/Pipeline'
 import Leads from './pages/Leads'
 import LeadDetail from './pages/LeadDetail'
+import Chat from './pages/Chat'
 import Messages from './pages/Messages'
 import Team from './pages/Team'
 import Funnels from './pages/Funnels'
@@ -66,6 +67,7 @@ function AppRoutes() {
 
           {/* All authenticated users */}
           <Route path="/pipeline" element={<Pipeline />} />
+          <Route path="/chat" element={<Chat />} />
           <Route path="/leads" element={<Leads />} />
           <Route path="/leads/:id" element={<LeadDetail />} />
 

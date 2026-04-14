@@ -233,6 +233,34 @@ th.right, td.right { text-align: right; }
 .chat-input { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--border-subtle); background: var(--bg-secondary); }
 
 /* =========================================
+   CHAT PAGE (full layout)
+   ========================================= */
+
+.chat-page { display: flex; flex-direction: column; height: calc(100vh - 40px); gap: 12px; }
+.chat-header { display: flex; justify-content: space-between; align-items: center; padding: 4px 0 12px; border-bottom: 1px solid var(--border-subtle); }
+.chat-layout { display: grid; grid-template-columns: 280px 1fr 300px; gap: 12px; flex: 1; min-height: 0; }
+.chat-contacts { display: flex; flex-direction: column; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); overflow: hidden; }
+.chat-search { display: flex; align-items: center; gap: 6px; padding: 10px 12px; border-bottom: 1px solid var(--border-subtle); background: var(--bg-secondary); }
+.chat-contacts-list { flex: 1; overflow-y: auto; }
+.chat-contact-item { display: flex; gap: 10px; padding: 10px 12px; cursor: pointer; border-bottom: 1px solid var(--border-subtle); transition: background 0.15s; }
+.chat-contact-item:hover { background: rgba(255,255,255,0.03); }
+.chat-contact-item.active { background: rgba(255,179,0,0.08); border-left: 3px solid var(--accent); padding-left: 9px; }
+.chat-contact-avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.chat-conversation { display: flex; flex-direction: column; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); overflow: hidden; min-height: 0; }
+.chat-conversation-header { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border-subtle); background: var(--bg-secondary); }
+.chat-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
+.chat-details { display: flex; flex-direction: column; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); overflow: hidden; }
+
+@media (max-width: 1100px) {
+  .chat-layout { grid-template-columns: 240px 1fr; }
+  .chat-details { display: none; }
+}
+@media (max-width: 768px) {
+  .chat-layout { grid-template-columns: 1fr; }
+  .chat-contacts { display: none; }
+}
+
+/* =========================================
    FUNNEL BARS
    ========================================= */
 

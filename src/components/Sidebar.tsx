@@ -76,6 +76,9 @@ export default function Sidebar() {
               <LayoutDashboard size={16} /> Dashboard
             </NavLink>
           )}
+          <NavLink to="/chat" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={closeMobile}>
+            <MessageCircle size={16} /> Chat
+          </NavLink>
           <NavLink to="/pipeline" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={closeMobile}>
             <Kanban size={16} /> Pipeline
             {newLeadsCount > 0 && <span className="nav-badge">{newLeadsCount > 99 ? '99+' : newLeadsCount}</span>}
