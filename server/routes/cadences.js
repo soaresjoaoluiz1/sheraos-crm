@@ -23,9 +23,9 @@ router.post('/', requireRole('super_admin', 'gerente'), (req, res) => {
   const cadenceId = result.lastInsertRowid
 
   if (attempts && Array.isArray(attempts)) {
-    const stmt = db.prepare('INSERT INTO cadence_attempts (cadence_id, position, action_type, description, instructions, delay_days, scheduled_time) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    const stmt = db.prepare('INSERT INTO cadence_attempts (cadence_id, position, action_type, description, instructions, delay_days, scheduled_time, auto_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
     attempts.forEach((a, i) => {
-      stmt.run(cadenceId, i, a.action_type || 'mensagem', a.description || null, a.instructions || null, parseInt(a.delay_days) || 0, a.scheduled_time || null)
+      stmt.run(cadenceId, i, a.action_type || 'mensagem', a.description || null, a.instructions || null, parseInt(a.delay_days) || 0, a.scheduled_time || null, a.auto_message || null)
     })
   }
 

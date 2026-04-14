@@ -25,6 +25,7 @@ import qualificationRoutes from './routes/qualifications.js'
 import launchRoutes from './routes/launches.js'
 import { authenticate, scopeToAccount } from './middleware/auth.js'
 import { addSSEClient, removeSSEClient } from './sse.js'
+import { startScheduler } from './scheduler.js'
 
 const app = express()
 app.use(cors())
@@ -122,4 +123,5 @@ if (fs.existsSync(distPath)) {
 
 app.listen(PORT, () => {
   console.log(`[Dros CRM API] Running on http://localhost:${PORT}`)
+  startScheduler()
 })

@@ -135,7 +135,7 @@ export const fetchPipelineMetrics = (accountId: number, funnelId: number) => api
 // Cadences (sequential contact workflows)
 // =============================================
 
-export interface CadenceAttempt { id: number; cadence_id: number; position: number; action_type: string; description: string | null; instructions: string | null; delay_days: number; scheduled_time: string | null }
+export interface CadenceAttempt { id: number; cadence_id: number; position: number; action_type: string; description: string | null; instructions: string | null; delay_days: number; scheduled_time: string | null; auto_message: string | null }
 export interface Cadence { id: number; account_id: number; name: string; description: string | null; is_active: number; created_at: string; attempts: CadenceAttempt[] }
 export interface LeadCadence {
   id: number; lead_id: number; cadence_id: number; current_attempt_id: number | null; status: string; started_at: string
