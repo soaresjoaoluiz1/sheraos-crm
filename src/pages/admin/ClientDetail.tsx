@@ -1,17 +1,23 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { fetchAccount, createUser, type Account, type User as UserType, type Funnel } from '../../lib/api'
-import { ArrowLeft, UserPlus, Building2 } from 'lucide-react'
+import { useAuth } from '../../context/AuthContext'
+import { fetchAccount, createUser, updateUser, deleteUser, type Account, type User as UserType, type Funnel } from '../../lib/api'
+import { ArrowLeft, UserPlus, Building2, Edit3, Trash2, UserCheck, UserX } from 'lucide-react'
 
 export default function ClientDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { user: currentUser } = useAuth()
   const [account, setAccount] = useState<Account | null>(null)
   const [users, setUsers] = useState<UserType[]>([])
   const [funnels, setFunnels] = useState<Funnel[]>([])
   const [loading, setLoading] = useState(true)
   const [showNewUser, setShowNewUser] = useState(false)
   const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'gerente' })
+  const [editingUser, setEditingUser] = useState<UserType | null>(null)
+  const [editForm, setEditForm] = useState({ name: '', email: '', password: '', role: 'gerente' })
+
+  const isAdmin = currentUser?.role === 'super_admin'
 
   const load = () => {
     if (!id) return
@@ -24,6 +30,30 @@ export default function ClientDetail() {
     if (!id || !newUser.name || !newUser.email || !newUser.password) return
     await createUser({ ...newUser, account_id: +id })
     setShowNewUser(false); setNewUser({ name: '', email: '', password: '', role: 'gerente' }); load()
+  }
+
+  const openEdit = (u: UserType) => {
+    setEditingUser(u)
+    setEditForm({ name: u.name, email: u.email, password: '', role: u.role })
+  }
+
+  const handleSaveEdit = async () => {
+    if (!editingUser) return
+    const data: any = { name: editForm.name, email: editForm.email, role: editForm.role }
+    if (editForm.password) data.password = editForm.password
+    await updateUser(editingUser.id, data)
+    setEditingUser(null); load()
+  }
+
+  const handleToggleActive = async (u: UserType) => {
+    await updateUser(u.id, { is_active: u.is_active ? 0 : 1 })
+    load()
+  }
+
+  const handleDelete = async (u: UserType) => {
+    if (!confirm(`Excluir usuario "${u.name}"? Esta acao nao pode ser desfeita.`)) return
+    await deleteUser(u.id)
+    load()
   }
 
   if (loading) return <div className="loading-container"><div className="spinner" /></div>
@@ -42,10 +72,26 @@ export default function ClientDetail() {
       <section className="dash-section">
         <div className="section-title">Usuarios ({users.length})</div>
         <div className="table-card"><table>
-          <thead><tr><th>Nome</th><th>Email</th><th>Role</th><th>Status</th></tr></thead>
+          <thead><tr><th>Nome</th><th>Email</th><th>Role</th><th>Status</th><th className="right">Acoes</th></tr></thead>
           <tbody>
-            {users.map(u => <tr key={u.id}><td className="name">{u.name}</td><td>{u.email}</td><td><span className="stage-badge" style={{ background: u.role === 'gerente' ? '#FFB30020' : '#5DADE220', color: u.role === 'gerente' ? '#FFB300' : '#5DADE2' }}>{u.role}</span></td><td><span style={{ color: u.is_active ? '#34C759' : '#FF6B6B' }}>{u.is_active ? 'Ativo' : 'Inativo'}</span></td></tr>)}
-            {users.length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', padding: 30, color: '#6B6580' }}>Nenhum usuario</td></tr>}
+            {users.map(u => (
+              <tr key={u.id}>
+                <td className="name">{u.name}</td>
+                <td>{u.email}</td>
+                <td><span className="stage-badge" style={{ background: u.role === 'gerente' ? '#FFB30020' : '#5DADE220', color: u.role === 'gerente' ? '#FFB300' : '#5DADE2' }}>{u.role}</span></td>
+                <td><span style={{ color: u.is_active ? '#34C759' : '#FF6B6B' }}>{u.is_active ? 'Ativo' : 'Inativo'}</span></td>
+                <td className="right">
+                  <div style={{ display: 'inline-flex', gap: 4 }}>
+                    <button className="btn btn-secondary btn-sm btn-icon" onClick={() => openEdit(u)} title="Editar"><Edit3 size={12} /></button>
+                    <button className="btn btn-secondary btn-sm btn-icon" onClick={() => handleToggleActive(u)} title={u.is_active ? 'Desativar' : 'Ativar'}>
+                      {u.is_active ? <UserX size={12} /> : <UserCheck size={12} />}
+                    </button>
+                    {isAdmin && <button className="btn btn-danger btn-sm btn-icon" onClick={() => handleDelete(u)} title="Excluir"><Trash2 size={12} /></button>}
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {users.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', padding: 30, color: '#6B6580' }}>Nenhum usuario</td></tr>}
           </tbody>
         </table></div>
       </section>
@@ -79,6 +125,26 @@ export default function ClientDetail() {
             <div className="modal-actions">
               <button className="btn btn-secondary" onClick={() => setShowNewUser(false)}>Cancelar</button>
               <button className="btn btn-primary" onClick={handleCreateUser}>Criar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editingUser && (
+        <div className="modal-overlay" onClick={() => setEditingUser(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h2>Editar Usuario</h2>
+            <div className="form-group"><label>Nome</label><input className="input" value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))} /></div>
+            <div className="form-group"><label>Email</label><input className="input" type="email" value={editForm.email} onChange={e => setEditForm(p => ({ ...p, email: e.target.value }))} /></div>
+            <div className="form-group"><label>Nova senha (deixe em branco para manter)</label><input className="input" type="password" value={editForm.password} onChange={e => setEditForm(p => ({ ...p, password: e.target.value }))} placeholder="••••••••" /></div>
+            <div className="form-group"><label>Role</label>
+              <select className="select" value={editForm.role} onChange={e => setEditForm(p => ({ ...p, role: e.target.value }))}>
+                <option value="gerente">Gerente</option><option value="atendente">Atendente</option>
+              </select>
+            </div>
+            <div className="modal-actions">
+              <button className="btn btn-secondary" onClick={() => setEditingUser(null)}>Cancelar</button>
+              <button className="btn btn-primary" onClick={handleSaveEdit}>Salvar</button>
             </div>
           </div>
         </div>
