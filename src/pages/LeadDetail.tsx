@@ -5,7 +5,7 @@ import { useAccount } from '../context/AccountContext'
 import { useSSE } from '../context/SSEContext'
 import {
   fetchLead, fetchFunnels, fetchUsers, fetchTags, updateLead, moveLeadStage, assignLead,
-  sendMessage, addLeadNote, addLeadTag, removeLeadTag,
+  sendMessage, addLeadNote, addLeadTag, removeLeadTag, createTag,
   fetchLeadCadence, fetchCadences, assignLeadCadence, advanceLeadCadence,
   fetchReadyMessages, fetchLeadQualifications, answerQualification,
   type Lead, type Message, type StageHistoryEntry, type LeadNote, type Funnel, type User as UserType, type Tag,
@@ -33,6 +33,8 @@ export default function LeadDetail() {
   const [editing, setEditing] = useState(false)
   const [editData, setEditData] = useState({ name: '', phone: '', email: '', city: '' })
   const [showTagMenu, setShowTagMenu] = useState(false)
+  const [newTagName, setNewTagName] = useState('')
+  const [newTagColor, setNewTagColor] = useState('#FFB300')
   const [activeTab, setActiveTab] = useState<'chat' | 'notes' | 'history' | 'qualification'>('chat')
   const chatEndRef = useRef<HTMLDivElement>(null)
   const [leadCadence, setLeadCadence] = useState<LeadCadence | null>(null)
@@ -99,6 +101,13 @@ export default function LeadDetail() {
   const handleStageChange = async (stageId: number) => { if (lead) { await moveLeadStage(lead.id, stageId); loadLead() } }
   const handleAssign = async (attId: number | null) => { if (lead) { await assignLead(lead.id, attId); loadLead() } }
   const handleAddTag = async (tagId: number) => { if (lead) { await addLeadTag(lead.id, tagId); loadLead(); setShowTagMenu(false) } }
+  const handleCreateTag = async () => {
+    if (!accountId || !newTagName.trim() || !lead) return
+    const tag = await createTag(accountId, newTagName.trim(), newTagColor)
+    setTags(prev => [...prev, tag])
+    await addLeadTag(lead.id, tag.id)
+    setNewTagName(''); loadLead()
+  }
   const handleRemoveTag = async (tagId: number) => { if (lead) { await removeLeadTag(lead.id, tagId); loadLead() } }
 
   const handleAssignCadence = async (cadenceId: number) => {
@@ -197,13 +206,23 @@ export default function LeadDetail() {
               <div style={{ fontSize: 12, fontWeight: 600, color: '#9B96B0', textTransform: 'uppercase' }}><TagIcon size={12} /> Tags</div>
               <div style={{ position: 'relative' }}>
                 <button className="btn btn-secondary btn-sm" onClick={() => setShowTagMenu(!showTagMenu)}><Plus size={12} /></button>
-                {showTagMenu && availableTags.length > 0 && (
-                  <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'var(--bg-card)', border: '1px solid var(--border-medium)', borderRadius: 8, padding: 6, zIndex: 50, minWidth: 150 }}>
-                    {availableTags.map(t => (
-                      <button key={t.id} onClick={() => handleAddTag(t.id)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', border: 'none', background: 'none', color: '#fff', fontSize: 12, cursor: 'pointer', borderRadius: 4, width: '100%' }}>
-                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: t.color }} />{t.name}
-                      </button>
-                    ))}
+                {showTagMenu && (
+                  <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'var(--bg-card)', border: '1px solid var(--border-medium)', borderRadius: 8, padding: 6, zIndex: 50, minWidth: 220 }}>
+                    {availableTags.length > 0 && (
+                      <>
+                        {availableTags.map(t => (
+                          <button key={t.id} onClick={() => handleAddTag(t.id)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', border: 'none', background: 'none', color: '#fff', fontSize: 12, cursor: 'pointer', borderRadius: 4, width: '100%', textAlign: 'left' }}>
+                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: t.color }} />{t.name}
+                          </button>
+                        ))}
+                        <div style={{ height: 1, background: 'var(--border-subtle)', margin: '6px 0' }} />
+                      </>
+                    )}
+                    <div style={{ display: 'flex', gap: 4, alignItems: 'center', padding: 2 }}>
+                      <input type="color" value={newTagColor} onChange={e => setNewTagColor(e.target.value)} style={{ width: 24, height: 24, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }} />
+                      <input className="input" value={newTagName} onChange={e => setNewTagName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleCreateTag()} placeholder="Nova tag..." style={{ flex: 1, fontSize: 12 }} />
+                      <button className="btn btn-primary btn-sm" onClick={handleCreateTag} disabled={!newTagName.trim()}><Plus size={12} /></button>
+                    </div>
                   </div>
                 )}
               </div>

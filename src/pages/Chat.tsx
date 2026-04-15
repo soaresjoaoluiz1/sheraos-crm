@@ -5,7 +5,7 @@ import { useSSE } from '../context/SSEContext'
 import {
   fetchWhatsAppInstances, fetchLeads, fetchLead, fetchFunnels, fetchUsers, fetchTags,
   sendMessage, updateLead, moveLeadStage, assignLead, addLeadNote, addLeadTag, removeLeadTag,
-  fetchLeadCadence, advanceLeadCadence, fetchCadences, assignLeadCadence,
+  fetchLeadCadence, advanceLeadCadence, fetchCadences, assignLeadCadence, createTag,
   type WhatsAppInstance, type Lead, type Message, type StageHistoryEntry, type LeadNote,
   type Funnel, type User as UserType, type Tag, type LeadCadence, type Cadence,
 } from '../lib/api'
@@ -50,6 +50,8 @@ export default function Chat() {
   const [editData, setEditData] = useState({ name: '', phone: '', email: '', city: '' })
   const [rightTab, setRightTab] = useState<'info' | 'notes' | 'history'>('info')
   const [showTagMenu, setShowTagMenu] = useState(false)
+  const [newTagName, setNewTagName] = useState('')
+  const [newTagColor, setNewTagColor] = useState('#FFB300')
   const chatEndRef = useRef<HTMLDivElement>(null)
 
   // Load instances + globals
@@ -132,6 +134,14 @@ export default function Chat() {
   const handleRemoveTag = async (tagId: number) => { if (lead) { await removeLeadTag(lead.id, tagId); loadLead() } }
   const handleAdvanceCadence = async () => { if (leadCadence && accountId) { await advanceLeadCadence(leadCadence.id, accountId); loadLead() } }
   const handleAssignCadence = async (cadenceId: number) => { if (lead && accountId) { await assignLeadCadence(cadenceId, accountId, lead.id); setShowCadenceMenu(false); loadLead() } }
+
+  const handleCreateTag = async () => {
+    if (!accountId || !newTagName.trim() || !lead) return
+    const tag = await createTag(accountId, newTagName.trim(), newTagColor)
+    setTags(prev => [...prev, tag])
+    await addLeadTag(lead.id, tag.id)
+    setNewTagName(''); loadLead()
+  }
 
   const allStages = funnels.flatMap(f => f.stages || [])
   const currentStage = lead ? allStages.find(s => s.id === lead.stage_id) : null
@@ -311,13 +321,23 @@ export default function Chat() {
                       <div style={{ fontSize: 10, color: '#9B96B0', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 3 }}><TagIcon size={10} /> Tags</div>
                       <div style={{ position: 'relative' }}>
                         <button className="btn btn-secondary btn-sm" onClick={() => setShowTagMenu(!showTagMenu)} style={{ padding: '2px 6px' }}><Plus size={10} /></button>
-                        {showTagMenu && availableTags.length > 0 && (
-                          <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'var(--bg-card)', border: '1px solid var(--border-medium)', borderRadius: 8, padding: 4, zIndex: 50, minWidth: 130 }}>
-                            {availableTags.map(t => (
-                              <button key={t.id} onClick={() => handleAddTag(t.id)} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', border: 'none', background: 'none', color: '#fff', fontSize: 11, cursor: 'pointer', width: '100%' }}>
-                                <span style={{ width: 6, height: 6, borderRadius: '50%', background: t.color }} />{t.name}
-                              </button>
-                            ))}
+                        {showTagMenu && (
+                          <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'var(--bg-card)', border: '1px solid var(--border-medium)', borderRadius: 8, padding: 6, zIndex: 50, minWidth: 200 }}>
+                            {availableTags.length > 0 && (
+                              <>
+                                {availableTags.map(t => (
+                                  <button key={t.id} onClick={() => handleAddTag(t.id)} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', border: 'none', background: 'none', color: '#fff', fontSize: 11, cursor: 'pointer', width: '100%', textAlign: 'left' }}>
+                                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: t.color }} />{t.name}
+                                  </button>
+                                ))}
+                                <div style={{ height: 1, background: 'var(--border-subtle)', margin: '6px 0' }} />
+                              </>
+                            )}
+                            <div style={{ display: 'flex', gap: 4, alignItems: 'center', padding: 2 }}>
+                              <input type="color" value={newTagColor} onChange={e => setNewTagColor(e.target.value)} style={{ width: 22, height: 22, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }} />
+                              <input className="input" value={newTagName} onChange={e => setNewTagName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleCreateTag()} placeholder="Nova tag..." style={{ flex: 1, fontSize: 11, padding: '4px 6px' }} />
+                              <button className="btn btn-primary btn-sm" onClick={handleCreateTag} disabled={!newTagName.trim()} style={{ padding: '4px 6px' }}><Plus size={10} /></button>
+                            </div>
                           </div>
                         )}
                       </div>
