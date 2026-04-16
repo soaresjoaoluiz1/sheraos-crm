@@ -65,16 +65,28 @@ function getMyTasks({ accountId, userId, role }) {
   const weekEnd = new Date(today); weekEnd.setDate(today.getDate() + 7)
 
   const enriched = rows.map(r => {
-    // Lead created_at is UTC string from sqlite — parse and add delay_days
-    const leadDate = new Date(r.lead_created_at.replace(' ', 'T') + 'Z')
-    const due = new Date(leadDate)
-    due.setDate(due.getDate() + (r.delay_days || 0))
+    // Anchor: lc.started_at (when cadence was assigned). UTC string from sqlite.
+    const assignedAt = new Date(r.started_at.replace(' ', 'T') + 'Z')
+    let due
 
-    if (r.scheduled_time) {
-      const [h, m] = r.scheduled_time.split(':').map(Number)
-      due.setHours(h || 0, m || 0, 0, 0)
+    if ((r.delay_days || 0) === 0) {
+      // D+0: HH:MM treated as duration offset from assignment time
+      if (r.scheduled_time) {
+        const [h, m] = r.scheduled_time.split(':').map(Number)
+        due = new Date(assignedAt.getTime() + (h || 0) * 3600000 + (m || 0) * 60000)
+      } else {
+        due = new Date(assignedAt)
+      }
     } else {
-      due.setHours(0, 0, 0, 0)
+      // D+N (N≥1): HH:MM = clock time on (assigned + N days)
+      due = new Date(assignedAt)
+      due.setDate(due.getDate() + r.delay_days)
+      if (r.scheduled_time) {
+        const [h, m] = r.scheduled_time.split(':').map(Number)
+        due.setHours(h || 0, m || 0, 0, 0)
+      } else {
+        due.setHours(0, 0, 0, 0)
+      }
     }
 
     let bucket = 'later'

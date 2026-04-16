@@ -44,16 +44,28 @@ async function processCadences() {
   const now = new Date()
 
   for (const row of active) {
-    // Calculate target execution moment: lead_created + delay_days, at scheduled_time (or anytime if null)
-    const leadDate = new Date(row.lead_created.replace(' ', 'T') + 'Z')
-    const target = new Date(leadDate)
-    target.setDate(target.getDate() + (row.delay_days || 0))
+    // Anchor: lc.started_at (when cadence was assigned to this lead). UTC string.
+    const assignedAt = new Date(row.started_at.replace(' ', 'T') + 'Z')
+    let target
 
-    if (row.scheduled_time) {
-      const [h, m] = row.scheduled_time.split(':').map(Number)
-      target.setUTCHours(h + 3, m || 0, 0, 0) // America/Sao_Paulo is UTC-3
+    if ((row.delay_days || 0) === 0) {
+      // D+0: HH:MM treated as duration offset from assignment time
+      if (row.scheduled_time) {
+        const [h, m] = row.scheduled_time.split(':').map(Number)
+        target = new Date(assignedAt.getTime() + (h || 0) * 3600000 + (m || 0) * 60000)
+      } else {
+        target = new Date(assignedAt)
+      }
     } else {
-      target.setUTCHours(0, 0, 0, 0)
+      // D+N (N≥1): HH:MM = clock time on (assigned + N days), local TZ America/Sao_Paulo (UTC-3)
+      target = new Date(assignedAt)
+      target.setDate(target.getDate() + row.delay_days)
+      if (row.scheduled_time) {
+        const [h, m] = row.scheduled_time.split(':').map(Number)
+        target.setUTCHours((h || 0) + 3, m || 0, 0, 0)
+      } else {
+        target.setUTCHours(3, 0, 0, 0) // midnight local = 03:00 UTC
+      }
     }
 
     // Only execute if target time has passed and not already executed
