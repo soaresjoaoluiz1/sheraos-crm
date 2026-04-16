@@ -4,9 +4,33 @@ import { broadcastSSE } from '../sse.js'
 
 const router = Router()
 
+// Calculate due datetime for a cadence attempt given assignment time
+function computeDueDatetime({ startedAt, delay_days, scheduled_time }) {
+  const assignedAt = new Date(startedAt.replace(' ', 'T') + 'Z')
+  let due
+  if ((delay_days || 0) === 0) {
+    if (scheduled_time) {
+      const [h, m] = scheduled_time.split(':').map(Number)
+      due = new Date(assignedAt.getTime() + (h || 0) * 3600000 + (m || 0) * 60000)
+    } else {
+      due = new Date(assignedAt)
+    }
+  } else {
+    due = new Date(assignedAt)
+    due.setDate(due.getDate() + delay_days)
+    if (scheduled_time) {
+      const [h, m] = scheduled_time.split(':').map(Number)
+      due.setHours(h || 0, m || 0, 0, 0)
+    } else {
+      due.setHours(0, 0, 0, 0)
+    }
+  }
+  return due
+}
+
 /**
  * Build query that returns all active task instances (lead_cadences with current_attempt_id)
- * with calculated due_datetime based on lead.created_at + delay_days + scheduled_time.
+ * with calculated due_datetime based on lc.started_at + delay_days + scheduled_time.
  *
  * Filters by attendant when role=atendente, or all leads of account otherwise.
  */
@@ -65,29 +89,7 @@ function getMyTasks({ accountId, userId, role }) {
   const weekEnd = new Date(today); weekEnd.setDate(today.getDate() + 7)
 
   const enriched = rows.map(r => {
-    // Anchor: lc.started_at (when cadence was assigned). UTC string from sqlite.
-    const assignedAt = new Date(r.started_at.replace(' ', 'T') + 'Z')
-    let due
-
-    if ((r.delay_days || 0) === 0) {
-      // D+0: HH:MM treated as duration offset from assignment time
-      if (r.scheduled_time) {
-        const [h, m] = r.scheduled_time.split(':').map(Number)
-        due = new Date(assignedAt.getTime() + (h || 0) * 3600000 + (m || 0) * 60000)
-      } else {
-        due = new Date(assignedAt)
-      }
-    } else {
-      // D+N (N≥1): HH:MM = clock time on (assigned + N days)
-      due = new Date(assignedAt)
-      due.setDate(due.getDate() + r.delay_days)
-      if (r.scheduled_time) {
-        const [h, m] = r.scheduled_time.split(':').map(Number)
-        due.setHours(h || 0, m || 0, 0, 0)
-      } else {
-        due.setHours(0, 0, 0, 0)
-      }
-    }
+    const due = computeDueDatetime({ startedAt: r.started_at, delay_days: r.delay_days, scheduled_time: r.scheduled_time })
 
     let bucket = 'later'
     if (due < today) bucket = 'overdue'
@@ -141,7 +143,19 @@ router.post('/:lcId/complete', (req, res) => {
   const lead = db.prepare('SELECT account_id, attendant_id FROM leads WHERE id = ?').get(lc.lead_id)
   if (lead) broadcastSSE(lead.account_id, 'task:updated', { lead_cadence_id: lc.id, attendant_id: lead.attendant_id })
 
-  res.json({ ok: true, completed: !nextAttempt })
+  let nextStep = null
+  if (nextAttempt) {
+    const due = computeDueDatetime({ startedAt: lc.started_at, delay_days: nextAttempt.delay_days, scheduled_time: nextAttempt.scheduled_time })
+    nextStep = {
+      position: nextAttempt.position,
+      action_type: nextAttempt.action_type,
+      description: nextAttempt.description,
+      delay_days: nextAttempt.delay_days,
+      scheduled_time: nextAttempt.scheduled_time,
+      due_datetime: due.toISOString(),
+    }
+  }
+  res.json({ ok: true, completed: !nextAttempt, nextStep })
 })
 
 // POST /api/tasks/:lcId/skip — skip current attempt without executing

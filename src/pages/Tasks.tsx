@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAccount } from '../context/AccountContext'
 import { useSSE } from '../context/SSEContext'
-import { fetchMyTasks, completeTask, skipTask, sendMessage, type Task, type TaskGroups } from '../lib/api'
+import { fetchMyTasks, completeTask, skipTask, sendMessage, type Task, type TaskGroups, type NextStep } from '../lib/api'
 import {
   ListTodo, Phone, MessageCircle, Mail, Video, MapPin, Check, SkipForward,
   ExternalLink, Clock, AlertCircle, User, Calendar, CheckCircle, Send,
@@ -32,6 +32,7 @@ export default function Tasks() {
   const [loading, setLoading] = useState(true)
   const [activeBucket, setActiveBucket] = useState<keyof TaskGroups>('today')
   const [actioning, setActioning] = useState<number | null>(null)
+  const [confirmModal, setConfirmModal] = useState<{ leadName: string; nextStep: NextStep | null } | null>(null)
 
   const load = useCallback(() => {
     if (!accountId) return
@@ -63,7 +64,8 @@ export default function Tasks() {
     try {
       const text = t.auto_message.replace(/\{\{name\}\}/g, t.lead_name || 'Cliente')
       await sendMessage(t.lead_id, accountId, text)
-      await completeTask(t.lead_cadence_id, accountId)
+      const result = await completeTask(t.lead_cadence_id, accountId)
+      setConfirmModal({ leadName: t.lead_name || t.lead_phone || 'Lead', nextStep: result.nextStep })
       load()
     } catch (e: any) { alert('Erro: ' + (e?.message || 'desconhecido')) }
     setActioning(null)
@@ -184,6 +186,44 @@ export default function Tasks() {
       ) : (
         <div>
           {tasks[activeBucket].map(renderTask)}
+        </div>
+      )}
+
+      {confirmModal && (
+        <div className="modal-overlay" onClick={() => setConfirmModal(null)}>
+          <div className="modal" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, textAlign: 'center', padding: '8px 0' }}>
+              <div style={{ width: 52, height: 52, borderRadius: '50%', background: '#34C75920', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Check size={28} style={{ color: '#34C759' }} />
+              </div>
+              <h2 style={{ margin: 0, fontSize: 18 }}>Mensagem enviada</h2>
+              <div style={{ fontSize: 13, color: '#9B96B0' }}>Para <b style={{ color: '#fff' }}>{confirmModal.leadName}</b></div>
+
+              {confirmModal.nextStep ? (
+                <div style={{ width: '100%', padding: 12, background: 'rgba(255,179,0,0.08)', border: '1px solid rgba(255,179,0,0.25)', borderRadius: 8, marginTop: 4 }}>
+                  <div style={{ fontSize: 11, color: '#FFB300', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Próxima etapa</div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>
+                    {ACTION_LABELS[confirmModal.nextStep.action_type] || confirmModal.nextStep.action_type}
+                    {confirmModal.nextStep.description && <span style={{ color: '#9B96B0', fontWeight: 400 }}> · {confirmModal.nextStep.description}</span>}
+                  </div>
+                  <div style={{ fontSize: 12, color: '#C8C4D4', marginTop: 4 }}>
+                    <Clock size={11} style={{ verticalAlign: -1, marginRight: 4 }} />
+                    {new Date(confirmModal.nextStep.due_datetime).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                    <span style={{ color: '#6B6580', marginLeft: 6 }}>
+                      (D+{confirmModal.nextStep.delay_days}{confirmModal.nextStep.scheduled_time ? ` ${confirmModal.nextStep.scheduled_time}` : ''})
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ width: '100%', padding: 12, background: 'rgba(52,199,89,0.08)', border: '1px solid rgba(52,199,89,0.25)', borderRadius: 8, fontSize: 13, color: '#34C759' }}>
+                  <CheckCircle size={14} style={{ verticalAlign: -2, marginRight: 4 }} /> Cadência concluída
+                </div>
+              )}
+            </div>
+            <div className="modal-actions" style={{ marginTop: 16 }}>
+              <button className="btn btn-primary" style={{ width: '100%' }} onClick={() => setConfirmModal(null)}>OK</button>
+            </div>
+          </div>
         </div>
       )}
     </div>

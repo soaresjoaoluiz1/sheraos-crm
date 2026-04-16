@@ -176,7 +176,9 @@ export interface TaskGroups { overdue: Task[]; today: Task[]; tomorrow: Task[]; 
 
 export const fetchMyTasks = (accountId: number) => apiFetch<TaskGroups>(`/api/tasks/my?account_id=${accountId}`)
 export const fetchTaskCounts = (accountId: number) => apiFetch<TaskCounts>(`/api/tasks/counts?account_id=${accountId}`)
-export const completeTask = (lcId: number, accountId: number) => apiFetch(`/api/tasks/${lcId}/complete?account_id=${accountId}`, { method: 'POST' })
+export interface NextStep { position: number; action_type: string; description: string | null; delay_days: number; scheduled_time: string | null; due_datetime: string }
+export interface CompleteResult { ok: boolean; completed: boolean; nextStep: NextStep | null }
+export const completeTask = (lcId: number, accountId: number) => apiFetch<CompleteResult>(`/api/tasks/${lcId}/complete?account_id=${accountId}`, { method: 'POST' })
 export const skipTask = (lcId: number, accountId: number) => apiFetch(`/api/tasks/${lcId}/skip?account_id=${accountId}`, { method: 'POST' })
 
 // =============================================
