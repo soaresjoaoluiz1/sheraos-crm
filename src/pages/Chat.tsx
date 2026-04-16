@@ -156,7 +156,9 @@ export default function Chat() {
       setMessages(prev => [...prev, msg])
       await advanceLeadCadence(leadCadence.id, accountId)
       loadLead()
-    } catch {}
+    } catch (err: any) {
+      alert('Erro ao enviar: ' + (err?.message || 'desconhecido'))
+    }
     setSending(false)
   }
   const handleAssignCadence = async (cadenceId: number) => { if (lead && accountId) { await assignLeadCadence(cadenceId, accountId, lead.id); setShowCadenceMenu(false); loadLead() } }
