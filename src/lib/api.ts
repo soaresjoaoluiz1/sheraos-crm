@@ -30,6 +30,7 @@ export interface Lead {
   name: string | null; phone: string | null; email: string | null; city: string | null
   source: string | null; source_detail: string | null; notes: string | null
   wa_remote_jid: string | null; instance_id: number | null; profile_pic_url: string | null; is_active: number; created_at: string; updated_at: string
+  is_archived?: number; archived_at?: string | null; has_new_after_archive?: number
   stage_name?: string; stage_color?: string; attendant_name?: string; instance_name?: string
   last_message?: string; message_count?: number; tags?: Tag[]
 }
@@ -74,7 +75,7 @@ export const fetchFunnel = (id: number, accountId: number) => apiFetch<{ funnel:
 export const updateFunnelStages = (id: number, accountId: number, stages: Partial<FunnelStage>[]) => apiFetch(`/api/funnels/${id}/stages?account_id=${accountId}`, { method: 'PUT', body: JSON.stringify({ stages }) })
 
 // Leads
-export interface LeadFilters { stage_id?: number; attendant_id?: number; funnel_id?: number; source?: string; city?: string; tag?: number; search?: string; date_from?: string; date_to?: string; page?: number; limit?: number }
+export interface LeadFilters { stage_id?: number; attendant_id?: number; funnel_id?: number; source?: string; city?: string; tag?: number; search?: string; date_from?: string; date_to?: string; show_archived?: '1' | 'all'; page?: number; limit?: number }
 export const fetchLeads = (accountId: number, filters: LeadFilters = {}) => {
   const params = new URLSearchParams({ account_id: String(accountId) })
   Object.entries(filters).forEach(([k, v]) => { if (v !== undefined && v !== '') params.set(k, String(v)) })
@@ -86,6 +87,9 @@ export const updateLead = (id: number, data: Partial<Lead>) => apiFetch(`/api/le
 export const moveLeadStage = (id: number, stageId: number) => apiFetch(`/api/leads/${id}/stage`, { method: 'PUT', body: JSON.stringify({ stage_id: stageId }) })
 export const assignLead = (id: number, attendantId: number | null) => apiFetch(`/api/leads/${id}/assign`, { method: 'PUT', body: JSON.stringify({ attendant_id: attendantId }) })
 export const refreshProfilePic = (id: number) => apiFetch<{ profile_pic_url: string | null }>(`/api/leads/${id}/refresh-profile-pic`, { method: 'POST' })
+export const archiveLead = (id: number) => apiFetch<{ lead: Lead }>(`/api/leads/${id}/archive`, { method: 'PATCH' }).then(d => d.lead)
+export const unarchiveLead = (id: number) => apiFetch<{ lead: Lead }>(`/api/leads/${id}/unarchive`, { method: 'PATCH' }).then(d => d.lead)
+export const fetchArchivedCount = (accountId: number) => apiFetch<{ count: number; withActivity: number }>(`/api/leads/archived-count?account_id=${accountId}`)
 
 // Messages
 export const fetchMessages = (leadId: number, accountId: number) => apiFetch<{ messages: Message[] }>(`/api/messages/${leadId}?account_id=${accountId}`).then(d => d.messages)

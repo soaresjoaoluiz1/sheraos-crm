@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, type MouseEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAccount } from '../context/AccountContext'
 import AccountSelector from '../components/AccountSelector'
 import { useSSE } from '../context/SSEContext'
-import { fetchFunnels, fetchLeads, moveLeadStage, fetchPipelineMetrics, type Funnel, type Lead, type PipelineMetric } from '../lib/api'
-import { Phone, MessageCircle, User, Clock, ChevronDown, ChevronRight, ArrowRight, Smartphone } from 'lucide-react'
+import { fetchFunnels, fetchLeads, moveLeadStage, fetchPipelineMetrics, archiveLead, type Funnel, type Lead, type PipelineMetric } from '../lib/api'
+import { Phone, MessageCircle, User, Clock, ChevronDown, ChevronRight, ArrowRight, Smartphone, Archive } from 'lucide-react'
 
 function timeAgo(dateStr: string) {
   const diff = Date.now() - new Date(dateStr).getTime()
@@ -67,6 +67,15 @@ export default function Pipeline() {
 
   useSSE('lead:created', useCallback(() => loadData(), [loadData]))
   useSSE('lead:updated', useCallback(() => loadData(), [loadData]))
+  useSSE('lead:archived', useCallback((data: { id: number }) => setLeads(prev => prev.filter(l => l.id !== data.id)), []))
+  useSSE('lead:unarchived', useCallback(() => loadData(), [loadData]))
+
+  const handleArchive = async (e: MouseEvent, leadId: number) => {
+    e.stopPropagation()
+    if (!confirm('Arquivar este lead? Ele some do pipeline e do chat, mas o historico fica salvo.')) return
+    setLeads(prev => prev.filter(l => l.id !== leadId))
+    try { await archiveLead(leadId) } catch { loadData() }
+  }
 
   const handleDragStart = (leadId: number) => setDraggedLead(leadId)
   const handleDragEnd = () => setDraggedLead(null)
@@ -135,9 +144,14 @@ export default function Pipeline() {
                           <div style={{ fontSize: 14, fontWeight: 600 }}>{lead.name || 'Sem nome'}</div>
                           {lead.phone && <div style={{ fontSize: 12, color: '#9B96B0', display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}><Phone size={10} /> {lead.phone}</div>}
                         </div>
-                        <button className="btn btn-secondary btn-sm" style={{ flexShrink: 0 }} onClick={() => setMoveLeadId(lead.id)}>
-                          <ArrowRight size={12} />
-                        </button>
+                        <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                          <button className="btn btn-secondary btn-sm" title="Arquivar" onClick={e => handleArchive(e, lead.id)}>
+                            <Archive size={12} />
+                          </button>
+                          <button className="btn btn-secondary btn-sm" onClick={() => setMoveLeadId(lead.id)}>
+                            <ArrowRight size={12} />
+                          </button>
+                        </div>
                       </div>
                       <div style={{ display: 'flex', gap: 8, marginTop: 6, fontSize: 10, color: '#6B6580', flexWrap: 'wrap' }}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>{lead.source === 'whatsapp' ? <MessageCircle size={9} /> : <User size={9} />} {lead.source}</span>
@@ -231,8 +245,14 @@ export default function Pipeline() {
                   <div key={lead.id} className={`kanban-card ${draggedLead === lead.id ? 'dragging' : ''}`}
                     draggable onDragStart={() => handleDragStart(lead.id)} onDragEnd={handleDragEnd}
                     onClick={() => navigate(`/leads/${lead.id}`)}
-                    style={{ borderLeft: `3px solid ${stage.color}` }}>
-                    <div className="kanban-card-name">{lead.name || 'Sem nome'}</div>
+                    style={{ borderLeft: `3px solid ${stage.color}`, position: 'relative' }}>
+                    <button className="kanban-card-archive" title="Arquivar" onClick={e => handleArchive(e, lead.id)}
+                      style={{ position: 'absolute', top: 6, right: 6, background: 'transparent', border: 'none', color: '#9B96B0', cursor: 'pointer', padding: 4, borderRadius: 4, display: 'flex', opacity: 0.5 }}
+                      onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
+                      onMouseLeave={e => { e.currentTarget.style.opacity = '0.5'; e.currentTarget.style.background = 'transparent' }}>
+                      <Archive size={12} />
+                    </button>
+                    <div className="kanban-card-name" style={{ paddingRight: 20 }}>{lead.name || 'Sem nome'}</div>
                     {lead.phone && <div className="kanban-card-phone"><Phone size={10} /> {lead.phone}</div>}
                     {lead.tags && lead.tags.length > 0 && (
                       <div className="kanban-card-tags">

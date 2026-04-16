@@ -27,7 +27,7 @@ router.post('/', requireRole('super_admin', 'gerente'), (req, res) => {
   if (lead_ids && Array.isArray(lead_ids)) {
     const stmt = db.prepare('INSERT INTO broadcast_recipients (broadcast_id, lead_id, phone) VALUES (?, ?, ?)')
     for (const leadId of lead_ids) {
-      const lead = db.prepare('SELECT phone FROM leads WHERE id = ? AND phone IS NOT NULL').get(leadId)
+      const lead = db.prepare('SELECT phone FROM leads WHERE id = ? AND phone IS NOT NULL AND is_archived = 0').get(leadId)
       if (lead) stmt.run(result.lastInsertRowid, leadId, lead.phone)
     }
     db.prepare('UPDATE broadcasts SET total_count = (SELECT COUNT(*) FROM broadcast_recipients WHERE broadcast_id = ?) WHERE id = ?').run(result.lastInsertRowid, result.lastInsertRowid)

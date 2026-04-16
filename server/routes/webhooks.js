@@ -207,9 +207,20 @@ router.post('/evolution/:accountSlug', (req, res) => {
       db.prepare('UPDATE leads SET name = ? WHERE id = ? AND name IS NULL').run(pushName, lead.id)
     }
 
-    // Broadcast SSE
-    if (isNew) broadcastSSE(account.id, 'lead:created', db.prepare('SELECT * FROM leads WHERE id = ?').get(lead.id))
-    else broadcastSSE(account.id, 'lead:message', { leadId: lead.id, message: content, direction: fromMe ? 'outbound' : 'inbound' })
+    // Broadcast SSE — archived leads mark activity silently, don't show up in pipeline/chat
+    if (isNew) {
+      broadcastSSE(account.id, 'lead:created', db.prepare('SELECT * FROM leads WHERE id = ?').get(lead.id))
+    } else {
+      const current = db.prepare('SELECT is_archived FROM leads WHERE id = ?').get(lead.id)
+      if (current?.is_archived) {
+        if (!fromMe) {
+          db.prepare('UPDATE leads SET has_new_after_archive = 1 WHERE id = ?').run(lead.id)
+          try { broadcastSSE(account.id, 'lead:archived-activity', { id: lead.id }) } catch {}
+        }
+      } else {
+        broadcastSSE(account.id, 'lead:message', { leadId: lead.id, message: content, direction: fromMe ? 'outbound' : 'inbound' })
+      }
+    }
 
     res.json({ ok: true })
   } catch (err) {

@@ -6,12 +6,13 @@ import {
   fetchWhatsAppInstances, fetchLeads, fetchLead, fetchFunnels, fetchUsers, fetchTags,
   sendMessage, updateLead, moveLeadStage, assignLead, addLeadNote, addLeadTag, removeLeadTag,
   fetchLeadCadence, advanceLeadCadence, fetchCadences, assignLeadCadence, createTag,
+  archiveLead,
   type WhatsAppInstance, type Lead, type Message, type StageHistoryEntry, type LeadNote,
   type Funnel, type User as UserType, type Tag, type LeadCadence, type Cadence,
 } from '../lib/api'
 import {
   MessageCircle, Search, Send, Phone, User, Edit3, Save, X, Plus,
-  StickyNote, Tag as TagIcon, GitBranch, Smartphone, ListOrdered, ChevronRight, Check, Clock,
+  StickyNote, Tag as TagIcon, GitBranch, Smartphone, ListOrdered, ChevronRight, Check, Clock, Archive,
 } from 'lucide-react'
 import MessageMedia from '../components/MessageMedia'
 
@@ -102,6 +103,19 @@ export default function Chat() {
     if (data.id === selectedLeadId) loadLead()
     loadLeadsList()
   }, [selectedLeadId, loadLead, loadLeadsList]))
+  useSSE('lead:archived', useCallback((data: { id: number }) => {
+    setLeads(prev => prev.filter(l => l.id !== data.id))
+    if (selectedLeadId === data.id) setSelectedLeadId(null)
+  }, [selectedLeadId]))
+  useSSE('lead:unarchived', useCallback(() => loadLeadsList(), [loadLeadsList]))
+
+  const handleArchiveLead = async (leadId: number, e?: { stopPropagation?: () => void }) => {
+    e?.stopPropagation?.()
+    if (!confirm('Arquivar este lead? Ele some do chat e do pipeline, mas o historico fica salvo.')) return
+    setLeads(prev => prev.filter(l => l.id !== leadId))
+    if (selectedLeadId === leadId) setSelectedLeadId(null)
+    try { await archiveLead(leadId) } catch { loadLeadsList() }
+  }
 
   const filteredLeads = useMemo(() => {
     if (!search.trim()) return leads
@@ -175,7 +189,7 @@ export default function Chat() {
               const active = l.id === selectedLeadId
               const stage = allStages.find(s => s.id === l.stage_id)
               return (
-                <div key={l.id} className={`chat-contact-item ${active ? 'active' : ''}`} onClick={() => setSelectedLeadId(l.id)}>
+                <div key={l.id} className={`chat-contact-item ${active ? 'active' : ''}`} onClick={() => setSelectedLeadId(l.id)} style={{ position: 'relative' }}>
                   <div className="chat-contact-avatar" style={{ background: stage ? `${stage.color}25` : '#FFB30025', overflow: 'hidden' }}>
                     {l.profile_pic_url ? (
                       <img src={l.profile_pic_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
@@ -195,6 +209,13 @@ export default function Chat() {
                       {stage && <span style={{ fontSize: 9, color: stage.color, background: `${stage.color}20`, padding: '1px 6px', borderRadius: 8, whiteSpace: 'nowrap' }}>{stage.name}</span>}
                     </div>
                   </div>
+                  <button
+                    className="chat-contact-archive"
+                    title="Arquivar"
+                    onClick={e => handleArchiveLead(l.id, e)}
+                    style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(0,0,0,0.35)', border: 'none', color: '#C8C4D4', cursor: 'pointer', padding: 4, borderRadius: 4, display: 'none' }}>
+                    <Archive size={11} />
+                  </button>
                 </div>
               )
             })}
@@ -224,6 +245,9 @@ export default function Chat() {
                   {lead.phone && <div style={{ fontSize: 11, color: '#9B96B0', display: 'flex', alignItems: 'center', gap: 4 }}><Phone size={10} />{lead.phone}</div>}
                 </div>
                 {lead.instance_name && <span style={{ fontSize: 10, color: '#34C759', display: 'flex', alignItems: 'center', gap: 4 }}><Smartphone size={10} />{lead.instance_name}</span>}
+                <button className="btn btn-secondary btn-sm" title="Arquivar" onClick={() => handleArchiveLead(lead.id)} style={{ padding: '4px 8px' }}>
+                  <Archive size={12} />
+                </button>
               </div>
               <div className="chat-messages">
                 {messages.length === 0 && <div style={{ textAlign: 'center', color: '#6B6580', padding: 40, fontSize: 13 }}>Nenhuma mensagem</div>}
@@ -242,7 +266,7 @@ export default function Chat() {
                 <div ref={chatEndRef} />
               </div>
               <div className="chat-input">
-                <input className="input" placeholder="Mensagem..." value={msgText} onChange={e => setMsgText(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSendMsg()} disabled={sending} />
+                <input className="input" placeholder="Mensagem..." value={msgText} onChange={e => setMsgText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); handleSendMsg() } }} disabled={sending} />
                 <button className="btn btn-primary btn-icon" onClick={handleSendMsg} disabled={sending || !msgText.trim()}><Send size={16} /></button>
               </div>
             </>
@@ -386,6 +410,15 @@ export default function Chat() {
                     ) : (
                       <div style={{ fontSize: 11, color: '#6B6580' }}>Nenhuma cadencia atribuida</div>
                     )}
+                  </div>
+
+                  {/* Archive */}
+                  <div className="card" style={{ padding: 12, marginTop: 12 }}>
+                    <div style={{ fontSize: 10, color: '#9B96B0', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 3, marginBottom: 6 }}><Archive size={10} /> Arquivar</div>
+                    <div style={{ fontSize: 11, color: '#6B6580', marginBottom: 8 }}>Some do pipeline e do chat. Historico preservado. Ideal para contatos pessoais.</div>
+                    <button className="btn btn-secondary btn-sm" style={{ width: '100%', fontSize: 11 }} onClick={() => handleArchiveLead(lead.id)}>
+                      <Archive size={12} /> Arquivar lead
+                    </button>
                   </div>
                 </>
               )}

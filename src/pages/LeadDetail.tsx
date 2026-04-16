@@ -8,10 +8,11 @@ import {
   sendMessage, addLeadNote, addLeadTag, removeLeadTag, createTag,
   fetchLeadCadence, fetchCadences, assignLeadCadence, advanceLeadCadence,
   fetchReadyMessages, fetchLeadQualifications, answerQualification,
+  archiveLead, unarchiveLead,
   type Lead, type Message, type StageHistoryEntry, type LeadNote, type Funnel, type User as UserType, type Tag,
   type LeadCadence, type Cadence, type ReadyMessage, type LeadQualification,
 } from '../lib/api'
-import { ArrowLeft, Phone, Mail, MapPin, MessageCircle, Send, Clock, User, GitBranch, Edit3, Save, X, Plus, StickyNote, Tag as TagIcon, ListOrdered, Zap, ClipboardList, ChevronRight, Check } from 'lucide-react'
+import { ArrowLeft, Phone, Mail, MapPin, MessageCircle, Send, Clock, User, GitBranch, Edit3, Save, X, Plus, StickyNote, Tag as TagIcon, ListOrdered, Zap, ClipboardList, ChevronRight, Check, Archive, ArchiveRestore } from 'lucide-react'
 import MessageMedia from '../components/MessageMedia'
 
 export default function LeadDetail() {
@@ -120,6 +121,15 @@ export default function LeadDetail() {
     await advanceLeadCadence(leadCadence.id, accountId); loadCadence()
   }
   const handleSelectReadyMsg = (content: string) => { setMsgText(content); setShowReadyMsgs(false) }
+  const handleToggleArchive = async () => {
+    if (!lead) return
+    const confirmText = lead.is_archived
+      ? 'Desarquivar este lead? Ele volta para o pipeline e chat.'
+      : 'Arquivar este lead? Ele some do pipeline e do chat, mas o historico fica salvo.'
+    if (!confirm(confirmText)) return
+    const updated = lead.is_archived ? await unarchiveLead(lead.id) : await archiveLead(lead.id)
+    setLead(updated)
+  }
   const handleAnswerQual = async (seqId: number) => {
     if (!lead || !accountId || !qualAnswers[seqId]?.trim()) return
     setSavingQual(seqId)
@@ -143,7 +153,10 @@ export default function LeadDetail() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <button className="btn btn-secondary btn-icon" onClick={() => navigate(-1)}><ArrowLeft size={16} /></button>
           <div>
-            <h1 style={{ fontSize: 20 }}>{lead.name || 'Sem nome'}</h1>
+            <h1 style={{ fontSize: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
+              {lead.name || 'Sem nome'}
+              {lead.is_archived ? <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 12, background: '#9B96B020', color: '#9B96B0', fontWeight: 500 }}>Arquivado</span> : null}
+            </h1>
             {lead.phone && <div style={{ fontSize: 12, color: '#9B96B0', display: 'flex', alignItems: 'center', gap: 4 }}><Phone size={10} /> {lead.phone}</div>}
           </div>
         </div>
@@ -157,6 +170,9 @@ export default function LeadDetail() {
               {attendants.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
           )}
+          <button className="btn btn-secondary btn-sm" onClick={handleToggleArchive} title={lead.is_archived ? 'Desarquivar' : 'Arquivar'}>
+            {lead.is_archived ? <><ArchiveRestore size={14} /> Desarquivar</> : <><Archive size={14} /> Arquivar</>}
+          </button>
         </div>
       </div>
 
@@ -325,7 +341,7 @@ export default function LeadDetail() {
               <div className="chat-input" style={{ position: 'relative' }}>
                 <div style={{ position: 'relative', flex: 1, display: 'flex', gap: 4, alignItems: 'center' }}>
                   <button className="btn btn-secondary btn-icon" onClick={() => setShowReadyMsgs(!showReadyMsgs)} title="Mensagens prontas" style={{ flexShrink: 0 }}><Zap size={16} /></button>
-                  <input className="input" style={{ flex: 1 }} placeholder="Mensagem..." value={msgText} onChange={e => setMsgText(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSendMsg()} disabled={sending} />
+                  <input className="input" style={{ flex: 1 }} placeholder="Mensagem..." value={msgText} onChange={e => setMsgText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); handleSendMsg() } }} disabled={sending} />
                 </div>
                 <button className="btn btn-primary btn-icon" onClick={handleSendMsg} disabled={sending || !msgText.trim()}><Send size={16} /></button>
                 {showReadyMsgs && readyMsgs.length > 0 && (

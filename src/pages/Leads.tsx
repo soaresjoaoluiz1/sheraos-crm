@@ -1,13 +1,15 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useAccount } from '../context/AccountContext'
+import { useSSE } from '../context/SSEContext'
 import AccountSelector from '../components/AccountSelector'
 import {
   fetchLeads, fetchFunnels, fetchUsers, fetchTags, createLead, bulkAssignLeads, bulkMoveLeads,
+  archiveLead, unarchiveLead, fetchArchivedCount,
   formatNumber, type Lead, type Funnel, type User as UserType, type Tag,
 } from '../lib/api'
-import { Search, Plus, Download, Phone, MessageCircle, Clock, CheckSquare, Square, Users, ArrowRight } from 'lucide-react'
+import { Plus, Download, Phone, MessageCircle, Clock, CheckSquare, Square, Users, ArrowRight, Archive, ArchiveRestore } from 'lucide-react'
 
 function timeAgo(d: string) { const m = Math.floor((Date.now() - new Date(d).getTime()) / 60000); if (m < 60) return `${m}m`; const h = Math.floor(m / 60); if (h < 24) return `${h}h`; return `${Math.floor(h / 24)}d` }
 
@@ -38,6 +40,8 @@ export default function Leads() {
   const [tagFilter, setTagFilter] = useState('')
   const [showNew, setShowNew] = useState(false)
   const [newLead, setNewLead] = useState({ name: '', phone: '', email: '', city: '', source: 'manual' })
+  const [showArchived, setShowArchived] = useState(false)
+  const [archivedCount, setArchivedCount] = useState<{ count: number; withActivity: number }>({ count: 0, withActivity: 0 })
   // Bulk
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [showBulkAssign, setShowBulkAssign] = useState(false)
@@ -57,14 +61,37 @@ export default function Leads() {
       search: search || undefined, stage_id: stageFilter ? +stageFilter : undefined,
       source: sourceFilter || undefined, attendant_id: attendantFilter ? +attendantFilter : undefined,
       date_from: dateFrom || undefined, date_to: dateTo || undefined,
-      tag: tagFilter ? +tagFilter : undefined, page, limit: 30,
+      tag: tagFilter ? +tagFilter : undefined,
+      show_archived: showArchived ? '1' : undefined,
+      page, limit: 30,
     })
       .then(d => { setLeads(d.leads); setTotal(d.total) })
       .catch(() => {})
       .finally(() => setLoading(false))
   }
 
-  useEffect(loadLeads, [accountId, search, stageFilter, sourceFilter, attendantFilter, dateFrom, dateTo, tagFilter, page])
+  useEffect(loadLeads, [accountId, search, stageFilter, sourceFilter, attendantFilter, dateFrom, dateTo, tagFilter, showArchived, page])
+
+  const loadArchivedCount = useCallback(() => {
+    if (!accountId) return
+    fetchArchivedCount(accountId).then(setArchivedCount).catch(() => {})
+  }, [accountId])
+  useEffect(() => { loadArchivedCount() }, [loadArchivedCount])
+
+  useSSE('lead:archived', useCallback(() => loadArchivedCount(), [loadArchivedCount]))
+  useSSE('lead:unarchived', useCallback(() => loadArchivedCount(), [loadArchivedCount]))
+  useSSE('lead:archived-activity', useCallback(() => loadArchivedCount(), [loadArchivedCount]))
+
+  const handleToggleArchive = async (e: { stopPropagation?: () => void }, leadId: number, isArchived: boolean) => {
+    e.stopPropagation?.()
+    if (!confirm(isArchived ? 'Desarquivar este lead?' : 'Arquivar este lead?')) return
+    setLeads(prev => prev.filter(l => l.id !== leadId))
+    try {
+      if (isArchived) await unarchiveLead(leadId)
+      else await archiveLead(leadId)
+      loadArchivedCount()
+    } catch { loadLeads() }
+  }
 
   const handleCreate = async () => {
     if (!accountId || !newLead.name) return
@@ -99,6 +126,16 @@ export default function Leads() {
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}><h1>Leads <span style={{ fontSize: 14, color: '#9B96B0', fontWeight: 400 }}>({formatNumber(total)})</span></h1><AccountSelector /></div>
         <div className="page-header-actions">
+          <button
+            className={`btn btn-sm ${showArchived ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => { setShowArchived(v => !v); setPage(1) }}
+            title={showArchived ? 'Mostrar leads ativos' : 'Mostrar leads arquivados'}>
+            {showArchived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
+            {showArchived ? ' Ver ativos' : ` Arquivados (${archivedCount.count})`}
+            {!showArchived && archivedCount.withActivity > 0 && (
+              <span style={{ marginLeft: 6, background: '#FFB300', color: '#000', fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 10 }}>{archivedCount.withActivity} nova{archivedCount.withActivity > 1 ? 's' : ''}</span>
+            )}
+          </button>
           <button className="btn btn-secondary btn-sm" onClick={async () => {
             const token = localStorage.getItem('dros_crm_token')
             const res = await fetch(`/api/leads/export?account_id=${accountId}`, { headers: { Authorization: `Bearer ${token}` } })
@@ -160,13 +197,23 @@ export default function Leads() {
         /* MOBILE: Card layout */
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {leads.map(l => (
-            <div key={l.id} className="lead-mobile-card" onClick={() => navigate(`/leads/${l.id}`)}>
+            <div key={l.id} className="lead-mobile-card" onClick={() => navigate(`/leads/${l.id}`)} style={{ position: 'relative' }}>
               <div className="lead-mobile-card-header">
                 <div>
                   <div className="lead-mobile-card-name">{l.name || 'Sem nome'}</div>
                   {l.phone && <div style={{ fontSize: 12, color: '#9B96B0', marginTop: 2 }}>{l.phone}</div>}
                 </div>
-                <span className="stage-badge" style={{ background: `${l.stage_color}20`, color: l.stage_color, fontSize: 10, flexShrink: 0 }}>{l.stage_name}</span>
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0 }}>
+                  <span className="stage-badge" style={{ background: `${l.stage_color}20`, color: l.stage_color, fontSize: 10 }}>{l.stage_name}</span>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    style={{ padding: '4px 6px', position: 'relative' }}
+                    title={l.is_archived ? 'Desarquivar' : 'Arquivar'}
+                    onClick={e => handleToggleArchive(e, l.id, !!l.is_archived)}>
+                    {l.is_archived ? <ArchiveRestore size={11} /> : <Archive size={11} />}
+                    {l.is_archived && l.has_new_after_archive ? <span style={{ position: 'absolute', top: 2, right: 2, width: 6, height: 6, borderRadius: '50%', background: '#FFB300' }} /> : null}
+                  </button>
+                </div>
               </div>
               <div className="lead-mobile-card-meta">
                 {l.attendant_name ? <span><Users size={10} /> {l.attendant_name}</span> : <span style={{ color: '#FF6B6B' }}>Sem atendente</span>}
@@ -196,7 +243,7 @@ export default function Leads() {
           <table>
             <thead><tr>
               {user?.role !== 'atendente' && <th style={{ width: 32 }}><button style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9B96B0' }} onClick={toggleSelectAll}>{selected.size === leads.length && leads.length > 0 ? <CheckSquare size={14} /> : <Square size={14} />}</button></th>}
-              <th>Nome</th><th>Telefone</th><th>Etapa</th><th>Atendente</th><th>Fonte</th><th>Cidade</th><th className="right">Criado</th>
+              <th>Nome</th><th>Telefone</th><th>Etapa</th><th>Atendente</th><th>Fonte</th><th>Cidade</th><th className="right">Criado</th><th style={{ width: 44 }}></th>
             </tr></thead>
             <tbody>
               {leads.map(l => (
@@ -211,9 +258,19 @@ export default function Leads() {
                   <td onClick={() => navigate(`/leads/${l.id}`)} style={{ fontSize: 11 }}>{l.source === 'whatsapp' ? <MessageCircle size={10} /> : <Phone size={10} />} {l.source}</td>
                   <td onClick={() => navigate(`/leads/${l.id}`)}>{l.city || '-'}</td>
                   <td className="right" onClick={() => navigate(`/leads/${l.id}`)}><Clock size={10} /> {timeAgo(l.created_at)}</td>
+                  <td style={{ textAlign: 'right' }}>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      style={{ padding: '4px 6px', position: 'relative' }}
+                      title={l.is_archived ? 'Desarquivar' : 'Arquivar'}
+                      onClick={e => handleToggleArchive(e, l.id, !!l.is_archived)}>
+                      {l.is_archived ? <ArchiveRestore size={12} /> : <Archive size={12} />}
+                      {l.is_archived && l.has_new_after_archive ? <span style={{ position: 'absolute', top: 2, right: 2, width: 6, height: 6, borderRadius: '50%', background: '#FFB300' }} /> : null}
+                    </button>
+                  </td>
                 </tr>
               ))}
-              {leads.length === 0 && <tr><td colSpan={user?.role !== 'atendente' ? 8 : 7} style={{ textAlign: 'center', padding: 40, color: '#6B6580' }}>Nenhum lead encontrado</td></tr>}
+              {leads.length === 0 && <tr><td colSpan={user?.role !== 'atendente' ? 9 : 8} style={{ textAlign: 'center', padding: 40, color: '#6B6580' }}>Nenhum lead encontrado</td></tr>}
             </tbody>
           </table>
           {total > 30 && (

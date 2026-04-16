@@ -357,6 +357,10 @@ addColumnIfNotExists('lead_cadences', 'last_executed_attempt_id', 'INTEGER')
 // leads: WhatsApp profile picture URL (cached, expires periodically)
 addColumnIfNotExists('leads', 'profile_pic_url', 'TEXT')
 addColumnIfNotExists('leads', 'profile_pic_updated_at', 'TEXT')
+// leads: archive flag + unread marker for messages that arrived after archiving
+addColumnIfNotExists('leads', 'is_archived', 'INTEGER NOT NULL DEFAULT 0')
+addColumnIfNotExists('leads', 'archived_at', 'TEXT')
+addColumnIfNotExists('leads', 'has_new_after_archive', 'INTEGER NOT NULL DEFAULT 0')
 
 // Seed super_admin if not exists
 const adminExists = db.prepare('SELECT id FROM users WHERE email = ?').get('admin@drosagencia.com.br')

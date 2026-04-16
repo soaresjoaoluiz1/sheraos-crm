@@ -10,9 +10,13 @@ const router = Router()
 router.get('/', (req, res) => {
   if (!req.accountId) return res.status(400).json({ error: 'account_id required' })
 
-  const { stage_id, attendant_id, funnel_id, source, tag, city, search, date_from, date_to, page = '1', limit = '50' } = req.query
+  const { stage_id, attendant_id, funnel_id, source, tag, city, search, date_from, date_to, show_archived, page = '1', limit = '50' } = req.query
   const where = ['l.account_id = ?', 'l.is_active = 1']
   const params = [req.accountId]
+
+  // Archive filter: default hides archived; pass show_archived=1 to list only archived, =all to include both
+  if (show_archived === '1') where.push('l.is_archived = 1')
+  else if (show_archived !== 'all') where.push('l.is_archived = 0')
 
   // Atendente sees only their leads
   if (req.user.role === 'atendente') { where.push('l.attendant_id = ?'); params.push(req.user.id) }
@@ -95,6 +99,17 @@ router.post('/', requireRole('super_admin', 'gerente'), (req, res) => {
   res.json({ lead })
 })
 
+// Archived count (+ count with new activity). Must be declared before `/:id`.
+router.get('/archived-count', (req, res) => {
+  if (!req.accountId) return res.json({ count: 0, withActivity: 0 })
+  const base = req.user.role === 'atendente'
+    ? { where: 'account_id = ? AND is_archived = 1 AND attendant_id = ?', args: [req.accountId, req.user.id] }
+    : { where: 'account_id = ? AND is_archived = 1', args: [req.accountId] }
+  const count = db.prepare(`SELECT COUNT(*) as n FROM leads WHERE ${base.where}`).get(...base.args).n
+  const withActivity = db.prepare(`SELECT COUNT(*) as n FROM leads WHERE ${base.where} AND has_new_after_archive = 1`).get(...base.args).n
+  res.json({ count, withActivity })
+})
+
 // Get lead detail
 router.get('/:id', (req, res) => {
   const lead = db.prepare(`
@@ -104,6 +119,12 @@ router.get('/:id', (req, res) => {
   `).get(req.params.id)
   if (!lead) return res.status(404).json({ error: 'Lead nao encontrado' })
   if (req.user.role === 'atendente' && lead.attendant_id !== req.user.id) return res.status(403).json({ error: 'Sem permissao' })
+
+  // Opening an archived lead acknowledges any new activity — clear the badge
+  if (lead.is_archived && lead.has_new_after_archive) {
+    db.prepare('UPDATE leads SET has_new_after_archive = 0 WHERE id = ?').run(lead.id)
+    lead.has_new_after_archive = 0
+  }
 
   lead.tags = db.prepare('SELECT t.id, t.name, t.color FROM lead_tags lt JOIN tags t ON lt.tag_id = t.id WHERE lt.lead_id = ?').all(lead.id)
   const messages = db.prepare('SELECT * FROM messages WHERE lead_id = ? ORDER BY created_at DESC LIMIT 50').all(lead.id)
@@ -158,6 +179,28 @@ router.put('/:id/stage', (req, res) => {
 
   const updated = db.prepare('SELECT l.*, fs.name as stage_name, fs.color as stage_color, wi.instance_name as instance_name FROM leads l LEFT JOIN funnel_stages fs ON l.stage_id = fs.id LEFT JOIN whatsapp_instances wi ON l.instance_id = wi.id WHERE l.id = ?').get(lead.id)
   try { broadcastSSE(lead.account_id, 'lead:updated', updated) } catch {}
+  res.json({ lead: updated })
+})
+
+// Archive lead — hides from pipeline/chat; messages still stored but don't broadcast
+router.patch('/:id/archive', (req, res) => {
+  const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id)
+  if (!lead) return res.status(404).json({ error: 'Lead nao encontrado' })
+  if (req.user.role === 'atendente' && lead.attendant_id !== req.user.id) return res.status(403).json({ error: 'Sem permissao' })
+  db.prepare("UPDATE leads SET is_archived = 1, archived_at = datetime('now'), has_new_after_archive = 0, updated_at = datetime('now') WHERE id = ?").run(lead.id)
+  const updated = db.prepare('SELECT * FROM leads WHERE id = ?').get(lead.id)
+  try { broadcastSSE(lead.account_id, 'lead:archived', { id: lead.id }) } catch {}
+  res.json({ lead: updated })
+})
+
+// Unarchive lead — returns it to the active pipeline/chat
+router.patch('/:id/unarchive', (req, res) => {
+  const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id)
+  if (!lead) return res.status(404).json({ error: 'Lead nao encontrado' })
+  if (req.user.role === 'atendente' && lead.attendant_id !== req.user.id) return res.status(403).json({ error: 'Sem permissao' })
+  db.prepare("UPDATE leads SET is_archived = 0, archived_at = NULL, has_new_after_archive = 0, updated_at = datetime('now') WHERE id = ?").run(lead.id)
+  const updated = db.prepare('SELECT * FROM leads WHERE id = ?').get(lead.id)
+  try { broadcastSSE(lead.account_id, 'lead:unarchived', updated) } catch {}
   res.json({ lead: updated })
 })
 
@@ -325,7 +368,7 @@ router.get('/pipeline/metrics', (req, res) => {
       COUNT(l.id) as lead_count,
       AVG(CASE WHEN l.updated_at != l.created_at THEN (julianday(l.updated_at) - julianday(l.created_at)) * 24 ELSE NULL END) as avg_hours_in_stage
     FROM funnel_stages fs
-    LEFT JOIN leads l ON l.stage_id = fs.id AND l.is_active = 1
+    LEFT JOIN leads l ON l.stage_id = fs.id AND l.is_active = 1 AND l.is_archived = 0
     WHERE fs.funnel_id = ?
     GROUP BY fs.id
     ORDER BY fs.position
