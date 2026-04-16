@@ -141,7 +141,7 @@ export const fetchPipelineMetrics = (accountId: number, funnelId: number) => api
 // Cadences (sequential contact workflows)
 // =============================================
 
-export interface CadenceAttempt { id: number; cadence_id: number; position: number; action_type: string; description: string | null; instructions: string | null; delay_days: number; scheduled_time: string | null; auto_message: string | null }
+export interface CadenceAttempt { id: number; cadence_id: number; position: number; action_type: string; description: string | null; instructions: string | null; delay_days: number; scheduled_time: string | null; auto_message: string | null; schedule_mode: 'date' | 'duration'; delay_minutes: number }
 export interface Cadence { id: number; account_id: number; name: string; description: string | null; is_active: number; created_at: string; attempts: CadenceAttempt[] }
 export interface LeadCadence {
   id: number; lead_id: number; cadence_id: number; current_attempt_id: number | null; status: string; started_at: string
@@ -168,7 +168,7 @@ export interface Task {
   stage_name: string | null; stage_color: string | null
   cadence_name: string; attempt_position: number; total_attempts: number
   action_type: string; attempt_description: string | null; attempt_instructions: string | null
-  delay_days: number; scheduled_time: string | null; auto_message: string | null
+  delay_days: number; scheduled_time: string | null; schedule_mode: 'date' | 'duration'; delay_minutes: number; auto_message: string | null
   due_datetime: string; bucket: 'overdue' | 'today' | 'tomorrow' | 'week' | 'later'
 }
 export interface TaskCounts { overdue: number; today: number; tomorrow: number; week: number; total: number }
@@ -176,7 +176,7 @@ export interface TaskGroups { overdue: Task[]; today: Task[]; tomorrow: Task[]; 
 
 export const fetchMyTasks = (accountId: number) => apiFetch<TaskGroups>(`/api/tasks/my?account_id=${accountId}`)
 export const fetchTaskCounts = (accountId: number) => apiFetch<TaskCounts>(`/api/tasks/counts?account_id=${accountId}`)
-export interface NextStep { position: number; action_type: string; description: string | null; delay_days: number; scheduled_time: string | null; due_datetime: string }
+export interface NextStep { position: number; action_type: string; description: string | null; delay_days: number; scheduled_time: string | null; schedule_mode: 'date' | 'duration'; delay_minutes: number; due_datetime: string }
 export interface CompleteResult { ok: boolean; completed: boolean; nextStep: NextStep | null }
 export const completeTask = (lcId: number, accountId: number) => apiFetch<CompleteResult>(`/api/tasks/${lcId}/complete?account_id=${accountId}`, { method: 'POST' })
 export const skipTask = (lcId: number, accountId: number) => apiFetch(`/api/tasks/${lcId}/skip?account_id=${accountId}`, { method: 'POST' })

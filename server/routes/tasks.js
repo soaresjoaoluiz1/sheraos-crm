@@ -4,26 +4,26 @@ import { broadcastSSE } from '../sse.js'
 
 const router = Router()
 
-// Calculate due datetime for a cadence attempt given assignment time
-function computeDueDatetime({ startedAt, delay_days, scheduled_time }) {
-  const assignedAt = new Date(startedAt.replace(' ', 'T') + 'Z')
-  let due
-  if ((delay_days || 0) === 0) {
-    if (scheduled_time) {
-      const [h, m] = scheduled_time.split(':').map(Number)
-      due = new Date(assignedAt.getTime() + (h || 0) * 3600000 + (m || 0) * 60000)
-    } else {
-      due = new Date(assignedAt)
-    }
-  } else {
-    due = new Date(assignedAt)
-    due.setDate(due.getDate() + delay_days)
-    if (scheduled_time) {
-      const [h, m] = scheduled_time.split(':').map(Number)
-      due.setHours(h || 0, m || 0, 0, 0)
-    } else {
-      due.setHours(0, 0, 0, 0)
-    }
+// Calculate due datetime for a cadence attempt.
+// Anchor: last_executed_at (when previous step was completed) OR started_at (for step 1).
+// Mode 'duration': anchor + delay_minutes
+// Mode 'date': anchor + delay_days at scheduled_time (clock time)
+function computeDueDatetime({ startedAt, lastExecutedAt, delay_days, scheduled_time, schedule_mode, delay_minutes }) {
+  const anchorIso = lastExecutedAt || startedAt
+  const anchor = new Date(anchorIso.replace(' ', 'T') + 'Z')
+
+  if (schedule_mode === 'duration') {
+    return new Date(anchor.getTime() + (delay_minutes || 0) * 60000)
+  }
+
+  // Date mode (default)
+  const due = new Date(anchor)
+  due.setDate(due.getDate() + (delay_days || 0))
+  if (scheduled_time) {
+    const [h, m] = scheduled_time.split(':').map(Number)
+    due.setHours(h || 0, m || 0, 0, 0)
+  } else if ((delay_days || 0) > 0) {
+    due.setHours(0, 0, 0, 0)
   }
   return due
 }
@@ -68,6 +68,8 @@ function getMyTasks({ accountId, userId, role }) {
       ca.instructions as attempt_instructions,
       ca.delay_days,
       ca.scheduled_time,
+      ca.schedule_mode,
+      ca.delay_minutes,
       ca.auto_message,
       (SELECT COUNT(*) FROM cadence_attempts WHERE cadence_id = lc.cadence_id) as total_attempts
     FROM lead_cadences lc
@@ -89,7 +91,14 @@ function getMyTasks({ accountId, userId, role }) {
   const weekEnd = new Date(today); weekEnd.setDate(today.getDate() + 7)
 
   const enriched = rows.map(r => {
-    const due = computeDueDatetime({ startedAt: r.started_at, delay_days: r.delay_days, scheduled_time: r.scheduled_time })
+    const due = computeDueDatetime({
+      startedAt: r.started_at,
+      lastExecutedAt: r.last_executed_at,
+      delay_days: r.delay_days,
+      scheduled_time: r.scheduled_time,
+      schedule_mode: r.schedule_mode,
+      delay_minutes: r.delay_minutes,
+    })
 
     let bucket = 'later'
     if (due < today) bucket = 'overdue'
@@ -145,13 +154,24 @@ router.post('/:lcId/complete', (req, res) => {
 
   let nextStep = null
   if (nextAttempt) {
-    const due = computeDueDatetime({ startedAt: lc.started_at, delay_days: nextAttempt.delay_days, scheduled_time: nextAttempt.scheduled_time })
+    // Anchor for the newly-current step is NOW (we just completed the previous one)
+    const nowIso = new Date().toISOString().slice(0, 19).replace('T', ' ')
+    const due = computeDueDatetime({
+      startedAt: lc.started_at,
+      lastExecutedAt: nowIso,
+      delay_days: nextAttempt.delay_days,
+      scheduled_time: nextAttempt.scheduled_time,
+      schedule_mode: nextAttempt.schedule_mode,
+      delay_minutes: nextAttempt.delay_minutes,
+    })
     nextStep = {
       position: nextAttempt.position,
       action_type: nextAttempt.action_type,
       description: nextAttempt.description,
       delay_days: nextAttempt.delay_days,
       scheduled_time: nextAttempt.scheduled_time,
+      schedule_mode: nextAttempt.schedule_mode,
+      delay_minutes: nextAttempt.delay_minutes,
       due_datetime: due.toISOString(),
     }
   }
@@ -170,9 +190,10 @@ router.post('/:lcId/skip', (req, res) => {
   const nextAttempt = db.prepare('SELECT * FROM cadence_attempts WHERE cadence_id = ? AND position > ? ORDER BY position LIMIT 1').get(lc.cadence_id, currentPos)
 
   if (nextAttempt) {
-    db.prepare("UPDATE lead_cadences SET current_attempt_id = ?, last_executed_attempt_id = ?, updated_at = datetime('now') WHERE id = ?").run(nextAttempt.id, lc.current_attempt_id, lc.id)
+    // Skip also resets the anchor for the next step (so D+1 / X minutes start counting now)
+    db.prepare("UPDATE lead_cadences SET current_attempt_id = ?, last_executed_at = datetime('now'), last_executed_attempt_id = ?, updated_at = datetime('now') WHERE id = ?").run(nextAttempt.id, lc.current_attempt_id, lc.id)
   } else {
-    db.prepare("UPDATE lead_cadences SET status = 'completed', last_executed_attempt_id = ?, updated_at = datetime('now') WHERE id = ?").run(lc.current_attempt_id, lc.id)
+    db.prepare("UPDATE lead_cadences SET status = 'completed', last_executed_at = datetime('now'), last_executed_attempt_id = ?, updated_at = datetime('now') WHERE id = ?").run(lc.current_attempt_id, lc.id)
   }
 
   const lead = db.prepare('SELECT account_id, attendant_id FROM leads WHERE id = ?').get(lc.lead_id)

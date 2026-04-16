@@ -36,9 +36,9 @@ export default function Cadences() {
   }
 
   const startEdit = (c: Cadence) => { setEditing(c); setEditAttempts(c.attempts.map(a => ({ ...a }))) }
-  const addAttempt = () => setEditAttempts(prev => [...prev, { action_type: 'mensagem', description: '', instructions: '' }])
+  const addAttempt = () => setEditAttempts(prev => [...prev, { action_type: 'mensagem', description: '', instructions: '', schedule_mode: 'date', delay_days: 0, delay_minutes: 0 }])
   const removeAttempt = (i: number) => setEditAttempts(prev => prev.filter((_, idx) => idx !== i))
-  const updateAttempt = (i: number, field: string, value: string) => setEditAttempts(prev => prev.map((a, idx) => idx === i ? { ...a, [field]: field === 'delay_days' ? (parseInt(value) || 0) : value } : a))
+  const updateAttempt = (i: number, field: string, value: string) => setEditAttempts(prev => prev.map((a, idx) => idx === i ? { ...a, [field]: (field === 'delay_days' || field === 'delay_minutes') ? (parseInt(value) || 0) : value } : a))
 
   const saveAttempts = async () => {
     if (!editing || !accountId) return
@@ -92,7 +92,9 @@ export default function Cadences() {
                             <Icon size={12} style={{ color: '#FFB300' }} />
                             <span style={{ fontSize: 12, fontWeight: 600, color: '#FFB300', textTransform: 'uppercase' }}>{at?.label || a.action_type}</span>
                             <span style={{ fontSize: 10, color: '#9B96B0', marginLeft: 'auto' }}>
-                              D+{a.delay_days ?? 0}{a.scheduled_time ? ` as ${a.scheduled_time}` : ''}
+                              {a.schedule_mode === 'duration'
+                                ? `${a.delay_minutes} min depois`
+                                : `D+${a.delay_days ?? 0}${a.scheduled_time ? ` as ${a.scheduled_time}` : ''}`}
                             </span>
                           </div>
                           {a.description && <div style={{ fontSize: 12, marginTop: 2 }}>{a.description}</div>}
@@ -125,14 +127,28 @@ export default function Cadences() {
                       </select>
                       <input className="input" value={a.description || ''} onChange={e => updateAttempt(i, 'description', e.target.value)} placeholder="Descricao" style={{ flex: 1 }} />
                     </div>
-                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <span style={{ fontSize: 11, color: '#FFB300', fontWeight: 700 }}>D+</span>
-                        <input type="number" min={0} className="input" value={a.delay_days ?? 0} onChange={e => updateAttempt(i, 'delay_days', e.target.value)} placeholder="0" style={{ width: 60, textAlign: 'center' }} title="D+0 = dia da criacao, D+1 = dia seguinte..." />
-                      </div>
-                      <span style={{ fontSize: 11, color: '#9B96B0' }}>as</span>
-                      <input type="time" className="input" value={a.scheduled_time || ''} onChange={e => updateAttempt(i, 'scheduled_time', e.target.value)} style={{ width: 110 }} title="Horario para executar (opcional)" />
+                    <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 4 }}>
+                      <button type="button" className={`btn btn-sm ${(a.schedule_mode || 'date') === 'date' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => updateAttempt(i, 'schedule_mode', 'date')} style={{ fontSize: 10, padding: '3px 10px' }}>Por Data</button>
+                      <button type="button" className={`btn btn-sm ${a.schedule_mode === 'duration' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => updateAttempt(i, 'schedule_mode', 'duration')} style={{ fontSize: 10, padding: '3px 10px' }}>Por Tempo</button>
+                      <span style={{ fontSize: 10, color: '#6B6580', marginLeft: 4 }}>
+                        {i === 0 ? '(a partir da atribuicao)' : '(a partir da conclusao da etapa anterior)'}
+                      </span>
                     </div>
+                    {a.schedule_mode === 'duration' ? (
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        <input type="number" min={0} className="input" value={a.delay_minutes ?? 0} onChange={e => updateAttempt(i, 'delay_minutes', e.target.value)} placeholder="10" style={{ width: 80, textAlign: 'center' }} />
+                        <span style={{ fontSize: 11, color: '#9B96B0' }}>minutos depois</span>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <span style={{ fontSize: 11, color: '#FFB300', fontWeight: 700 }}>D+</span>
+                          <input type="number" min={0} className="input" value={a.delay_days ?? 0} onChange={e => updateAttempt(i, 'delay_days', e.target.value)} placeholder="0" style={{ width: 60, textAlign: 'center' }} title="D+0 = mesmo dia, D+1 = dia seguinte..." />
+                        </div>
+                        <span style={{ fontSize: 11, color: '#9B96B0' }}>as</span>
+                        <input type="time" className="input" value={a.scheduled_time || ''} onChange={e => updateAttempt(i, 'scheduled_time', e.target.value)} style={{ width: 110 }} title="Horario do dia (opcional)" />
+                      </div>
+                    )}
                     <input className="input" value={a.instructions || ''} onChange={e => updateAttempt(i, 'instructions', e.target.value)} placeholder="Instrucoes (opcional)" style={{ fontSize: 12 }} />
                     {(a.action_type === 'whatsapp' || a.action_type === 'mensagem') && (
                       <textarea className="input" value={a.auto_message || ''} onChange={e => updateAttempt(i, 'auto_message', e.target.value)} placeholder="Mensagem automatica (opcional) — use {{name}} para nome do lead" rows={2} style={{ fontSize: 12, resize: 'vertical' }} />

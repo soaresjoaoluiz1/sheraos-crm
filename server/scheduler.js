@@ -33,8 +33,8 @@ async function checkWhatsAppInstances() {
 async function processCadences() {
   // Find all active lead_cadences with current_attempt_id set
   const active = db.prepare(`
-    SELECT lc.*, ca.delay_days, ca.scheduled_time, ca.action_type, ca.auto_message,
-      l.phone, l.name as lead_name, l.account_id, l.created_at as lead_created
+    SELECT lc.*, ca.delay_days, ca.scheduled_time, ca.schedule_mode, ca.delay_minutes, ca.action_type, ca.auto_message,
+      l.phone, l.name as lead_name, l.account_id
     FROM lead_cadences lc
     JOIN cadence_attempts ca ON ca.id = lc.current_attempt_id
     JOIN leads l ON l.id = lc.lead_id
@@ -44,33 +44,28 @@ async function processCadences() {
   const now = new Date()
 
   for (const row of active) {
-    // Anchor: lc.started_at (when cadence was assigned to this lead). UTC string.
-    const assignedAt = new Date(row.started_at.replace(' ', 'T') + 'Z')
+    // Anchor for current step: last_executed_at (previous step done time) OR started_at (step 1)
+    const anchorIso = row.last_executed_attempt_id && row.last_executed_at ? row.last_executed_at : row.started_at
+    const anchor = new Date(anchorIso.replace(' ', 'T') + 'Z')
     let target
 
-    if ((row.delay_days || 0) === 0) {
-      // D+0: HH:MM treated as duration offset from assignment time
-      if (row.scheduled_time) {
-        const [h, m] = row.scheduled_time.split(':').map(Number)
-        target = new Date(assignedAt.getTime() + (h || 0) * 3600000 + (m || 0) * 60000)
-      } else {
-        target = new Date(assignedAt)
-      }
+    if (row.schedule_mode === 'duration') {
+      target = new Date(anchor.getTime() + (row.delay_minutes || 0) * 60000)
     } else {
-      // D+N (N≥1): HH:MM = clock time on (assigned + N days), local TZ America/Sao_Paulo (UTC-3)
-      target = new Date(assignedAt)
-      target.setDate(target.getDate() + row.delay_days)
+      target = new Date(anchor)
+      target.setDate(target.getDate() + (row.delay_days || 0))
       if (row.scheduled_time) {
         const [h, m] = row.scheduled_time.split(':').map(Number)
-        target.setUTCHours((h || 0) + 3, m || 0, 0, 0)
-      } else {
+        target.setUTCHours((h || 0) + 3, m || 0, 0, 0) // America/Sao_Paulo UTC-3
+      } else if ((row.delay_days || 0) > 0) {
         target.setUTCHours(3, 0, 0, 0) // midnight local = 03:00 UTC
       }
     }
 
-    // Only execute if target time has passed and not already executed
+    // Only execute if target time has passed
     if (now < target) continue
-    if (row.last_executed_at) continue // Already executed this attempt
+    // Skip if this attempt was already executed (last_executed_attempt_id === current_attempt_id)
+    if (row.last_executed_attempt_id === row.current_attempt_id) continue
 
     // If has auto_message → execute automatically and advance
     if ((row.action_type === 'whatsapp' || row.action_type === 'mensagem') && row.auto_message && row.phone) {

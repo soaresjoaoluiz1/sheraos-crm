@@ -351,6 +351,9 @@ addColumnIfNotExists('cadence_attempts', 'delay_days', 'INTEGER NOT NULL DEFAULT
 addColumnIfNotExists('cadence_attempts', 'scheduled_time', 'TEXT')
 // cadence_attempts: auto-send message template (for WhatsApp auto)
 addColumnIfNotExists('cadence_attempts', 'auto_message', 'TEXT')
+// cadence_attempts: schedule mode ('date' = D+N HH:MM, 'duration' = delay_minutes from anchor)
+addColumnIfNotExists('cadence_attempts', 'schedule_mode', "TEXT NOT NULL DEFAULT 'date'")
+addColumnIfNotExists('cadence_attempts', 'delay_minutes', 'INTEGER NOT NULL DEFAULT 0')
 // lead_cadences: track when each attempt was executed/skipped
 addColumnIfNotExists('lead_cadences', 'last_executed_at', 'TEXT')
 addColumnIfNotExists('lead_cadences', 'last_executed_attempt_id', 'INTEGER')

@@ -23,9 +23,9 @@ router.post('/', requireRole('super_admin', 'gerente'), (req, res) => {
   const cadenceId = result.lastInsertRowid
 
   if (attempts && Array.isArray(attempts)) {
-    const stmt = db.prepare('INSERT INTO cadence_attempts (cadence_id, position, action_type, description, instructions, delay_days, scheduled_time, auto_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    const stmt = db.prepare('INSERT INTO cadence_attempts (cadence_id, position, action_type, description, instructions, delay_days, scheduled_time, auto_message, schedule_mode, delay_minutes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
     attempts.forEach((a, i) => {
-      stmt.run(cadenceId, i, a.action_type || 'mensagem', a.description || null, a.instructions || null, parseInt(a.delay_days) || 0, a.scheduled_time || null, a.auto_message || null)
+      stmt.run(cadenceId, i, a.action_type || 'mensagem', a.description || null, a.instructions || null, parseInt(a.delay_days) || 0, a.scheduled_time || null, a.auto_message || null, a.schedule_mode === 'duration' ? 'duration' : 'date', parseInt(a.delay_minutes) || 0)
     })
   }
 
@@ -67,9 +67,9 @@ router.put('/:id/attempts', requireRole('super_admin', 'gerente'), (req, res) =>
 
   const transaction = db.transaction(() => {
     db.prepare('DELETE FROM cadence_attempts WHERE cadence_id = ?').run(cadence.id)
-    const stmt = db.prepare('INSERT INTO cadence_attempts (cadence_id, position, action_type, description, instructions, delay_days, scheduled_time, auto_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    const stmt = db.prepare('INSERT INTO cadence_attempts (cadence_id, position, action_type, description, instructions, delay_days, scheduled_time, auto_message, schedule_mode, delay_minutes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
     attempts.forEach((a, i) => {
-      stmt.run(cadence.id, i, a.action_type || 'mensagem', a.description || null, a.instructions || null, parseInt(a.delay_days) || 0, a.scheduled_time || null, a.auto_message || null)
+      stmt.run(cadence.id, i, a.action_type || 'mensagem', a.description || null, a.instructions || null, parseInt(a.delay_days) || 0, a.scheduled_time || null, a.auto_message || null, a.schedule_mode === 'duration' ? 'duration' : 'date', parseInt(a.delay_minutes) || 0)
     })
   })
   transaction()
@@ -124,7 +124,7 @@ router.put('/lead-cadence/:lcId/advance', (req, res) => {
   }
 
   const updated = db.prepare(`
-    SELECT lc.*, c.name as cadence_name, ca.action_type, ca.description as attempt_description, ca.instructions as attempt_instructions, ca.auto_message as attempt_message, ca.position as attempt_position,
+    SELECT lc.*, c.name as cadence_name, ca.action_type, ca.description as attempt_description, ca.instructions as attempt_instructions, ca.auto_message as attempt_message, ca.position as attempt_position, ca.delay_days, ca.scheduled_time, ca.schedule_mode, ca.delay_minutes,
       (SELECT COUNT(*) FROM cadence_attempts WHERE cadence_id = lc.cadence_id) as total_attempts
     FROM lead_cadences lc
     LEFT JOIN cadences c ON c.id = lc.cadence_id
@@ -137,7 +137,7 @@ router.put('/lead-cadence/:lcId/advance', (req, res) => {
 // Get lead's active cadence
 router.get('/lead/:leadId', (req, res) => {
   const lc = db.prepare(`
-    SELECT lc.*, c.name as cadence_name, ca.action_type, ca.description as attempt_description, ca.instructions as attempt_instructions, ca.auto_message as attempt_message, ca.position as attempt_position,
+    SELECT lc.*, c.name as cadence_name, ca.action_type, ca.description as attempt_description, ca.instructions as attempt_instructions, ca.auto_message as attempt_message, ca.position as attempt_position, ca.delay_days, ca.scheduled_time, ca.schedule_mode, ca.delay_minutes,
       (SELECT COUNT(*) FROM cadence_attempts WHERE cadence_id = lc.cadence_id) as total_attempts
     FROM lead_cadences lc
     LEFT JOIN cadences c ON c.id = lc.cadence_id
