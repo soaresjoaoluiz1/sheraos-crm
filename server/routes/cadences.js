@@ -67,9 +67,9 @@ router.put('/:id/attempts', requireRole('super_admin', 'gerente'), (req, res) =>
 
   const transaction = db.transaction(() => {
     db.prepare('DELETE FROM cadence_attempts WHERE cadence_id = ?').run(cadence.id)
-    const stmt = db.prepare('INSERT INTO cadence_attempts (cadence_id, position, action_type, description, instructions, delay_days, scheduled_time) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    const stmt = db.prepare('INSERT INTO cadence_attempts (cadence_id, position, action_type, description, instructions, delay_days, scheduled_time, auto_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
     attempts.forEach((a, i) => {
-      stmt.run(cadence.id, i, a.action_type || 'mensagem', a.description || null, a.instructions || null, parseInt(a.delay_days) || 0, a.scheduled_time || null)
+      stmt.run(cadence.id, i, a.action_type || 'mensagem', a.description || null, a.instructions || null, parseInt(a.delay_days) || 0, a.scheduled_time || null, a.auto_message || null)
     })
   })
   transaction()
