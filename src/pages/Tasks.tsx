@@ -2,10 +2,10 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAccount } from '../context/AccountContext'
 import { useSSE } from '../context/SSEContext'
-import { fetchMyTasks, completeTask, skipTask, type Task, type TaskGroups } from '../lib/api'
+import { fetchMyTasks, completeTask, skipTask, sendMessage, type Task, type TaskGroups } from '../lib/api'
 import {
   ListTodo, Phone, MessageCircle, Mail, Video, MapPin, Check, SkipForward,
-  ExternalLink, Clock, AlertCircle, User, Calendar, CheckCircle, ChevronRight,
+  ExternalLink, Clock, AlertCircle, User, Calendar, CheckCircle, Send,
 } from 'lucide-react'
 
 const ACTION_ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
@@ -57,6 +57,18 @@ export default function Tasks() {
     setActioning(null)
   }
 
+  const handleSendAndComplete = async (t: Task) => {
+    if (!accountId || !t.auto_message) return
+    setActioning(t.lead_cadence_id)
+    try {
+      const text = t.auto_message.replace(/\{\{name\}\}/g, t.lead_name || 'Cliente')
+      await sendMessage(t.lead_id, accountId, text)
+      await completeTask(t.lead_cadence_id, accountId)
+      load()
+    } catch (e: any) { alert('Erro: ' + (e?.message || 'desconhecido')) }
+    setActioning(null)
+  }
+
   const formatDueTime = (iso: string) => {
     const d = new Date(iso)
     return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
@@ -101,7 +113,12 @@ export default function Tasks() {
 
             {/* Actions */}
             <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
-              <button className="btn btn-primary btn-sm" onClick={() => navigate(`/chat`)} style={{ fontSize: 11 }}>
+              {t.auto_message && (t.action_type === 'mensagem' || t.action_type === 'whatsapp') && (
+                <button className="btn btn-primary btn-sm" onClick={() => handleSendAndComplete(t)} disabled={actioning === t.lead_cadence_id} style={{ fontSize: 11 }}>
+                  <Send size={11} /> Enviar Mensagem
+                </button>
+              )}
+              <button className="btn btn-secondary btn-sm" onClick={() => navigate(`/chat`)} style={{ fontSize: 11 }}>
                 <MessageCircle size={11} /> Abrir Chat
               </button>
               <button className="btn btn-secondary btn-sm" onClick={() => navigate(`/leads/${t.lead_id}`)} style={{ fontSize: 11 }}>
