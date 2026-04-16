@@ -124,7 +124,8 @@ router.put('/lead-cadence/:lcId/advance', (req, res) => {
   }
 
   const updated = db.prepare(`
-    SELECT lc.*, c.name as cadence_name, ca.action_type, ca.description as attempt_description, ca.instructions as attempt_instructions, ca.position as attempt_position
+    SELECT lc.*, c.name as cadence_name, ca.action_type, ca.description as attempt_description, ca.instructions as attempt_instructions, ca.auto_message as attempt_message, ca.position as attempt_position,
+      (SELECT COUNT(*) FROM cadence_attempts WHERE cadence_id = lc.cadence_id) as total_attempts
     FROM lead_cadences lc
     LEFT JOIN cadences c ON c.id = lc.cadence_id
     LEFT JOIN cadence_attempts ca ON ca.id = lc.current_attempt_id
@@ -136,7 +137,7 @@ router.put('/lead-cadence/:lcId/advance', (req, res) => {
 // Get lead's active cadence
 router.get('/lead/:leadId', (req, res) => {
   const lc = db.prepare(`
-    SELECT lc.*, c.name as cadence_name, ca.action_type, ca.description as attempt_description, ca.instructions as attempt_instructions, ca.position as attempt_position,
+    SELECT lc.*, c.name as cadence_name, ca.action_type, ca.description as attempt_description, ca.instructions as attempt_instructions, ca.auto_message as attempt_message, ca.position as attempt_position,
       (SELECT COUNT(*) FROM cadence_attempts WHERE cadence_id = lc.cadence_id) as total_attempts
     FROM lead_cadences lc
     LEFT JOIN cadences c ON c.id = lc.cadence_id

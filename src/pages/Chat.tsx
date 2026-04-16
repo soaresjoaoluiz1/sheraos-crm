@@ -147,6 +147,18 @@ export default function Chat() {
   const handleAddTag = async (tagId: number) => { if (lead) { await addLeadTag(lead.id, tagId); loadLead(); setShowTagMenu(false) } }
   const handleRemoveTag = async (tagId: number) => { if (lead) { await removeLeadTag(lead.id, tagId); loadLead() } }
   const handleAdvanceCadence = async () => { if (leadCadence && accountId) { await advanceLeadCadence(leadCadence.id, accountId); loadLead() } }
+  const handleSendCadenceMessage = async () => {
+    if (!leadCadence?.attempt_message || !lead || !accountId) return
+    const text = leadCadence.attempt_message.replace(/\{\{name\}\}/g, lead.name || 'Cliente')
+    setSending(true)
+    try {
+      const msg = await sendMessage(lead.id, accountId, text)
+      setMessages(prev => [...prev, msg])
+      await advanceLeadCadence(leadCadence.id, accountId)
+      loadLead()
+    } catch {}
+    setSending(false)
+  }
   const handleAssignCadence = async (cadenceId: number) => { if (lead && accountId) { await assignLeadCadence(cadenceId, accountId, lead.id); setShowCadenceMenu(false); loadLead() } }
 
   const handleCreateTag = async () => {
@@ -402,8 +414,19 @@ export default function Chat() {
                         ) : (
                           <>
                             <div style={{ fontSize: 11, color: '#FFB300', marginTop: 2 }}>Etapa {(leadCadence.attempt_position ?? 0) + 1}/{leadCadence.total_attempts}: {leadCadence.action_type?.toUpperCase()}</div>
-                            {leadCadence.attempt_description && <div style={{ fontSize: 10, color: '#C8C4D4', marginTop: 2 }}>{leadCadence.attempt_description}</div>}
-                            <button className="btn btn-primary btn-sm" style={{ marginTop: 8, width: '100%', fontSize: 11 }} onClick={handleAdvanceCadence}><ChevronRight size={10} /> Avancar</button>
+                            {leadCadence.attempt_description && <div style={{ fontSize: 11, color: '#fff', marginTop: 2, fontWeight: 500 }}>{leadCadence.attempt_description}</div>}
+                            {leadCadence.attempt_instructions && <div style={{ fontSize: 10, color: '#9B96B0', marginTop: 2, fontStyle: 'italic' }}>{leadCadence.attempt_instructions}</div>}
+                            {leadCadence.attempt_message ? (
+                              <>
+                                <div style={{ marginTop: 8, padding: 8, background: 'rgba(255,179,0,0.05)', border: '1px solid rgba(255,179,0,0.2)', borderRadius: 6, fontSize: 11, color: '#C8C4D4', whiteSpace: 'pre-wrap', maxHeight: 140, overflowY: 'auto' }}>
+                                  {leadCadence.attempt_message.replace(/\{\{name\}\}/g, lead.name || 'Cliente')}
+                                </div>
+                                <button className="btn btn-primary btn-sm" style={{ marginTop: 8, width: '100%', fontSize: 11 }} onClick={handleSendCadenceMessage} disabled={sending}><Send size={10} /> Enviar e avancar</button>
+                                <button className="btn btn-secondary btn-sm" style={{ marginTop: 6, width: '100%', fontSize: 10 }} onClick={handleAdvanceCadence}><ChevronRight size={10} /> So avancar (sem enviar)</button>
+                              </>
+                            ) : (
+                              <button className="btn btn-primary btn-sm" style={{ marginTop: 8, width: '100%', fontSize: 11 }} onClick={handleAdvanceCadence}><ChevronRight size={10} /> Avancar</button>
+                            )}
                           </>
                         )}
                       </>
