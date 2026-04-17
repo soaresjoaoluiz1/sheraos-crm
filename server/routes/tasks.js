@@ -112,21 +112,63 @@ function getMyTasks({ accountId, userId, role }) {
   return enriched
 }
 
-// GET /api/tasks/my — group tasks by bucket
+// Get standalone tasks and compute buckets
+function getStandaloneTasks({ accountId, userId, role }) {
+  let where = 'st.account_id = ? AND st.status = ?'
+  const params = [accountId, 'pending']
+  if (role === 'atendente') {
+    where += ' AND (st.assigned_to = ? OR st.created_by = ?)'
+    params.push(userId, userId)
+  }
+
+  const rows = db.prepare(`
+    SELECT st.*, l.name as lead_name, l.phone as lead_phone, l.profile_pic_url,
+      u.name as assigned_to_name, c.name as created_by_name
+    FROM standalone_tasks st
+    LEFT JOIN leads l ON l.id = st.lead_id
+    LEFT JOIN users u ON u.id = st.assigned_to
+    LEFT JOIN users c ON c.id = st.created_by
+    WHERE ${where}
+    ORDER BY st.due_datetime ASC
+  `).all(...params)
+
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1)
+  const dayAfterTomorrow = new Date(today); dayAfterTomorrow.setDate(today.getDate() + 2)
+  const weekEnd = new Date(today); weekEnd.setDate(today.getDate() + 7)
+
+  return rows.map(r => {
+    const due = new Date(r.due_datetime)
+    let bucket = 'later'
+    if (due < today) bucket = 'overdue'
+    else if (due < tomorrow) bucket = 'today'
+    else if (due < dayAfterTomorrow) bucket = 'tomorrow'
+    else if (due < weekEnd) bucket = 'week'
+
+    return { ...r, bucket, type: 'standalone' }
+  })
+}
+
+// GET /api/tasks/my — group tasks by bucket (cadence + standalone)
 router.get('/my', (req, res) => {
   if (!req.accountId) return res.status(400).json({ error: 'account_id required' })
-  const tasks = getMyTasks({ accountId: req.accountId, userId: req.user.id, role: req.user.role })
+  const cadenceTasks = getMyTasks({ accountId: req.accountId, userId: req.user.id, role: req.user.role }).map(t => ({ ...t, type: 'cadence' }))
+  const standaloneTasks = getStandaloneTasks({ accountId: req.accountId, userId: req.user.id, role: req.user.role })
+  const all = [...cadenceTasks, ...standaloneTasks].sort((a, b) => new Date(a.due_datetime).getTime() - new Date(b.due_datetime).getTime())
   const grouped = { overdue: [], today: [], tomorrow: [], week: [], later: [] }
-  for (const t of tasks) grouped[t.bucket].push(t)
+  for (const t of all) grouped[t.bucket].push(t)
   res.json(grouped)
 })
 
 // GET /api/tasks/counts — just numbers for sidebar badge
 router.get('/counts', (req, res) => {
   if (!req.accountId) return res.json({ overdue: 0, today: 0, tomorrow: 0 })
-  const tasks = getMyTasks({ accountId: req.accountId, userId: req.user.id, role: req.user.role })
-  const counts = { overdue: 0, today: 0, tomorrow: 0, week: 0, total: tasks.length }
-  for (const t of tasks) counts[t.bucket] = (counts[t.bucket] || 0) + 1
+  const cadenceTasks = getMyTasks({ accountId: req.accountId, userId: req.user.id, role: req.user.role })
+  const standaloneTasks = getStandaloneTasks({ accountId: req.accountId, userId: req.user.id, role: req.user.role })
+  const all = [...cadenceTasks, ...standaloneTasks]
+  const counts = { overdue: 0, today: 0, tomorrow: 0, week: 0, total: all.length }
+  for (const t of all) counts[t.bucket] = (counts[t.bucket] || 0) + 1
   res.json(counts)
 })
 
@@ -199,6 +241,54 @@ router.post('/:lcId/skip', (req, res) => {
   const lead = db.prepare('SELECT account_id, attendant_id FROM leads WHERE id = ?').get(lc.lead_id)
   if (lead) broadcastSSE(lead.account_id, 'task:updated', { lead_cadence_id: lc.id, attendant_id: lead.attendant_id })
 
+  res.json({ ok: true })
+})
+
+// ─── Standalone Tasks ─────────────────────────────────────────
+
+// Create standalone task
+router.post('/standalone', (req, res) => {
+  if (!req.accountId) return res.status(400).json({ error: 'account_id required' })
+  const { lead_id, title, description, due_mode, due_date, due_time, due_minutes, assigned_to } = req.body
+  if (!title) return res.status(400).json({ error: 'title obrigatorio' })
+
+  // Calculate due_datetime
+  let due
+  const now = new Date()
+  if (due_mode === 'duration') {
+    due = new Date(now.getTime() + (parseInt(due_minutes) || 10) * 60000)
+  } else {
+    // date mode
+    if (due_date && due_time) {
+      due = new Date(`${due_date}T${due_time}:00`)
+    } else if (due_date) {
+      due = new Date(`${due_date}T00:00:00`)
+    } else {
+      due = now
+    }
+  }
+
+  const result = db.prepare(`
+    INSERT INTO standalone_tasks (account_id, lead_id, assigned_to, title, description, due_datetime, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(req.accountId, lead_id || null, assigned_to || req.user.id, title, description || null, due.toISOString(), req.user.id)
+
+  broadcastSSE(req.accountId, 'task:updated', { standalone_task_id: result.lastInsertRowid })
+  const task = db.prepare('SELECT * FROM standalone_tasks WHERE id = ?').get(result.lastInsertRowid)
+  res.json({ task })
+})
+
+// Complete standalone task
+router.post('/standalone/:id/complete', (req, res) => {
+  db.prepare("UPDATE standalone_tasks SET status = 'completed', completed_at = datetime('now') WHERE id = ?").run(req.params.id)
+  const task = db.prepare('SELECT account_id FROM standalone_tasks WHERE id = ?').get(req.params.id)
+  if (task) broadcastSSE(task.account_id, 'task:updated', { standalone_task_id: req.params.id })
+  res.json({ ok: true })
+})
+
+// Delete standalone task
+router.delete('/standalone/:id', (req, res) => {
+  db.prepare('DELETE FROM standalone_tasks WHERE id = ?').run(req.params.id)
   res.json({ ok: true })
 })
 

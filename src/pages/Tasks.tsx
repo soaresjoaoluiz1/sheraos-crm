@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAccount } from '../context/AccountContext'
 import { useSSE } from '../context/SSEContext'
-import { fetchMyTasks, completeTask, skipTask, sendMessage, type Task, type TaskGroups, type NextStep } from '../lib/api'
+import { fetchMyTasks, completeTask, skipTask, sendMessage, completeStandaloneTask, type Task, type TaskGroups, type NextStep } from '../lib/api'
 import {
   ListTodo, Phone, MessageCircle, Mail, Video, MapPin, Check, SkipForward,
   ExternalLink, Clock, AlertCircle, User, Calendar, CheckCircle, Send,
@@ -76,62 +76,98 @@ export default function Tasks() {
     return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
   }
 
-  const renderTask = (t: Task) => {
-    const Icon = ACTION_ICONS[t.action_type] || MessageCircle
+  const handleCompleteStandalone = async (id: number) => {
+    if (!accountId) return
+    setActioning(id)
+    try { await completeStandaloneTask(id, accountId); load() } catch (e: any) { alert('Erro: ' + e.message) }
+    setActioning(null)
+  }
+
+  const renderTask = (t: any) => {
+    const isStandalone = t.type === 'standalone'
+    const taskKey = isStandalone ? `s-${t.id}` : `c-${t.lead_cadence_id}`
+    const actionId = isStandalone ? t.id : t.lead_cadence_id
+    const Icon = isStandalone ? ListTodo : (ACTION_ICONS[t.action_type] || MessageCircle)
+
     return (
-      <div key={t.lead_cadence_id} className="card" style={{ padding: 14, marginBottom: 10 }}>
+      <div key={taskKey} className="card" style={{ padding: 14, marginBottom: 10, borderLeft: isStandalone ? '3px solid #9B59B6' : undefined }}>
         <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
           {/* Avatar */}
-          <div style={{ width: 40, height: 40, borderRadius: '50%', background: t.stage_color ? `${t.stage_color}25` : '#FFB30025', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}>
+          <div style={{ width: 40, height: 40, borderRadius: '50%', background: isStandalone ? '#9B59B625' : (t.stage_color ? `${t.stage_color}25` : '#FFB30025'), display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}>
             {t.profile_pic_url ? (
               <img src={t.profile_pic_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
             ) : (
-              <User size={18} style={{ color: t.stage_color || '#FFB300' }} />
+              <User size={18} style={{ color: isStandalone ? '#9B59B6' : (t.stage_color || '#FFB300') }} />
             )}
           </div>
 
           {/* Content */}
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', marginBottom: 4 }}>
-              <span style={{ fontWeight: 600, fontSize: 14 }}>{t.lead_name || t.lead_phone || 'Sem nome'}</span>
+              <span style={{ fontWeight: 600, fontSize: 14 }}>{isStandalone ? t.title : (t.lead_name || t.lead_phone || 'Sem nome')}</span>
               <span style={{ fontSize: 11, color: '#9B96B0', display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
                 <Clock size={11} /> {formatDueTime(t.due_datetime)}
               </span>
             </div>
 
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', background: '#FFB30015', borderRadius: 6, fontSize: 11, color: '#FFB300', fontWeight: 600 }}>
-                <Icon size={11} /> {ACTION_LABELS[t.action_type] || t.action_type}
-              </span>
-              <span style={{ fontSize: 10, color: '#9B96B0' }}>
-                Etapa {t.attempt_position + 1}/{t.total_attempts} · {t.cadence_name}
-              </span>
-              {t.stage_name && <span style={{ fontSize: 10, color: t.stage_color || '#9B96B0', background: `${t.stage_color || '#9B96B0'}15`, padding: '2px 6px', borderRadius: 6 }}>{t.stage_name}</span>}
-            </div>
-
-            {t.attempt_description && <div style={{ fontSize: 12, color: '#C8C4D4', marginBottom: 4 }}>{t.attempt_description}</div>}
-            {t.attempt_instructions && <div style={{ fontSize: 11, color: '#9B96B0', marginBottom: 4, fontStyle: 'italic' }}>{t.attempt_instructions}</div>}
-            {t.auto_message && <div style={{ fontSize: 11, color: '#34C759', background: 'rgba(52,199,89,0.08)', padding: '6px 8px', borderRadius: 6, marginTop: 4 }}>📤 Msg automatica: "{t.auto_message.substring(0, 60)}{t.auto_message.length > 60 ? '...' : ''}"</div>}
+            {isStandalone ? (
+              <>
+                {t.lead_name && <div style={{ fontSize: 12, color: '#C8C4D4', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}><User size={11} /> {t.lead_name}</div>}
+                {t.description && <div style={{ fontSize: 11, color: '#9B96B0', marginBottom: 4 }}>{t.description}</div>}
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', background: '#9B59B615', borderRadius: 6, fontSize: 11, color: '#9B59B6', fontWeight: 600 }}>
+                  <ListTodo size={11} /> Tarefa avulsa
+                </span>
+              </>
+            ) : (
+              <>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', background: '#FFB30015', borderRadius: 6, fontSize: 11, color: '#FFB300', fontWeight: 600 }}>
+                    <Icon size={11} /> {ACTION_LABELS[t.action_type] || t.action_type}
+                  </span>
+                  <span style={{ fontSize: 10, color: '#9B96B0' }}>
+                    Etapa {t.attempt_position + 1}/{t.total_attempts} · {t.cadence_name}
+                  </span>
+                  {t.stage_name && <span style={{ fontSize: 10, color: t.stage_color || '#9B96B0', background: `${t.stage_color || '#9B96B0'}15`, padding: '2px 6px', borderRadius: 6 }}>{t.stage_name}</span>}
+                </div>
+                {t.attempt_description && <div style={{ fontSize: 12, color: '#C8C4D4', marginBottom: 4 }}>{t.attempt_description}</div>}
+                {t.attempt_instructions && <div style={{ fontSize: 11, color: '#9B96B0', marginBottom: 4, fontStyle: 'italic' }}>{t.attempt_instructions}</div>}
+                {t.auto_message && <div style={{ fontSize: 11, color: '#34C759', background: 'rgba(52,199,89,0.08)', padding: '6px 8px', borderRadius: 6, marginTop: 4 }}>Msg automatica: "{t.auto_message.substring(0, 60)}{t.auto_message.length > 60 ? '...' : ''}"</div>}
+              </>
+            )}
 
             {/* Actions */}
             <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
-              {t.auto_message && (t.action_type === 'mensagem' || t.action_type === 'whatsapp') && (
-                <button className="btn btn-primary btn-sm" onClick={() => handleSendAndComplete(t)} disabled={actioning === t.lead_cadence_id} style={{ fontSize: 11 }}>
-                  <Send size={11} /> Enviar Mensagem
+              {isStandalone ? (
+                <button className="btn btn-primary btn-sm" onClick={() => handleCompleteStandalone(t.id)} disabled={actioning === t.id} style={{ fontSize: 11, background: '#34C759', borderColor: '#34C759' }}>
+                  <Check size={11} /> Concluir
                 </button>
+              ) : (
+                <>
+                  {t.auto_message && (t.action_type === 'mensagem' || t.action_type === 'whatsapp') && (
+                    <button className="btn btn-primary btn-sm" onClick={() => handleSendAndComplete(t)} disabled={actioning === t.lead_cadence_id} style={{ fontSize: 11 }}>
+                      <Send size={11} /> Enviar Mensagem
+                    </button>
+                  )}
+                </>
               )}
               <button className="btn btn-secondary btn-sm" onClick={() => navigate(`/chat`)} style={{ fontSize: 11 }}>
                 <MessageCircle size={11} /> Abrir Chat
               </button>
-              <button className="btn btn-secondary btn-sm" onClick={() => navigate(`/leads/${t.lead_id}`)} style={{ fontSize: 11 }}>
-                <ExternalLink size={11} /> Ver Lead
-              </button>
-              <button className="btn btn-primary btn-sm" onClick={() => handleComplete(t.lead_cadence_id)} disabled={actioning === t.lead_cadence_id} style={{ fontSize: 11, background: '#34C759', borderColor: '#34C759' }}>
-                <Check size={11} /> Concluido
-              </button>
-              <button className="btn btn-secondary btn-sm" onClick={() => handleSkip(t.lead_cadence_id)} disabled={actioning === t.lead_cadence_id} style={{ fontSize: 11 }}>
-                <SkipForward size={11} /> Pular
-              </button>
+              {t.lead_id && (
+                <button className="btn btn-secondary btn-sm" onClick={() => navigate(`/leads/${t.lead_id}`)} style={{ fontSize: 11 }}>
+                  <ExternalLink size={11} /> Ver Lead
+                </button>
+              )}
+              {!isStandalone && (
+                <>
+                  <button className="btn btn-primary btn-sm" onClick={() => handleComplete(t.lead_cadence_id)} disabled={actioning === t.lead_cadence_id} style={{ fontSize: 11, background: '#34C759', borderColor: '#34C759' }}>
+                    <Check size={11} /> Concluido
+                  </button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => handleSkip(t.lead_cadence_id)} disabled={actioning === t.lead_cadence_id} style={{ fontSize: 11 }}>
+                    <SkipForward size={11} /> Pular
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

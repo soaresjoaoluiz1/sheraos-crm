@@ -6,13 +6,13 @@ import {
   fetchWhatsAppInstances, fetchLeads, fetchLead, fetchFunnels, fetchUsers, fetchTags,
   sendMessage, updateLead, moveLeadStage, assignLead, addLeadNote, addLeadTag, removeLeadTag,
   fetchLeadCadence, advanceLeadCadence, fetchCadences, assignLeadCadence, createTag,
-  archiveLead,
+  archiveLead, createStandaloneTask,
   type WhatsAppInstance, type Lead, type Message, type StageHistoryEntry, type LeadNote,
   type Funnel, type User as UserType, type Tag, type LeadCadence, type Cadence,
 } from '../lib/api'
 import {
   MessageCircle, Search, Send, Phone, User, Edit3, Save, X, Plus,
-  StickyNote, Tag as TagIcon, GitBranch, Smartphone, ListOrdered, ChevronRight, Check, Clock, Archive,
+  StickyNote, Tag as TagIcon, GitBranch, Smartphone, ListOrdered, ChevronRight, Check, Clock, Archive, ListTodo,
 } from 'lucide-react'
 import MessageMedia from '../components/MessageMedia'
 
@@ -53,6 +53,12 @@ export default function Chat() {
   const [showTagMenu, setShowTagMenu] = useState(false)
   const [newTagName, setNewTagName] = useState('')
   const [newTagColor, setNewTagColor] = useState('#FFB300')
+  const [taskTitle, setTaskTitle] = useState('')
+  const [taskMode, setTaskMode] = useState<'date' | 'duration'>('duration')
+  const [taskMinutes, setTaskMinutes] = useState('10')
+  const [taskDate, setTaskDate] = useState('')
+  const [taskTime, setTaskTime] = useState('')
+  const [creatingTask, setCreatingTask] = useState(false)
   const chatEndRef = useRef<HTMLDivElement>(null)
 
   // Load instances + globals
@@ -435,6 +441,46 @@ export default function Chat() {
                     ) : (
                       <div style={{ fontSize: 11, color: '#6B6580' }}>Nenhuma cadencia atribuida</div>
                     )}
+                  </div>
+
+                  {/* Standalone Task */}
+                  <div className="card" style={{ padding: 12, marginTop: 12 }}>
+                    <div style={{ fontSize: 10, color: '#9B96B0', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 3, marginBottom: 6 }}><ListTodo size={10} /> Nova Tarefa</div>
+                    <input className="input" value={taskTitle} onChange={e => setTaskTitle(e.target.value)} placeholder="Ex: Ligar para o paciente" style={{ fontSize: 11, marginBottom: 6 }} />
+                    <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
+                      <button className={`btn btn-sm ${taskMode === 'duration' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTaskMode('duration')} style={{ fontSize: 10, padding: '3px 8px' }}>Tempo</button>
+                      <button className={`btn btn-sm ${taskMode === 'date' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTaskMode('date')} style={{ fontSize: 10, padding: '3px 8px' }}>Data</button>
+                    </div>
+                    {taskMode === 'duration' ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6 }}>
+                        <input type="number" className="input" value={taskMinutes} onChange={e => setTaskMinutes(e.target.value)} style={{ width: 60, fontSize: 11, textAlign: 'center' }} min={1} />
+                        <span style={{ fontSize: 11, color: '#9B96B0' }}>minutos</span>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
+                        <input type="date" className="input" value={taskDate} onChange={e => setTaskDate(e.target.value)} style={{ fontSize: 11, flex: 1 }} />
+                        <input type="time" className="input" value={taskTime} onChange={e => setTaskTime(e.target.value)} style={{ fontSize: 11, width: 90 }} />
+                      </div>
+                    )}
+                    <button className="btn btn-primary btn-sm" style={{ width: '100%', fontSize: 11 }} disabled={!taskTitle.trim() || creatingTask} onClick={async () => {
+                      if (!accountId || !lead) return
+                      setCreatingTask(true)
+                      try {
+                        await createStandaloneTask(accountId, {
+                          lead_id: lead.id,
+                          title: taskTitle,
+                          due_mode: taskMode,
+                          due_minutes: parseInt(taskMinutes) || 10,
+                          due_date: taskDate,
+                          due_time: taskTime,
+                        })
+                        setTaskTitle(''); setTaskMinutes('10'); setTaskDate(''); setTaskTime('')
+                        alert('Tarefa criada!')
+                      } catch (e: any) { alert('Erro: ' + (e?.message || 'desconhecido')) }
+                      setCreatingTask(false)
+                    }}>
+                      <ListTodo size={10} /> {creatingTask ? 'Criando...' : 'Criar Tarefa'}
+                    </button>
                   </div>
 
                   {/* Archive */}

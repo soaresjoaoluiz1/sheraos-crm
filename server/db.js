@@ -365,6 +365,27 @@ addColumnIfNotExists('leads', 'is_archived', 'INTEGER NOT NULL DEFAULT 0')
 addColumnIfNotExists('leads', 'archived_at', 'TEXT')
 addColumnIfNotExists('leads', 'has_new_after_archive', 'INTEGER NOT NULL DEFAULT 0')
 
+// Standalone tasks (not tied to cadences)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS standalone_tasks (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id      INTEGER NOT NULL,
+    lead_id         INTEGER,
+    assigned_to     INTEGER,
+    title           TEXT NOT NULL,
+    description     TEXT,
+    due_datetime    TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed')),
+    created_by      INTEGER,
+    completed_at    TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE,
+    FOREIGN KEY (lead_id) REFERENCES leads(id),
+    FOREIGN KEY (assigned_to) REFERENCES users(id),
+    FOREIGN KEY (created_by) REFERENCES users(id)
+  )
+`)
+
 // Seed super_admin if not exists
 const adminExists = db.prepare('SELECT id FROM users WHERE email = ?').get('admin@drosagencia.com.br')
 if (!adminExists) {
