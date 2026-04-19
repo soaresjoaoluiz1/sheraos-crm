@@ -1,0 +1,98 @@
+import { Router } from 'express'
+import bcrypt from 'bcryptjs'
+import db from '../db.js'
+import { requireRole, scopeToAccount } from '../middleware/auth.js'
+
+const router = Router()
+
+// List users (admin sees all, gerente sees own account)
+router.get('/', scopeToAccount, (req, res) => {
+  if (req.user.role === 'super_admin') {
+    const accountId = req.query.account_id
+    const users = accountId
+      ? db.prepare('SELECT id, account_id, name, email, role, is_active, created_at FROM users WHERE account_id = ? ORDER BY name').all(accountId)
+      : db.prepare('SELECT id, account_id, name, email, role, is_active, created_at FROM users ORDER BY name').all()
+    return res.json({ users })
+  }
+  const users = db.prepare('SELECT id, account_id, name, email, role, is_active, created_at FROM users WHERE account_id = ? ORDER BY name').all(req.user.account_id)
+  res.json({ users })
+})
+
+// Create user
+router.post('/', (req, res) => {
+  const { name, email, password, role, account_id } = req.body
+  if (!name || !email || !password) return res.status(400).json({ error: 'Nome, email e senha obrigatorios' })
+
+  // Permission checks
+  if (req.user.role === 'gerente') {
+    if (role !== 'atendente') return res.status(403).json({ error: 'Gerente so pode criar atendentes' })
+    if (account_id && account_id !== req.user.account_id) return res.status(403).json({ error: 'Sem permissao' })
+  }
+  if (req.user.role === 'atendente') return res.status(403).json({ error: 'Sem permissao' })
+
+  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email)
+  if (existing) return res.status(400).json({ error: 'Email ja cadastrado' })
+
+  const acctId = req.user.role === 'gerente' ? req.user.account_id : (account_id || null)
+  const userRole = role || 'atendente'
+
+  const result = db.prepare('INSERT INTO users (account_id, name, email, password, role) VALUES (?, ?, ?, ?, ?)').run(
+    acctId, name, email, bcrypt.hashSync(password, 10), userRole
+  )
+
+  const user = db.prepare('SELECT id, account_id, name, email, role, is_active FROM users WHERE id = ?').get(result.lastInsertRowid)
+  res.json({ user })
+})
+
+// Update user
+router.put('/:id', (req, res) => {
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id)
+  if (!user) return res.status(404).json({ error: 'Usuario nao encontrado' })
+
+  // Scope check
+  if (req.user.role === 'gerente' && user.account_id !== req.user.account_id) return res.status(403).json({ error: 'Sem permissao' })
+  if (req.user.role === 'atendente' && user.id !== req.user.id) return res.status(403).json({ error: 'Sem permissao' })
+
+  const { name, email, role, is_active, password } = req.body
+  const sets = []
+  const params = []
+  if (name !== undefined) { sets.push('name = ?'); params.push(name) }
+  if (email !== undefined && email !== user.email) {
+    // Check if email is already used by another user
+    const exists = db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(email, req.params.id)
+    if (exists) return res.status(400).json({ error: 'Email ja cadastrado' })
+    sets.push('email = ?'); params.push(email)
+  }
+  if (role !== undefined && role !== user.role) {
+    // Only super_admin can change roles; gerente cannot promote
+    if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Apenas admin pode alterar role' })
+    if (!['super_admin', 'gerente', 'atendente'].includes(role)) return res.status(400).json({ error: 'Role invalido' })
+    sets.push('role = ?'); params.push(role)
+  }
+  if (is_active !== undefined) { sets.push('is_active = ?'); params.push(is_active ? 1 : 0) }
+  if (password) { sets.push('password = ?'); params.push(bcrypt.hashSync(password, 10)) }
+  if (sets.length === 0) return res.status(400).json({ error: 'Nada pra atualizar' })
+  sets.push("updated_at = datetime('now')")
+  params.push(req.params.id)
+  db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).run(...params)
+  const updated = db.prepare('SELECT id, account_id, name, email, role, is_active FROM users WHERE id = ?').get(req.params.id)
+  res.json({ user: updated })
+})
+
+// Delete user — super_admin does hard delete, gerente does soft delete on own atendentes
+router.delete('/:id', requireRole('super_admin', 'gerente'), (req, res) => {
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id)
+  if (!user) return res.status(404).json({ error: 'Usuario nao encontrado' })
+  if (user.id === req.user.id) return res.status(400).json({ error: 'Nao pode excluir voce mesmo' })
+  if (req.user.role === 'gerente') {
+    if (user.account_id !== req.user.account_id) return res.status(403).json({ error: 'Sem permissao' })
+    if (user.role !== 'atendente') return res.status(403).json({ error: 'Gerente so pode excluir atendentes' })
+    db.prepare('UPDATE users SET is_active = 0 WHERE id = ?').run(req.params.id)
+  } else {
+    // super_admin: hard delete (cascades via FK)
+    db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id)
+  }
+  res.json({ ok: true })
+})
+
+export default router
