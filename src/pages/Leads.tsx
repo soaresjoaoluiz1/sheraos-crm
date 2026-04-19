@@ -137,7 +137,7 @@ export default function Leads() {
             )}
           </button>
           <button className="btn btn-secondary btn-sm" onClick={async () => {
-            const token = localStorage.getItem('dros_crm_token')
+            const token = localStorage.getItem('sheraos_crm_token')
             const res = await fetch(`/api/leads/export?account_id=${accountId}`, { headers: { Authorization: `Bearer ${token}` } })
             const blob = await res.blob()
             const url = URL.createObjectURL(blob)
