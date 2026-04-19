@@ -1,5 +1,5 @@
 FROM node:22-alpine AS base
-RUN apk add --no-cache python3 make g++ libc6-compat
+RUN apk add --no-cache tzdata python3 make g++ libc6-compat
 
 FROM base AS deps
 WORKDIR /app
