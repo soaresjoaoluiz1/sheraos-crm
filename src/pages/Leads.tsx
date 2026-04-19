@@ -157,7 +157,7 @@ export default function Leads() {
         </select>
         <select className="select" value={sourceFilter} onChange={e => { setSourceFilter(e.target.value); setPage(1) }}>
           <option value="">Todas fontes</option>
-          <option value="whatsapp">WhatsApp</option><option value="meta_form">Meta Form</option><option value="website">Website</option><option value="manual">Manual</option>
+          <option value="manual">Manual</option><option value="whatsapp">WhatsApp</option><option value="instagram">Instagram</option><option value="facebook">Facebook</option><option value="site">Site</option><option value="google">Google</option><option value="link_bio">Link na Bio</option><option value="meta_form">Meta Form</option>
         </select>
         {user?.role !== 'atendente' && (
           <select className="select" value={attendantFilter} onChange={e => { setAttendantFilter(e.target.value); setPage(1) }}>
@@ -295,7 +295,7 @@ export default function Leads() {
             </div>
             <div className="form-row">
               <div className="form-group"><label>Cidade</label><input className="input" value={newLead.city} onChange={e => setNewLead(p => ({ ...p, city: e.target.value }))} /></div>
-              <div className="form-group"><label>Fonte</label><select className="select" value={newLead.source} onChange={e => setNewLead(p => ({ ...p, source: e.target.value }))}><option value="manual">Manual</option><option value="whatsapp">WhatsApp</option><option value="website">Website</option></select></div>
+              <div className="form-group"><label>Fonte</label><select className="select" value={newLead.source} onChange={e => setNewLead(p => ({ ...p, source: e.target.value }))}><option value="manual">Manual</option><option value="instagram">Instagram</option><option value="facebook">Facebook</option><option value="site">Site</option><option value="google">Google</option><option value="link_bio">Link na Bio</option><option value="whatsapp">WhatsApp</option></select></div>
             </div>
             <div className="modal-actions"><button className="btn btn-secondary" onClick={() => setShowNew(false)}>Cancelar</button><button className="btn btn-primary" onClick={handleCreate}>Criar Lead</button></div>
           </div>
