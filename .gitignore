@@ -1,13 +1,8 @@
-node_modules/
-server/data/*.db
-server/data/*.db-wal
-server/data/*.db-shm
+node_modules
+dist
 .env
 .env.local
+.env.production
+server/data
 *.log
 .DS_Store
-Thumbs.db
-CODEBASE_INDEX.md
-.claudeignore
-.tokenmiser/
-.claude/

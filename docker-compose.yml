@@ -3,30 +3,28 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: crm:latest
-    container_name: crm-app
+    image: sheraos-crm:latest
+    container_name: sheraos-crm-app
     restart: unless-stopped
     environment:
       NODE_ENV: production
       JWT_SECRET: ${JWT_SECRET}
     volumes:
-      - crm-data:/app/server/data
+      - sheraos-crm-data:/app/server/data
     labels:
       - traefik.enable=true
-      - traefik.docker.network=crm-net
-      - traefik.http.routers.crm.rule=Host(`sheraos.com.br`) && PathPrefix(`/crm`)
-      - traefik.http.routers.crm.entrypoints=websecure
-      - traefik.http.routers.crm.tls=true
-      - traefik.http.routers.crm.tls.certresolver=letsencrypt
-      - traefik.http.routers.crm.priority=100
-      - traefik.http.services.crm.loadbalancer.server.port=3002
+      - traefik.docker.network=sheraos-crm-net
+      - traefik.http.routers.sheraos-crm.rule=Host(`sheraos.com.br`) && PathPrefix(`/crm`)
+      - traefik.http.routers.sheraos-crm.entrypoints=websecure
+      - traefik.http.routers.sheraos-crm.tls=true
+      - traefik.http.routers.sheraos-crm.tls.certresolver=letsencrypt
+      - traefik.http.routers.sheraos-crm.priority=100
+      - traefik.http.services.sheraos-crm.loadbalancer.server.port=3002
     networks:
-      - crm-net
-
+      - sheraos-crm-net
 volumes:
-  crm-data:
-
+  sheraos-crm-data:
 networks:
-  crm-net:
-    name: crm-net
+  sheraos-crm-net:
+    name: sheraos-crm-net
     driver: bridge
