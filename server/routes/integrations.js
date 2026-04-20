@@ -5,6 +5,16 @@ import { requireRole } from '../middleware/auth.js'
 
 const router = Router()
 
+// Helper: get instance only if it belongs to the user's account (or user is super_admin)
+function getOwnedInstance(req, res) {
+  const instance = db.prepare('SELECT * FROM whatsapp_instances WHERE id = ?').get(req.params.id)
+  if (!instance) { res.status(404).json({ error: 'Instancia nao encontrada' }); return null }
+  if (req.user.role !== 'super_admin' && instance.account_id !== req.accountId) {
+    res.status(403).json({ error: 'Sem permissao para esta instancia' }); return null
+  }
+  return instance
+}
+
 // ─── Get Evolution API config for account ────────────────────────
 router.get('/evolution-config', requireRole('super_admin', 'gerente'), (req, res) => {
   if (!req.accountId) return res.status(400).json({ error: 'account_id required' })
@@ -94,8 +104,8 @@ router.post('/whatsapp', requireRole('super_admin', 'gerente'), async (req, res)
 
 // ─── Connect (get QR code for existing instance) ─────────────────
 router.post('/whatsapp/:id/connect', requireRole('super_admin', 'gerente'), async (req, res) => {
-  const instance = db.prepare('SELECT * FROM whatsapp_instances WHERE id = ?').get(req.params.id)
-  if (!instance) return res.status(404).json({ error: 'Instancia nao encontrada' })
+  const instance = getOwnedInstance(req, res)
+  if (!instance) return
 
   try {
     const r = await fetch(`${instance.api_url}/instance/connect/${instance.instance_name}`, {
@@ -115,8 +125,8 @@ router.post('/whatsapp/:id/connect', requireRole('super_admin', 'gerente'), asyn
 
 // ─── Check connection status ─────────────────────────────────────
 router.get('/whatsapp/:id/status', async (req, res) => {
-  const instance = db.prepare('SELECT * FROM whatsapp_instances WHERE id = ?').get(req.params.id)
-  if (!instance) return res.status(404).json({ error: 'Instancia nao encontrada' })
+  const instance = getOwnedInstance(req, res)
+  if (!instance) return
 
   try {
     const r = await fetch(`${instance.api_url}/instance/connectionState/${instance.instance_name}`, {
@@ -149,8 +159,8 @@ router.get('/whatsapp/:id/status', async (req, res) => {
 
 // ─── Refresh QR code ─────────────────────────────────────────────
 router.post('/whatsapp/:id/qrcode', requireRole('super_admin', 'gerente'), async (req, res) => {
-  const instance = db.prepare('SELECT * FROM whatsapp_instances WHERE id = ?').get(req.params.id)
-  if (!instance) return res.status(404).json({ error: 'Instancia nao encontrada' })
+  const instance = getOwnedInstance(req, res)
+  if (!instance) return
 
   try {
     const r = await fetch(`${instance.api_url}/instance/connect/${instance.instance_name}`, {
@@ -169,8 +179,8 @@ router.post('/whatsapp/:id/qrcode', requireRole('super_admin', 'gerente'), async
 
 // ─── Disconnect (logout from WhatsApp) ───────────────────────────
 router.post('/whatsapp/:id/disconnect', requireRole('super_admin', 'gerente'), async (req, res) => {
-  const instance = db.prepare('SELECT * FROM whatsapp_instances WHERE id = ?').get(req.params.id)
-  if (!instance) return res.status(404).json({ error: 'Instancia nao encontrada' })
+  const instance = getOwnedInstance(req, res)
+  if (!instance) return
 
   try {
     await fetch(`${instance.api_url}/instance/logout/${instance.instance_name}`, {
@@ -187,7 +197,7 @@ router.post('/whatsapp/:id/disconnect', requireRole('super_admin', 'gerente'), a
 
 // ─── Delete instance ─────────────────────────────────────────────
 router.delete('/whatsapp/:id', requireRole('super_admin', 'gerente'), async (req, res) => {
-  const instance = db.prepare('SELECT * FROM whatsapp_instances WHERE id = ?').get(req.params.id)
+  const instance = getOwnedInstance(req, res)
   if (instance) {
     // Try to delete from Evolution API too
     try {
@@ -203,8 +213,8 @@ router.delete('/whatsapp/:id', requireRole('super_admin', 'gerente'), async (req
 
 // ─── Re-set webhook URL on Evolution API ─────────────────────────
 router.post('/whatsapp/:id/setup-webhook', requireRole('super_admin', 'gerente'), async (req, res) => {
-  const instance = db.prepare('SELECT * FROM whatsapp_instances WHERE id = ?').get(req.params.id)
-  if (!instance) return res.status(404).json({ error: 'Instancia nao encontrada' })
+  const instance = getOwnedInstance(req, res)
+  if (!instance) return
   const account = db.prepare('SELECT slug FROM accounts WHERE id = ?').get(instance.account_id)
   const proto = req.get('x-forwarded-proto') || req.protocol
   const serverUrl = process.env.WEBHOOK_BASE_URL || `${proto}://${req.get('host')}`
@@ -225,8 +235,8 @@ router.post('/whatsapp/:id/setup-webhook', requireRole('super_admin', 'gerente')
 
 // ─── Test connection (legacy, kept for compatibility) ────────────
 router.post('/whatsapp/:id/test', requireRole('super_admin', 'gerente'), async (req, res) => {
-  const instance = db.prepare('SELECT * FROM whatsapp_instances WHERE id = ?').get(req.params.id)
-  if (!instance) return res.status(404).json({ error: 'Instancia nao encontrada' })
+  const instance = getOwnedInstance(req, res)
+  if (!instance) return
 
   try {
     const r = await fetch(`${instance.api_url}/instance/connectionState/${instance.instance_name}`, {

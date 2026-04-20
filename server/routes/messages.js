@@ -6,6 +6,12 @@ const router = Router()
 
 // Get conversation messages for a lead
 router.get('/:leadId', (req, res) => {
+  // Verify lead belongs to user's account
+  const lead = db.prepare('SELECT account_id, attendant_id FROM leads WHERE id = ?').get(req.params.leadId)
+  if (!lead) return res.status(404).json({ error: 'Lead nao encontrado' })
+  if (req.accountId && lead.account_id !== req.accountId) return res.status(403).json({ error: 'Sem permissao' })
+  if (req.user.role === 'atendente' && lead.attendant_id !== req.user.id) return res.status(403).json({ error: 'Sem permissao' })
+
   const { page = '1', limit = '50' } = req.query
   const offset = (parseInt(page) - 1) * parseInt(limit)
   const messages = db.prepare('SELECT * FROM messages WHERE lead_id = ? ORDER BY created_at ASC LIMIT ? OFFSET ?').all(req.params.leadId, parseInt(limit), offset)
