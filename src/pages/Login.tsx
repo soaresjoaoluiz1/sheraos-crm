@@ -19,7 +19,7 @@ export default function Login() {
   return (
     <div className="login-page">
       <div className="login-card">
-        <img src="/crm/logo-dros.png" alt="Dros" style={{ height: 100, marginBottom: 20 }} />
+        <img src="/crm/logo-dros.png" alt="Dros" style={{ height: 55, marginBottom: 16 }} />
         <h1>Sheraos CRM</h1>
         <div className="subtitle">Gestao de leads e pipeline de vendas</div>
         {error && <div className="login-error">{error}</div>}

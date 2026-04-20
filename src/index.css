@@ -79,7 +79,7 @@ body { font-family: var(--font-body); background: var(--bg-primary); color: var(
 /* Sidebar */
 .sidebar { width: 250px; background: var(--bg-secondary); border-right: 1px solid var(--border-subtle); display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
 .sidebar-header { padding: 20px 18px 14px; border-bottom: 1px solid var(--border-subtle); }
-.sidebar-logo { height: 60px; opacity: 0.9; }
+.sidebar-logo { height: 32px; opacity: 0.9; }
 .sidebar-subtitle { font-size: 10px; color: var(--accent); text-transform: uppercase; letter-spacing: 2px; margin-top: 4px; font-weight: 700; }
 .sidebar-nav { flex: 1; padding: 10px 8px; display: flex; flex-direction: column; gap: 1px; }
 .nav-item { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-radius: var(--radius-sm); color: var(--text-muted); font-size: 13px; font-weight: 500; cursor: pointer; transition: var(--transition); text-decoration: none; border: none; background: none; width: 100%; text-align: left; }
