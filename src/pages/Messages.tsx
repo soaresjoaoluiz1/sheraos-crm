@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useAccount } from '../context/AccountContext'
 import { fetchBroadcasts, fetchLeads, createBroadcast, sendBroadcast, formatNumber, type Broadcast, type Lead } from '../lib/api'
-import { MessageCircle, Plus, Send, CheckCircle, XCircle, Clock } from 'lucide-react'
+import { MessageCircle, Plus, Send, CheckCircle, XCircle, Clock, Trash2 } from 'lucide-react'
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
   draft: { label: 'Rascunho', color: '#9B96B0' },
@@ -20,6 +20,8 @@ export default function Messages() {
   const [showNew, setShowNew] = useState(false)
   const [newName, setNewName] = useState('')
   const [newTemplate, setNewTemplate] = useState('')
+  const [newVariations, setNewVariations] = useState<string[]>([])
+  const [newDelay, setNewDelay] = useState(3)
   const [selectedLeads, setSelectedLeads] = useState<Lead[]>([])
   const [leadSearch, setLeadSearch] = useState('')
   const [searchResults, setSearchResults] = useState<Lead[]>([])
@@ -44,8 +46,8 @@ export default function Messages() {
 
   const handleCreate = async () => {
     if (!accountId || !newName || !newTemplate || selectedLeads.length === 0) return
-    await createBroadcast(accountId, { name: newName, message_template: newTemplate, lead_ids: selectedLeads.map(l => l.id) })
-    setShowNew(false); setNewName(''); setNewTemplate(''); setSelectedLeads([]); setStep(1); load()
+    await createBroadcast(accountId, { name: newName, message_template: newTemplate, message_variations: newVariations.filter(v => v.trim()), delay_seconds: newDelay, lead_ids: selectedLeads.map(l => l.id) })
+    setShowNew(false); setNewName(''); setNewTemplate(''); setNewVariations([]); setNewDelay(3); setSelectedLeads([]); setStep(1); load()
   }
 
   const handleSend = async (id: number) => {
@@ -102,9 +104,35 @@ export default function Messages() {
                 <div className="form-group"><label>Mensagem (use {'{{name}}'} pra nome do lead)</label>
                   <textarea className="input" rows={4} value={newTemplate} onChange={e => setNewTemplate(e.target.value)} placeholder="Ola {{name}}, temos uma oferta especial..." />
                 </div>
+                {/* Message variations */}
+                <div className="form-group" style={{ marginTop: 12 }}>
+                  <label>Variacoes de mensagem (opcional — alterna entre elas pro disparo parecer natural)</label>
+                  {newVariations.map((v, i) => (
+                    <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
+                      <textarea className="input" rows={2} value={v} onChange={e => setNewVariations(prev => prev.map((x, j) => j === i ? e.target.value : x))} placeholder={`Variacao ${i + 2}...`} style={{ flex: 1 }} />
+                      <button className="btn btn-danger btn-sm btn-icon" onClick={() => setNewVariations(prev => prev.filter((_, j) => j !== i))} style={{ alignSelf: 'flex-start', marginTop: 4 }}><Trash2 size={12} /></button>
+                    </div>
+                  ))}
+                  <button className="btn btn-secondary btn-sm" onClick={() => setNewVariations(prev => [...prev, ''])} style={{ marginTop: 4 }}>
+                    <Plus size={12} /> Adicionar variacao
+                  </button>
+                  <div style={{ fontSize: 10, color: '#9B96B0', marginTop: 4 }}>
+                    Total: {1 + newVariations.filter(v => v.trim()).length} {1 + newVariations.filter(v => v.trim()).length === 1 ? 'mensagem' : 'mensagens diferentes'} — sistema alterna entre elas
+                  </div>
+                </div>
+
+                {/* Delay */}
+                <div className="form-group" style={{ marginTop: 8 }}>
+                  <label>Intervalo entre envios (segundos)</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <input type="number" className="input" value={newDelay} onChange={e => setNewDelay(parseInt(e.target.value) || 3)} min={1} max={60} style={{ width: 80 }} />
+                    <span style={{ fontSize: 11, color: '#9B96B0' }}>segundos entre cada mensagem</span>
+                  </div>
+                </div>
+
                 {newTemplate && (
                   <div style={{ marginTop: 8, padding: 12, background: 'rgba(255,255,255,0.03)', borderRadius: 8, fontSize: 12 }}>
-                    <div style={{ color: '#9B96B0', marginBottom: 4 }}>Preview:</div>
+                    <div style={{ color: '#9B96B0', marginBottom: 4 }}>Preview (msg principal):</div>
                     <div>{newTemplate.replace(/\{\{name\}\}/g, 'Joao Silva')}</div>
                   </div>
                 )}

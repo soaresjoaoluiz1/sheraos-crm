@@ -22,6 +22,12 @@ router.post('/:leadId', async (req, res) => {
     const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.leadId)
     if (!lead) return res.status(404).json({ error: 'Lead nao encontrado' })
 
+    // Anti-duplicate: check if same message was sent to this lead in last 5 minutes
+    const duplicate = db.prepare(`
+      SELECT id FROM messages WHERE lead_id = ? AND direction = 'outbound' AND content = ? AND created_at > datetime('now', '-5 minutes')
+    `).get(req.params.leadId, content)
+    if (duplicate) return res.status(409).json({ error: 'Mensagem identica ja enviada nos ultimos 5 minutos' })
+
     // Find WhatsApp instance for this account
     const instance = db.prepare('SELECT * FROM whatsapp_instances WHERE account_id = ? AND status = ?').get(lead.account_id, 'connected')
     if (!instance) return res.status(400).json({ error: 'Nenhuma instancia WhatsApp conectada' })

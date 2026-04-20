@@ -365,6 +365,10 @@ addColumnIfNotExists('leads', 'is_archived', 'INTEGER NOT NULL DEFAULT 0')
 addColumnIfNotExists('leads', 'archived_at', 'TEXT')
 addColumnIfNotExists('leads', 'has_new_after_archive', 'INTEGER NOT NULL DEFAULT 0')
 
+// Broadcasts: message variations (JSON array) + delay between sends
+addColumnIfNotExists('broadcasts', 'message_variations', 'TEXT')
+addColumnIfNotExists('broadcasts', 'delay_seconds', 'INTEGER NOT NULL DEFAULT 3')
+
 // Standalone tasks (not tied to cadences)
 db.exec(`
   CREATE TABLE IF NOT EXISTS standalone_tasks (

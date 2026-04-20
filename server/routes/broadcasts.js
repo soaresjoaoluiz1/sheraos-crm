@@ -16,11 +16,14 @@ router.get('/', requireRole('super_admin', 'gerente'), (req, res) => {
 // Create broadcast
 router.post('/', requireRole('super_admin', 'gerente'), (req, res) => {
   if (!req.accountId) return res.status(400).json({ error: 'account_id required' })
-  const { name, message_template, media_url, lead_ids } = req.body
+  const { name, message_template, message_variations, media_url, lead_ids, delay_seconds } = req.body
   if (!name || !message_template) return res.status(400).json({ error: 'name e message_template obrigatorios' })
 
-  const result = db.prepare('INSERT INTO broadcasts (account_id, name, message_template, media_url, total_count, created_by) VALUES (?, ?, ?, ?, ?, ?)').run(
-    req.accountId, name, message_template, media_url || null, lead_ids?.length || 0, req.user.id
+  const variationsJson = message_variations && Array.isArray(message_variations) && message_variations.length > 0 ? JSON.stringify(message_variations) : null
+  const delay = parseInt(delay_seconds) || 3
+
+  const result = db.prepare('INSERT INTO broadcasts (account_id, name, message_template, message_variations, delay_seconds, media_url, total_count, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
+    req.accountId, name, message_template, variationsJson, delay, media_url || null, lead_ids?.length || 0, req.user.id
   )
 
   // Add recipients
@@ -63,11 +66,20 @@ router.post('/:id/send', requireRole('super_admin', 'gerente'), async (req, res)
   // Send in background (don't block response)
   res.json({ ok: true, message: `Enviando para ${recipients.length} contatos...` })
 
+  // Parse message variations (if available)
+  const variations = broadcast.message_variations ? JSON.parse(broadcast.message_variations) : []
+  const allTemplates = [broadcast.message_template, ...variations].filter(Boolean)
+  const delay = (broadcast.delay_seconds || 3) * 1000
+
   let sent = 0, failed = 0
-  for (const r of recipients) {
+  for (let i = 0; i < recipients.length; i++) {
+    const r = recipients[i]
     try {
       const lead = db.prepare('SELECT name FROM leads WHERE id = ?').get(r.lead_id)
-      const text = broadcast.message_template.replace(/\{\{name\}\}/g, lead?.name || 'Cliente')
+
+      // Rotate through message variations
+      const template = allTemplates[i % allTemplates.length]
+      const text = template.replace(/\{\{name\}\}/g, lead?.name || 'Cliente')
 
       const sendRes = await fetch(`${instance.api_url}/message/sendText/${instance.instance_name}`, {
         method: 'POST',
@@ -84,8 +96,10 @@ router.post('/:id/send', requireRole('super_admin', 'gerente'), async (req, res)
         failed++
       }
 
-      // Small delay between messages
-      await new Promise(resolve => setTimeout(resolve, 1500))
+      // Configurable delay between messages (default 3s)
+      if (i < recipients.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, delay))
+      }
     } catch (err) {
       db.prepare("UPDATE broadcast_recipients SET status = 'failed', error = ? WHERE id = ?").run(err.message, r.id)
       failed++

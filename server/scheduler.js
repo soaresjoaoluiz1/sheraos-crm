@@ -74,19 +74,7 @@ async function processCadences() {
   }
 }
 
-async function sendCadenceMessage(accountId, phone, text) {
-  const instance = db.prepare("SELECT * FROM whatsapp_instances WHERE account_id = ? AND status = 'connected' LIMIT 1").get(accountId)
-  if (!instance) return
-  try {
-    await fetch(`${instance.api_url}/message/sendText/${instance.instance_name}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', apikey: instance.api_key },
-      body: JSON.stringify({ number: phone, text }),
-    })
-  } catch (err) {
-    console.error('[Scheduler] Send cadence message failed:', err.message)
-  }
-}
+// sendCadenceMessage REMOVED — all sending is manual only via Chat/Tasks buttons
 
 // ─── Execute scheduled broadcasts ────────────────────────────────
 async function processScheduledBroadcasts() {
