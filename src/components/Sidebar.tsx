@@ -56,7 +56,7 @@ export default function Sidebar() {
         <div className="sidebar-header">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-              <img src="/crm/logo-dros.png" alt="Sheraos" className="sidebar-logo" />
+              <img src="/crm/icon.png" alt="Sheraos" className="sidebar-logo" />
               <div className="sidebar-subtitle">CRM</div>
             </div>
             <button className="sidebar-close-btn" onClick={closeMobile}><X size={18} /></button>
