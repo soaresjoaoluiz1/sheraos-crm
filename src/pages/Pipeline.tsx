@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAccount } from '../context/AccountContext'
 import AccountSelector from '../components/AccountSelector'
 import { useSSE } from '../context/SSEContext'
-import { fetchFunnels, fetchLeads, moveLeadStage, fetchPipelineMetrics, archiveLead, type Funnel, type Lead, type PipelineMetric } from '../lib/api'
+import { fetchFunnels, fetchLeads, fetchTags, moveLeadStage, fetchPipelineMetrics, archiveLead, type Funnel, type Lead, type PipelineMetric, type Tag } from '../lib/api'
 import { Phone, MessageCircle, User, Clock, ChevronDown, ChevronRight, ArrowRight, Smartphone, Archive } from 'lucide-react'
 
 function timeAgo(dateStr: string) {
@@ -37,6 +37,8 @@ export default function Pipeline() {
   const [metrics, setMetrics] = useState<PipelineMetric[]>([])
   const [expandedStages, setExpandedStages] = useState<Set<number>>(new Set())
   const [moveLeadId, setMoveLeadId] = useState<number | null>(null)
+  const [tags, setTags] = useState<Tag[]>([])
+  const [tagFilter, setTagFilter] = useState<number | ''>('')
 
   const loadData = useCallback(async () => {
     if (!accountId) return
@@ -64,6 +66,9 @@ export default function Pipeline() {
   }, [accountId, isMobile])
 
   useEffect(() => { loadData() }, [loadData])
+  useEffect(() => { if (accountId) fetchTags(accountId).then(setTags).catch(() => {}) }, [accountId])
+
+  const filteredLeads = tagFilter ? leads.filter(l => l.tags?.some(t => t.id === tagFilter)) : leads
 
   useSSE('lead:created', useCallback(() => loadData(), [loadData]))
   useSSE('lead:updated', useCallback(() => loadData(), [loadData]))
@@ -120,7 +125,7 @@ export default function Pipeline() {
         </div>
 
         {stages.map(stage => {
-          const stageLeads = leads.filter(l => l.stage_id === stage.id)
+          const stageLeads = filteredLeads.filter(l => l.stage_id === stage.id)
           const expanded = expandedStages.has(stage.id)
           const metric = metrics.find(m => m.stage_id === stage.id)
 
@@ -209,16 +214,22 @@ export default function Pipeline() {
           <h1>Pipeline</h1>
           <AccountSelector />
         </div>
-        {funnels.length > 1 && (
-          <select className="select" style={{ width: 200 }} value={funnel.id} onChange={e => { const f = funnels.find(x => x.id === +e.target.value); if (f) setFunnel(f) }}>
-            {funnels.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {funnels.length > 1 && (
+            <select className="select" style={{ width: 200 }} value={funnel.id} onChange={e => { const f = funnels.find(x => x.id === +e.target.value); if (f) setFunnel(f) }}>
+              {funnels.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+            </select>
+          )}
+          <select className="select" style={{ width: 160 }} value={tagFilter} onChange={e => setTagFilter(e.target.value ? +e.target.value : '')}>
+            <option value="">Todas as tags</option>
+            {tags.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
-        )}
+        </div>
       </div>
 
       <div className="kanban-board">
         {stages.map(stage => {
-          const stageLeads = leads.filter(l => l.stage_id === stage.id)
+          const stageLeads = filteredLeads.filter(l => l.stage_id === stage.id)
           const metric = metrics.find(m => m.stage_id === stage.id)
           return (
             <div key={stage.id} className="kanban-column"

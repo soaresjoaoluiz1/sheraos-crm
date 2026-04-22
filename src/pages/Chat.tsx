@@ -44,6 +44,7 @@ export default function Chat() {
   const [cadences, setCadences] = useState<Cadence[]>([])
   const [showCadenceMenu, setShowCadenceMenu] = useState(false)
   const [search, setSearch] = useState('')
+  const [tagFilter, setTagFilter] = useState<number | ''>('')
   const [msgText, setMsgText] = useState('')
   const [noteText, setNoteText] = useState('')
   const [sending, setSending] = useState(false)
@@ -124,10 +125,14 @@ export default function Chat() {
   }
 
   const filteredLeads = useMemo(() => {
-    if (!search.trim()) return leads
-    const s = search.toLowerCase()
-    return leads.filter(l => (l.name || '').toLowerCase().includes(s) || (l.phone || '').includes(s))
-  }, [leads, search])
+    let result = leads
+    if (tagFilter) result = result.filter(l => l.tags?.some(t => t.id === tagFilter))
+    if (search.trim()) {
+      const s = search.toLowerCase()
+      result = result.filter(l => (l.name || '').toLowerCase().includes(s) || (l.phone || '').includes(s))
+    }
+    return result
+  }, [leads, search, tagFilter])
 
   const handleSendMsg = async () => {
     if (!msgText.trim() || !lead || !accountId) return
@@ -192,6 +197,12 @@ export default function Chat() {
             <option value="all">Todos os numeros</option>
             {instances.map(i => (
               <option key={i.id} value={i.id}>{i.instance_name}{i.status === 'connected' ? ' ✓' : ' ✗'}</option>
+            ))}
+          </select>
+          <select className="select" style={{ width: 160 }} value={tagFilter} onChange={e => setTagFilter(e.target.value ? +e.target.value : '')}>
+            <option value="">Todas as tags</option>
+            {tags.map(t => (
+              <option key={t.id} value={t.id}>{t.name}</option>
             ))}
           </select>
         </div>

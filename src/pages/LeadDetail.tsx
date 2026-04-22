@@ -6,7 +6,7 @@ import { useSSE } from '../context/SSEContext'
 import {
   fetchLead, fetchFunnels, fetchUsers, fetchTags, updateLead, moveLeadStage, assignLead,
   sendMessage, addLeadNote, addLeadTag, removeLeadTag, createTag,
-  fetchLeadCadence, fetchCadences, assignLeadCadence, advanceLeadCadence,
+  fetchLeadCadence, fetchCadences, assignLeadCadence, advanceLeadCadence, removeLeadCadence,
   fetchReadyMessages, fetchLeadQualifications, answerQualification,
   archiveLead, unarchiveLead,
   type Lead, type Message, type StageHistoryEntry, type LeadNote, type Funnel, type User as UserType, type Tag,
@@ -273,8 +273,9 @@ export default function LeadDetail() {
           <div className="card" style={{ marginBottom: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: '#9B96B0', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4 }}><ListOrdered size={12} /> Cadencia</div>
-              <div style={{ position: 'relative' }}>
+              <div style={{ position: 'relative', display: 'flex', gap: 4 }}>
                 <button className="btn btn-secondary btn-sm" onClick={() => setShowCadenceMenu(!showCadenceMenu)}>{leadCadence ? 'Trocar' : 'Atribuir'}</button>
+                {leadCadence && <button className="btn btn-danger btn-sm" onClick={async () => { if (!accountId || !confirm('Remover cadencia?')) return; await removeLeadCadence(leadCadence.id, accountId); loadCadence() }}>Remover</button>}
                 {showCadenceMenu && cadences.length > 0 && (
                   <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'var(--bg-card)', border: '1px solid var(--border-medium)', borderRadius: 8, padding: 6, zIndex: 50, minWidth: 180 }}>
                     {cadences.map(c => (
