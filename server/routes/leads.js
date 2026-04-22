@@ -146,7 +146,7 @@ router.put('/:id', (req, res) => {
   const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id)
   if (!lead) return res.status(404).json({ error: 'Lead nao encontrado' })
 
-  const { name, phone, email, city, notes, custom_fields } = req.body
+  const { name, phone, email, city, notes, custom_fields, empresa, cpf_cnpj, instagram, trabalha_anuncio, investimento_anuncios } = req.body
   const sets = []; const params = []
   if (name !== undefined) { sets.push('name = ?'); params.push(name) }
   if (phone !== undefined) { sets.push('phone = ?'); params.push(phone) }
@@ -154,6 +154,11 @@ router.put('/:id', (req, res) => {
   if (city !== undefined) { sets.push('city = ?'); params.push(city) }
   if (notes !== undefined) { sets.push('notes = ?'); params.push(notes) }
   if (custom_fields !== undefined) { sets.push('custom_fields = ?'); params.push(JSON.stringify(custom_fields)) }
+  if (empresa !== undefined) { sets.push('empresa = ?'); params.push(empresa || null) }
+  if (cpf_cnpj !== undefined) { sets.push('cpf_cnpj = ?'); params.push(cpf_cnpj || null) }
+  if (instagram !== undefined) { sets.push('instagram = ?'); params.push(instagram || null) }
+  if (trabalha_anuncio !== undefined) { sets.push('trabalha_anuncio = ?'); params.push(trabalha_anuncio ? 1 : 0) }
+  if (investimento_anuncios !== undefined) { sets.push('investimento_anuncios = ?'); params.push(investimento_anuncios || null) }
   if (sets.length === 0) return res.status(400).json({ error: 'Nada pra atualizar' })
   sets.push("updated_at = datetime('now')")
   params.push(req.params.id)

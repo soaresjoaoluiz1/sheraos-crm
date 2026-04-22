@@ -380,6 +380,13 @@ addColumnIfNotExists('accounts', 'observacoes', 'TEXT')
 addColumnIfNotExists('accounts', 'trabalha_anuncio', 'INTEGER NOT NULL DEFAULT 0')
 addColumnIfNotExists('accounts', 'investimento_anuncios', 'REAL')
 
+// Leads: extra business fields
+addColumnIfNotExists('leads', 'empresa', 'TEXT')
+addColumnIfNotExists('leads', 'cpf_cnpj', 'TEXT')
+addColumnIfNotExists('leads', 'instagram', 'TEXT')
+addColumnIfNotExists('leads', 'trabalha_anuncio', 'INTEGER NOT NULL DEFAULT 0')
+addColumnIfNotExists('leads', 'investimento_anuncios', 'REAL')
+
 // Broadcasts: message variations (JSON array) + delay between sends
 addColumnIfNotExists('broadcasts', 'message_variations', 'TEXT')
 addColumnIfNotExists('broadcasts', 'delay_seconds', 'INTEGER NOT NULL DEFAULT 3')

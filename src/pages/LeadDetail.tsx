@@ -32,7 +32,7 @@ export default function LeadDetail() {
   const [sending, setSending] = useState(false)
   const [noteText, setNoteText] = useState('')
   const [editing, setEditing] = useState(false)
-  const [editData, setEditData] = useState({ name: '', phone: '', email: '', city: '' })
+  const [editData, setEditData] = useState<Record<string, any>>({ name: '', phone: '', email: '', city: '', empresa: '', cpf_cnpj: '', instagram: '', trabalha_anuncio: 0, investimento_anuncios: '' })
   const [showTagMenu, setShowTagMenu] = useState(false)
   const [newTagName, setNewTagName] = useState('')
   const [newTagColor, setNewTagColor] = useState('#FFB300')
@@ -51,7 +51,7 @@ export default function LeadDetail() {
     if (!id || !accountId) return
     const data = await fetchLead(+id, accountId)
     setLead(data.lead); setMessages(data.messages); setHistory(data.stageHistory); setNotes(data.notes || [])
-    setEditData({ name: data.lead.name || '', phone: data.lead.phone || '', email: data.lead.email || '', city: data.lead.city || '' })
+    setEditData({ name: data.lead.name || '', phone: data.lead.phone || '', email: data.lead.email || '', city: data.lead.city || '', empresa: data.lead.empresa || '', cpf_cnpj: data.lead.cpf_cnpj || '', instagram: data.lead.instagram || '', trabalha_anuncio: data.lead.trabalha_anuncio || 0, investimento_anuncios: data.lead.investimento_anuncios || '' })
   }, [id, accountId])
 
   const loadCadence = useCallback(async () => {
@@ -199,6 +199,17 @@ export default function LeadDetail() {
                   <div className="form-group"><label>Telefone</label><input className="input" value={editData.phone} onChange={e => setEditData(p => ({ ...p, phone: e.target.value }))} /></div>
                   <div className="form-group"><label>Email</label><input className="input" value={editData.email} onChange={e => setEditData(p => ({ ...p, email: e.target.value }))} /></div>
                   <div className="form-group"><label>Cidade</label><input className="input" value={editData.city} onChange={e => setEditData(p => ({ ...p, city: e.target.value }))} /></div>
+                  <div className="form-group"><label>Nome da Empresa</label><input className="input" value={editData.empresa} onChange={e => setEditData(p => ({ ...p, empresa: e.target.value }))} placeholder="Nome da empresa" /></div>
+                  <div className="form-group"><label>CPF/CNPJ</label><input className="input" value={editData.cpf_cnpj} onChange={e => setEditData(p => ({ ...p, cpf_cnpj: e.target.value }))} placeholder="000.000.000-00" /></div>
+                  <div className="form-group"><label>Instagram</label><input className="input" value={editData.instagram} onChange={e => setEditData(p => ({ ...p, instagram: e.target.value }))} placeholder="@perfil" /></div>
+                  <div className="form-group">
+                    <label>Trabalha com anuncio?</label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginTop: 4 }}>
+                      <input type="checkbox" checked={editData.trabalha_anuncio} onChange={e => setEditData(p => ({ ...p, trabalha_anuncio: e.target.checked }))} style={{ width: 16, height: 16, accentColor: '#FFB300' }} />
+                      <span style={{ fontSize: 13 }}>{editData.trabalha_anuncio ? 'Sim' : 'Nao'}</span>
+                    </label>
+                  </div>
+                  <div className="form-group"><label>Investimento Anuncios Mensal (R$)</label><input className="input" type="number" step="0.01" value={editData.investimento_anuncios} onChange={e => setEditData(p => ({ ...p, investimento_anuncios: e.target.value }))} placeholder="5000.00" /></div>
                 </>
               ) : (
                 <>
@@ -206,6 +217,11 @@ export default function LeadDetail() {
                   <div className="lead-info-row"><span className="lead-info-label"><Phone size={12} /> Telefone</span><span className="lead-info-value">{lead.phone || '-'}</span></div>
                   <div className="lead-info-row"><span className="lead-info-label"><Mail size={12} /> Email</span><span className="lead-info-value">{lead.email || '-'}</span></div>
                   <div className="lead-info-row"><span className="lead-info-label"><MapPin size={12} /> Cidade</span><span className="lead-info-value">{lead.city || '-'}</span></div>
+                  {lead.empresa && <div className="lead-info-row"><span className="lead-info-label">Empresa</span><span className="lead-info-value">{lead.empresa}</span></div>}
+                  {lead.cpf_cnpj && <div className="lead-info-row"><span className="lead-info-label">CPF/CNPJ</span><span className="lead-info-value">{lead.cpf_cnpj}</span></div>}
+                  {lead.instagram && <div className="lead-info-row"><span className="lead-info-label">Instagram</span><span className="lead-info-value">{lead.instagram}</span></div>}
+                  <div className="lead-info-row"><span className="lead-info-label">Anuncio</span><span className="lead-info-value" style={{ color: lead.trabalha_anuncio ? '#34C759' : '#9B96B0' }}>{lead.trabalha_anuncio ? 'Sim' : 'Nao'}</span></div>
+                  {lead.investimento_anuncios && <div className="lead-info-row"><span className="lead-info-label">Investimento</span><span className="lead-info-value">R$ {Number(lead.investimento_anuncios).toLocaleString('pt-BR')}</span></div>}
                   <div className="lead-info-row"><span className="lead-info-label">Fonte</span><span className="lead-info-value">{lead.source || '-'}</span></div>
                   <div className="lead-info-row"><span className="lead-info-label">Etapa</span><span className="stage-badge" style={{ background: `${currentStage?.color}20`, color: currentStage?.color }}>{currentStage?.name}</span></div>
                   <div className="lead-info-row"><span className="lead-info-label"><User size={12} /> Atendente</span><span className="lead-info-value">{lead.attendant_name || 'Nao atribuido'}</span></div>
