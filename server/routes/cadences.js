@@ -134,6 +134,12 @@ router.put('/lead-cadence/:lcId/advance', (req, res) => {
   res.json({ leadCadence: updated })
 })
 
+// Remove cadence from lead (pause/cancel)
+router.delete('/lead-cadence/:lcId', (req, res) => {
+  db.prepare("UPDATE lead_cadences SET status = 'paused', updated_at = datetime('now') WHERE id = ?").run(req.params.lcId)
+  res.json({ ok: true })
+})
+
 // Get lead's active cadence
 router.get('/lead/:leadId', (req, res) => {
   const lc = db.prepare(`

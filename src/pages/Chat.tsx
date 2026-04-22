@@ -5,7 +5,7 @@ import { useSSE } from '../context/SSEContext'
 import {
   fetchWhatsAppInstances, fetchLeads, fetchLead, fetchFunnels, fetchUsers, fetchTags,
   sendMessage, updateLead, moveLeadStage, assignLead, addLeadNote, addLeadTag, removeLeadTag,
-  fetchLeadCadence, advanceLeadCadence, fetchCadences, assignLeadCadence, createTag,
+  fetchLeadCadence, advanceLeadCadence, removeLeadCadence, fetchCadences, assignLeadCadence, createTag,
   archiveLead, createStandaloneTask,
   type WhatsAppInstance, type Lead, type Message, type StageHistoryEntry, type LeadNote,
   type Funnel, type User as UserType, type Tag, type LeadCadence, type Cadence,
@@ -416,7 +416,14 @@ export default function Chat() {
                     </div>
                     {leadCadence ? (
                       <>
-                        <div style={{ fontSize: 12, fontWeight: 600 }}>{leadCadence.cadence_name}</div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div style={{ fontSize: 12, fontWeight: 600 }}>{leadCadence.cadence_name}</div>
+                          <button className="btn btn-danger btn-sm" style={{ padding: '2px 6px', fontSize: 9 }} onClick={async () => {
+                            if (!accountId || !confirm('Remover cadencia deste lead?')) return
+                            await removeLeadCadence(leadCadence.id, accountId)
+                            loadLead()
+                          }}>Remover</button>
+                        </div>
                         {leadCadence.status === 'completed' ? (
                           <div style={{ fontSize: 11, color: '#34C759', display: 'flex', alignItems: 'center', gap: 3, marginTop: 4 }}><Check size={10} /> Concluida</div>
                         ) : (
