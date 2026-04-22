@@ -17,14 +17,17 @@ router.get('/', requireRole('super_admin'), (req, res) => {
 
 // Create account
 router.post('/', requireRole('super_admin'), (req, res) => {
-  const { name, logo_url } = req.body
+  const { name, logo_url, cnpj, razao_social, segmento, website, instagram, whatsapp_comercial, valor_mensal, contrato_inicio, cidade, estado, observacoes } = req.body
   if (!name) return res.status(400).json({ error: 'Nome obrigatorio' })
 
   const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
   const existing = db.prepare('SELECT id FROM accounts WHERE slug = ?').get(slug)
   if (existing) return res.status(400).json({ error: 'Conta com esse nome ja existe' })
 
-  const result = db.prepare('INSERT INTO accounts (name, slug, logo_url) VALUES (?, ?, ?)').run(name, slug, logo_url || null)
+  const result = db.prepare(`
+    INSERT INTO accounts (name, slug, logo_url, cnpj, razao_social, segmento, website, instagram, whatsapp_comercial, valor_mensal, contrato_inicio, cidade, estado, observacoes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(name, slug, logo_url || null, cnpj || null, razao_social || null, segmento || null, website || null, instagram || null, whatsapp_comercial || null, valor_mensal || null, contrato_inicio || null, cidade || null, estado || null, observacoes || null)
 
   // Create default funnel with standard stages
   const funnelResult = db.prepare('INSERT INTO funnels (account_id, name, is_default) VALUES (?, ?, 1)').run(result.lastInsertRowid, 'Funil Principal')
@@ -56,7 +59,7 @@ router.get('/:id', requireRole('super_admin'), (req, res) => {
 
 // Update account
 router.put('/:id', requireRole('super_admin'), (req, res) => {
-  const { name, logo_url, is_active, evolution_api_url, evolution_api_key } = req.body
+  const { name, logo_url, is_active, evolution_api_url, evolution_api_key, cnpj, razao_social, segmento, website, instagram, whatsapp_comercial, valor_mensal, contrato_inicio, cidade, estado, observacoes } = req.body
   const sets = []
   const params = []
   if (name !== undefined) { sets.push('name = ?'); params.push(name) }
@@ -64,6 +67,17 @@ router.put('/:id', requireRole('super_admin'), (req, res) => {
   if (is_active !== undefined) { sets.push('is_active = ?'); params.push(is_active ? 1 : 0) }
   if (evolution_api_url !== undefined) { sets.push('evolution_api_url = ?'); params.push(evolution_api_url || null) }
   if (evolution_api_key !== undefined) { sets.push('evolution_api_key = ?'); params.push(evolution_api_key || null) }
+  if (cnpj !== undefined) { sets.push('cnpj = ?'); params.push(cnpj || null) }
+  if (razao_social !== undefined) { sets.push('razao_social = ?'); params.push(razao_social || null) }
+  if (segmento !== undefined) { sets.push('segmento = ?'); params.push(segmento || null) }
+  if (website !== undefined) { sets.push('website = ?'); params.push(website || null) }
+  if (instagram !== undefined) { sets.push('instagram = ?'); params.push(instagram || null) }
+  if (whatsapp_comercial !== undefined) { sets.push('whatsapp_comercial = ?'); params.push(whatsapp_comercial || null) }
+  if (valor_mensal !== undefined) { sets.push('valor_mensal = ?'); params.push(valor_mensal || null) }
+  if (contrato_inicio !== undefined) { sets.push('contrato_inicio = ?'); params.push(contrato_inicio || null) }
+  if (cidade !== undefined) { sets.push('cidade = ?'); params.push(cidade || null) }
+  if (estado !== undefined) { sets.push('estado = ?'); params.push(estado || null) }
+  if (observacoes !== undefined) { sets.push('observacoes = ?'); params.push(observacoes || null) }
   if (sets.length === 0) return res.status(400).json({ error: 'Nada pra atualizar' })
   sets.push("updated_at = datetime('now')")
   params.push(req.params.id)

@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
-import { fetchAccount, createUser, updateUser, deleteUser, type Account, type User as UserType, type Funnel } from '../../lib/api'
-import { ArrowLeft, UserPlus, Building2, Edit3, Trash2, UserCheck, UserX } from 'lucide-react'
+import { fetchAccount, createUser, updateUser, deleteUser, updateAccount, type Account, type User as UserType, type Funnel } from '../../lib/api'
+import { ArrowLeft, UserPlus, Building2, Edit3, Trash2, UserCheck, UserX, Save, Check } from 'lucide-react'
 
 export default function ClientDetail() {
   const { id } = useParams()
@@ -16,6 +16,8 @@ export default function ClientDetail() {
   const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'gerente' })
   const [editingUser, setEditingUser] = useState<UserType | null>(null)
   const [editForm, setEditForm] = useState({ name: '', email: '', password: '', role: 'gerente' })
+  const [savingAccount, setSavingAccount] = useState(false)
+  const [accountSaved, setAccountSaved] = useState(false)
 
   const isAdmin = currentUser?.role === 'super_admin'
 
@@ -68,6 +70,46 @@ export default function ClientDetail() {
         </div>
         <button className="btn btn-primary btn-sm" onClick={() => setShowNewUser(true)}><UserPlus size={14} /> Novo Usuario</button>
       </div>
+
+      {/* Client Info */}
+      <section className="dash-section">
+        <div className="section-title" style={{ justifyContent: 'space-between' }}>
+          <span>Dados do Cliente</span>
+          <button className="btn btn-primary btn-sm" disabled={savingAccount} onClick={async () => {
+            if (!account) return
+            setSavingAccount(true)
+            await updateAccount(account.id, account)
+            setAccountSaved(true); setTimeout(() => setAccountSaved(false), 2000)
+            setSavingAccount(false)
+          }}>
+            {accountSaved ? <><Check size={12} /> Salvo</> : <><Save size={12} /> Salvar</>}
+          </button>
+        </div>
+        <div className="card" style={{ padding: 20 }}>
+          <div className="form-row">
+            <div className="form-group"><label>Nome Fantasia</label><input className="input" value={account.name} onChange={e => setAccount({ ...account, name: e.target.value })} /></div>
+            <div className="form-group"><label>CNPJ</label><input className="input" value={account.cnpj || ''} onChange={e => setAccount({ ...account, cnpj: e.target.value })} placeholder="00.000.000/0000-00" /></div>
+          </div>
+          <div className="form-row">
+            <div className="form-group"><label>Razao Social</label><input className="input" value={account.razao_social || ''} onChange={e => setAccount({ ...account, razao_social: e.target.value })} /></div>
+            <div className="form-group"><label>Segmento</label><input className="input" value={account.segmento || ''} onChange={e => setAccount({ ...account, segmento: e.target.value })} placeholder="Ex: Imobiliaria" /></div>
+          </div>
+          <div className="form-row">
+            <div className="form-group"><label>Website</label><input className="input" value={account.website || ''} onChange={e => setAccount({ ...account, website: e.target.value })} placeholder="https://..." /></div>
+            <div className="form-group"><label>Instagram</label><input className="input" value={account.instagram || ''} onChange={e => setAccount({ ...account, instagram: e.target.value })} placeholder="@perfil" /></div>
+          </div>
+          <div className="form-row">
+            <div className="form-group"><label>WhatsApp Comercial</label><input className="input" value={account.whatsapp_comercial || ''} onChange={e => setAccount({ ...account, whatsapp_comercial: e.target.value })} placeholder="5511999..." /></div>
+            <div className="form-group"><label>Valor Mensal (R$)</label><input className="input" type="number" step="0.01" value={account.valor_mensal || ''} onChange={e => setAccount({ ...account, valor_mensal: parseFloat(e.target.value) || null })} /></div>
+          </div>
+          <div className="form-row">
+            <div className="form-group"><label>Inicio Contrato</label><input className="input" type="date" value={account.contrato_inicio || ''} onChange={e => setAccount({ ...account, contrato_inicio: e.target.value })} /></div>
+            <div className="form-group"><label>Cidade</label><input className="input" value={account.cidade || ''} onChange={e => setAccount({ ...account, cidade: e.target.value })} /></div>
+            <div className="form-group"><label>Estado</label><input className="input" value={account.estado || ''} onChange={e => setAccount({ ...account, estado: e.target.value })} placeholder="SP" style={{ maxWidth: 80 }} /></div>
+          </div>
+          <div className="form-group"><label>Observacoes</label><textarea className="input" rows={3} value={account.observacoes || ''} onChange={e => setAccount({ ...account, observacoes: e.target.value })} style={{ resize: 'vertical' }} /></div>
+        </div>
+      </section>
 
       <section className="dash-section">
         <div className="section-title">Usuarios ({users.length})</div>

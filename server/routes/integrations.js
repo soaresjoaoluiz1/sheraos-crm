@@ -82,17 +82,14 @@ router.post('/whatsapp', requireRole('super_admin', 'gerente'), async (req, res)
   ).run(req.accountId, instance_name, baseUrl, api_key, qrCode ? 'connecting' : 'disconnected', qrCode)
   const instance = db.prepare('SELECT * FROM whatsapp_instances WHERE id = ?').get(result.lastInsertRowid)
 
-  // Setup webhook automatically
+  // Setup webhook automatically (Evolution v2.3 format)
   try {
-    const account = db.prepare('SELECT slug FROM accounts WHERE id = ?').get(req.accountId)
-    // Use env or build from request
-    const proto = req.get('x-forwarded-proto') || req.protocol
-    const serverUrl = process.env.WEBHOOK_BASE_URL || `${proto}://${req.get('host')}`
-    const webhookUrl = `${serverUrl}/crm/api/webhooks/evolution/${account.slug}`
-    await fetch(`${baseUrl}/webhook/set/${instance_name}`, {
+    const acct = db.prepare('SELECT slug FROM accounts WHERE id = ?').get(req.accountId)
+    const webhookUrl = `https://drosagencia.com.br/crm/api/webhooks/evolution/${acct.slug}`
+    await fetch(`${baseUrl}/webhook/set/${encodeURIComponent(instance_name)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', apikey: api_key },
-      body: JSON.stringify({ url: webhookUrl, webhook_by_events: false, events: ['MESSAGES_UPSERT'] }),
+      body: JSON.stringify({ webhook: { url: webhookUrl, enabled: true, events: ['MESSAGES_UPSERT'] } }),
     })
     console.log(`[Evolution Webhook] Set for ${instance_name} → ${webhookUrl}`)
   } catch (err) {
@@ -216,14 +213,12 @@ router.post('/whatsapp/:id/setup-webhook', requireRole('super_admin', 'gerente')
   const instance = getOwnedInstance(req, res)
   if (!instance) return
   const account = db.prepare('SELECT slug FROM accounts WHERE id = ?').get(instance.account_id)
-  const proto = req.get('x-forwarded-proto') || req.protocol
-  const serverUrl = process.env.WEBHOOK_BASE_URL || `${proto}://${req.get('host')}`
-  const webhookUrl = `${serverUrl}/crm/api/webhooks/evolution/${account.slug}`
+  const webhookUrl = `https://drosagencia.com.br/crm/api/webhooks/evolution/${account.slug}`
   try {
-    const r = await fetch(`${instance.api_url}/webhook/set/${instance.instance_name}`, {
+    const r = await fetch(`${instance.api_url}/webhook/set/${encodeURIComponent(instance.instance_name)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', apikey: instance.api_key },
-      body: JSON.stringify({ url: webhookUrl, webhook_by_events: false, events: ['MESSAGES_UPSERT'] }),
+      body: JSON.stringify({ webhook: { url: webhookUrl, enabled: true, events: ['MESSAGES_UPSERT'] } }),
     })
     const data = await r.json()
     console.log(`[Evolution Webhook] Updated ${instance.instance_name} → ${webhookUrl}`)

@@ -365,6 +365,19 @@ addColumnIfNotExists('leads', 'is_archived', 'INTEGER NOT NULL DEFAULT 0')
 addColumnIfNotExists('leads', 'archived_at', 'TEXT')
 addColumnIfNotExists('leads', 'has_new_after_archive', 'INTEGER NOT NULL DEFAULT 0')
 
+// Accounts: extra business fields
+addColumnIfNotExists('accounts', 'cnpj', 'TEXT')
+addColumnIfNotExists('accounts', 'razao_social', 'TEXT')
+addColumnIfNotExists('accounts', 'segmento', 'TEXT')
+addColumnIfNotExists('accounts', 'website', 'TEXT')
+addColumnIfNotExists('accounts', 'instagram', 'TEXT')
+addColumnIfNotExists('accounts', 'whatsapp_comercial', 'TEXT')
+addColumnIfNotExists('accounts', 'valor_mensal', 'REAL')
+addColumnIfNotExists('accounts', 'contrato_inicio', 'TEXT')
+addColumnIfNotExists('accounts', 'cidade', 'TEXT')
+addColumnIfNotExists('accounts', 'estado', 'TEXT')
+addColumnIfNotExists('accounts', 'observacoes', 'TEXT')
+
 // Broadcasts: message variations (JSON array) + delay between sends
 addColumnIfNotExists('broadcasts', 'message_variations', 'TEXT')
 addColumnIfNotExists('broadcasts', 'delay_seconds', 'INTEGER NOT NULL DEFAULT 3')
