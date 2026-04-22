@@ -39,6 +39,8 @@ export default function Pipeline() {
   const [moveLeadId, setMoveLeadId] = useState<number | null>(null)
   const [tags, setTags] = useState<Tag[]>([])
   const [tagFilter, setTagFilter] = useState<number | ''>('')
+  const [expandedColumns, setExpandedColumns] = useState<Set<number>>(new Set())
+  const CARDS_LIMIT = 5
 
   const loadData = useCallback(async () => {
     if (!accountId) return
@@ -252,7 +254,7 @@ export default function Pipeline() {
                 </div>
               </div>
               <div className="kanban-cards">
-                {stageLeads.map(lead => (
+                {(expandedColumns.has(stage.id) ? stageLeads : stageLeads.slice(0, CARDS_LIMIT)).map(lead => (
                   <div key={lead.id} className={`kanban-card ${draggedLead === lead.id ? 'dragging' : ''}`}
                     draggable onDragStart={() => handleDragStart(lead.id)} onDragEnd={handleDragEnd}
                     onClick={() => navigate(`/leads/${lead.id}`)}
@@ -278,6 +280,18 @@ export default function Pipeline() {
                     {lead.instance_name && <div style={{ fontSize: 10, color: '#34C759', display: 'flex', alignItems: 'center', gap: 3, marginTop: 2 }}><Smartphone size={9} /> {lead.instance_name}</div>}
                   </div>
                 ))}
+                {!expandedColumns.has(stage.id) && stageLeads.length > CARDS_LIMIT && (
+                  <button className="btn btn-secondary btn-sm" style={{ width: '100%', fontSize: 11, marginTop: 4 }}
+                    onClick={() => setExpandedColumns(prev => { const n = new Set(prev); n.add(stage.id); return n })}>
+                    Ver mais ({stageLeads.length - CARDS_LIMIT} restantes)
+                  </button>
+                )}
+                {expandedColumns.has(stage.id) && stageLeads.length > CARDS_LIMIT && (
+                  <button className="btn btn-secondary btn-sm" style={{ width: '100%', fontSize: 11, marginTop: 4 }}
+                    onClick={() => setExpandedColumns(prev => { const n = new Set(prev); n.delete(stage.id); return n })}>
+                    Ver menos
+                  </button>
+                )}
               </div>
             </div>
           )
