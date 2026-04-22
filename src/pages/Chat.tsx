@@ -90,7 +90,7 @@ export default function Chat() {
     setMessages(data.messages)
     setHistory(data.stageHistory)
     setNotes(data.notes || [])
-    setEditData({ name: data.lead.name || '', phone: data.lead.phone || '', email: data.lead.email || '', city: data.lead.city || '' })
+    setEditData({ name: data.lead.name || '', phone: data.lead.phone || '', email: data.lead.email || '', city: data.lead.city || '', empresa: data.lead.empresa || '', cpf_cnpj: data.lead.cpf_cnpj || '', instagram: data.lead.instagram || '', trabalha_anuncio: data.lead.trabalha_anuncio || 0, investimento_anuncios: data.lead.investimento_anuncios || '' })
     try {
       const lc = await fetchLeadCadence(selectedLeadId, accountId)
       setLeadCadence(lc)
@@ -357,6 +357,14 @@ export default function Chat() {
                         <input className="input" placeholder="Telefone" value={editData.phone} onChange={e => setEditData(p => ({ ...p, phone: e.target.value }))} style={{ fontSize: 12 }} />
                         <input className="input" placeholder="Email" value={editData.email} onChange={e => setEditData(p => ({ ...p, email: e.target.value }))} style={{ fontSize: 12 }} />
                         <input className="input" placeholder="Cidade" value={editData.city} onChange={e => setEditData(p => ({ ...p, city: e.target.value }))} style={{ fontSize: 12 }} />
+                        <input className="input" placeholder="Nome da Empresa" value={editData.empresa} onChange={e => setEditData(p => ({ ...p, empresa: e.target.value }))} style={{ fontSize: 12 }} />
+                        <input className="input" placeholder="CPF/CNPJ" value={editData.cpf_cnpj} onChange={e => setEditData(p => ({ ...p, cpf_cnpj: e.target.value }))} style={{ fontSize: 12 }} />
+                        <input className="input" placeholder="Instagram (@perfil)" value={editData.instagram} onChange={e => setEditData(p => ({ ...p, instagram: e.target.value }))} style={{ fontSize: 12 }} />
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#9B96B0' }}>
+                          <input type="checkbox" checked={!!editData.trabalha_anuncio} onChange={e => setEditData(p => ({ ...p, trabalha_anuncio: e.target.checked ? 1 : 0 }))} style={{ accentColor: '#FFB300' }} />
+                          Trabalha com anuncio
+                        </label>
+                        <input className="input" placeholder="Investimento Anuncios (R$)" type="number" step="0.01" value={editData.investimento_anuncios} onChange={e => setEditData(p => ({ ...p, investimento_anuncios: e.target.value }))} style={{ fontSize: 12 }} />
                       </div>
                     ) : (
                       <div style={{ fontSize: 11, display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -364,6 +372,11 @@ export default function Chat() {
                         <div><span style={{ color: '#6B6580' }}>Tel:</span> {lead.phone || '-'}</div>
                         <div><span style={{ color: '#6B6580' }}>Email:</span> {lead.email || '-'}</div>
                         <div><span style={{ color: '#6B6580' }}>Cidade:</span> {lead.city || '-'}</div>
+                        {lead.empresa && <div><span style={{ color: '#6B6580' }}>Empresa:</span> {lead.empresa}</div>}
+                        {lead.cpf_cnpj && <div><span style={{ color: '#6B6580' }}>CPF/CNPJ:</span> {lead.cpf_cnpj}</div>}
+                        {lead.instagram && <div><span style={{ color: '#6B6580' }}>Instagram:</span> {lead.instagram}</div>}
+                        <div><span style={{ color: '#6B6580' }}>Anuncio:</span> <span style={{ color: lead.trabalha_anuncio ? '#34C759' : '#9B96B0' }}>{lead.trabalha_anuncio ? 'Sim' : 'Nao'}</span></div>
+                        {lead.investimento_anuncios && <div><span style={{ color: '#6B6580' }}>Investimento:</span> R$ {Number(lead.investimento_anuncios).toLocaleString('pt-BR')}</div>}
                         <div><span style={{ color: '#6B6580' }}>Fonte:</span> {lead.source || '-'}</div>
                         <div><span style={{ color: '#6B6580' }}>Criado:</span> {new Date(lead.created_at).toLocaleDateString('pt-BR')}</div>
                       </div>
