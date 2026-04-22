@@ -377,6 +377,8 @@ addColumnIfNotExists('accounts', 'contrato_inicio', 'TEXT')
 addColumnIfNotExists('accounts', 'cidade', 'TEXT')
 addColumnIfNotExists('accounts', 'estado', 'TEXT')
 addColumnIfNotExists('accounts', 'observacoes', 'TEXT')
+addColumnIfNotExists('accounts', 'trabalha_anuncio', 'INTEGER NOT NULL DEFAULT 0')
+addColumnIfNotExists('accounts', 'investimento_anuncios', 'REAL')
 
 // Broadcasts: message variations (JSON array) + delay between sends
 addColumnIfNotExists('broadcasts', 'message_variations', 'TEXT')

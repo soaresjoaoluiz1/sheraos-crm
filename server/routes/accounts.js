@@ -17,7 +17,7 @@ router.get('/', requireRole('super_admin'), (req, res) => {
 
 // Create account
 router.post('/', requireRole('super_admin'), (req, res) => {
-  const { name, logo_url, cnpj, razao_social, segmento, website, instagram, whatsapp_comercial, valor_mensal, contrato_inicio, cidade, estado, observacoes } = req.body
+  const { name, logo_url, cnpj, razao_social, segmento, website, instagram, whatsapp_comercial, valor_mensal, contrato_inicio, cidade, estado, observacoes, trabalha_anuncio, investimento_anuncios } = req.body
   if (!name) return res.status(400).json({ error: 'Nome obrigatorio' })
 
   const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
@@ -25,9 +25,9 @@ router.post('/', requireRole('super_admin'), (req, res) => {
   if (existing) return res.status(400).json({ error: 'Conta com esse nome ja existe' })
 
   const result = db.prepare(`
-    INSERT INTO accounts (name, slug, logo_url, cnpj, razao_social, segmento, website, instagram, whatsapp_comercial, valor_mensal, contrato_inicio, cidade, estado, observacoes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(name, slug, logo_url || null, cnpj || null, razao_social || null, segmento || null, website || null, instagram || null, whatsapp_comercial || null, valor_mensal || null, contrato_inicio || null, cidade || null, estado || null, observacoes || null)
+    INSERT INTO accounts (name, slug, logo_url, cnpj, razao_social, segmento, website, instagram, whatsapp_comercial, valor_mensal, contrato_inicio, cidade, estado, observacoes, trabalha_anuncio, investimento_anuncios)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(name, slug, logo_url || null, cnpj || null, razao_social || null, segmento || null, website || null, instagram || null, whatsapp_comercial || null, valor_mensal || null, contrato_inicio || null, cidade || null, estado || null, observacoes || null, trabalha_anuncio ? 1 : 0, investimento_anuncios || null)
 
   // Create default funnel with standard stages
   const funnelResult = db.prepare('INSERT INTO funnels (account_id, name, is_default) VALUES (?, ?, 1)').run(result.lastInsertRowid, 'Funil Principal')
@@ -59,7 +59,7 @@ router.get('/:id', requireRole('super_admin'), (req, res) => {
 
 // Update account
 router.put('/:id', requireRole('super_admin'), (req, res) => {
-  const { name, logo_url, is_active, evolution_api_url, evolution_api_key, cnpj, razao_social, segmento, website, instagram, whatsapp_comercial, valor_mensal, contrato_inicio, cidade, estado, observacoes } = req.body
+  const { name, logo_url, is_active, evolution_api_url, evolution_api_key, cnpj, razao_social, segmento, website, instagram, whatsapp_comercial, valor_mensal, contrato_inicio, cidade, estado, observacoes, trabalha_anuncio, investimento_anuncios } = req.body
   const sets = []
   const params = []
   if (name !== undefined) { sets.push('name = ?'); params.push(name) }
@@ -78,6 +78,8 @@ router.put('/:id', requireRole('super_admin'), (req, res) => {
   if (cidade !== undefined) { sets.push('cidade = ?'); params.push(cidade || null) }
   if (estado !== undefined) { sets.push('estado = ?'); params.push(estado || null) }
   if (observacoes !== undefined) { sets.push('observacoes = ?'); params.push(observacoes || null) }
+  if (trabalha_anuncio !== undefined) { sets.push('trabalha_anuncio = ?'); params.push(trabalha_anuncio ? 1 : 0) }
+  if (investimento_anuncios !== undefined) { sets.push('investimento_anuncios = ?'); params.push(investimento_anuncios || null) }
   if (sets.length === 0) return res.status(400).json({ error: 'Nada pra atualizar' })
   sets.push("updated_at = datetime('now')")
   params.push(req.params.id)

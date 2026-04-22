@@ -107,6 +107,16 @@ export default function ClientDetail() {
             <div className="form-group"><label>Cidade</label><input className="input" value={account.cidade || ''} onChange={e => setAccount({ ...account, cidade: e.target.value })} /></div>
             <div className="form-group"><label>Estado</label><input className="input" value={account.estado || ''} onChange={e => setAccount({ ...account, estado: e.target.value })} placeholder="SP" style={{ maxWidth: 80 }} /></div>
           </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label>Trabalha com anuncio?</label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginTop: 8 }}>
+                <input type="checkbox" checked={!!account.trabalha_anuncio} onChange={e => setAccount({ ...account, trabalha_anuncio: e.target.checked ? 1 : 0 })} style={{ width: 18, height: 18, accentColor: '#FFB300' }} />
+                <span style={{ fontSize: 13 }}>{account.trabalha_anuncio ? 'Sim' : 'Nao'}</span>
+              </label>
+            </div>
+            <div className="form-group"><label>Investimento em Anuncios (R$)</label><input className="input" type="number" step="0.01" value={account.investimento_anuncios || ''} onChange={e => setAccount({ ...account, investimento_anuncios: parseFloat(e.target.value) || null })} placeholder="5000.00" /></div>
+          </div>
           <div className="form-group"><label>Observacoes</label><textarea className="input" rows={3} value={account.observacoes || ''} onChange={e => setAccount({ ...account, observacoes: e.target.value })} style={{ resize: 'vertical' }} /></div>
         </div>
       </section>
