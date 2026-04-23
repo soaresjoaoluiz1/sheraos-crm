@@ -70,7 +70,14 @@ router.get('/', (req, res) => {
 // Create lead manually
 router.post('/', requireRole('super_admin', 'gerente'), (req, res) => {
   if (!req.accountId) return res.status(400).json({ error: 'account_id required' })
-  const { name, phone, email, city, source, source_detail, notes, funnel_id, attendant_id, empresa, cpf_cnpj, instagram, trabalha_anuncio, investimento_anuncios } = req.body
+  let { name, phone, email, city, source, source_detail, notes, funnel_id, attendant_id, empresa, cpf_cnpj, instagram, trabalha_anuncio, investimento_anuncios } = req.body
+
+  // Normalize phone to Brazil format (55XXXXXXXXXXX)
+  if (phone) {
+    phone = phone.replace(/[^\d+]/g, '') // remove tudo exceto digitos e +
+    if (phone.startsWith('+')) phone = phone.slice(1)
+    if (!phone.startsWith('55') && phone.length >= 10 && phone.length <= 11) phone = '55' + phone
+  }
 
   // Get default funnel if not specified
   let fid = funnel_id
@@ -146,7 +153,15 @@ router.put('/:id', (req, res) => {
   const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id)
   if (!lead) return res.status(404).json({ error: 'Lead nao encontrado' })
 
-  const { name, phone, email, city, notes, custom_fields, empresa, cpf_cnpj, instagram, trabalha_anuncio, investimento_anuncios } = req.body
+  let { name, phone, email, city, notes, custom_fields, empresa, cpf_cnpj, instagram, trabalha_anuncio, investimento_anuncios } = req.body
+
+  // Normalize phone to Brazil format
+  if (phone) {
+    phone = phone.replace(/[^\d+]/g, '')
+    if (phone.startsWith('+')) phone = phone.slice(1)
+    if (!phone.startsWith('55') && phone.length >= 10 && phone.length <= 11) phone = '55' + phone
+  }
+
   const sets = []; const params = []
   if (name !== undefined) { sets.push('name = ?'); params.push(name) }
   if (phone !== undefined) { sets.push('phone = ?'); params.push(phone) }
