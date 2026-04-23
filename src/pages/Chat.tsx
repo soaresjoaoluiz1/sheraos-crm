@@ -60,6 +60,7 @@ export default function Chat() {
   const [taskDate, setTaskDate] = useState('')
   const [taskTime, setTaskTime] = useState('')
   const [creatingTask, setCreatingTask] = useState(false)
+  const [cadenceMsgText, setCadenceMsgText] = useState('')
   const chatEndRef = useRef<HTMLDivElement>(null)
 
   // Load instances + globals
@@ -94,7 +95,9 @@ export default function Chat() {
     try {
       const lc = await fetchLeadCadence(selectedLeadId, accountId)
       setLeadCadence(lc)
-    } catch { setLeadCadence(null) }
+      if (lc?.attempt_message) setCadenceMsgText(lc.attempt_message.replace(/\{\{name\}\}/g, lead?.name || data.lead.name || 'Cliente'))
+      else setCadenceMsgText('')
+    } catch { setLeadCadence(null); setCadenceMsgText('') }
   }, [selectedLeadId, accountId])
   useEffect(() => { loadLead() }, [loadLead])
 
@@ -164,11 +167,10 @@ export default function Chat() {
   const handleRemoveTag = async (tagId: number) => { if (lead) { await removeLeadTag(lead.id, tagId); loadLead() } }
   const handleAdvanceCadence = async () => { if (leadCadence && accountId) { await advanceLeadCadence(leadCadence.id, accountId); loadLead() } }
   const handleSendCadenceMessage = async () => {
-    if (!leadCadence?.attempt_message || !lead || !accountId) return
-    const text = leadCadence.attempt_message.replace(/\{\{name\}\}/g, lead.name || 'Cliente')
+    if (!cadenceMsgText.trim() || !lead || !accountId || !leadCadence) return
     setSending(true)
     try {
-      const result = await sendMessage(lead.id, accountId, text)
+      const result = await sendMessage(lead.id, accountId, cadenceMsgText)
       setMessages(prev => [...prev, result.message])
       if (result.delivered) {
         await advanceLeadCadence(leadCadence.id, accountId)
@@ -470,10 +472,8 @@ export default function Chat() {
                             {leadCadence.attempt_instructions && <div style={{ fontSize: 10, color: '#9B96B0', marginTop: 2, fontStyle: 'italic' }}>{leadCadence.attempt_instructions}</div>}
                             {leadCadence.attempt_message ? (
                               <>
-                                <div style={{ marginTop: 8, padding: 8, background: 'rgba(255,179,0,0.05)', border: '1px solid rgba(255,179,0,0.2)', borderRadius: 6, fontSize: 11, color: '#C8C4D4', whiteSpace: 'pre-wrap', maxHeight: 140, overflowY: 'auto' }}>
-                                  {leadCadence.attempt_message.replace(/\{\{name\}\}/g, lead.name || 'Cliente')}
-                                </div>
-                                <button className="btn btn-primary btn-sm" style={{ marginTop: 8, width: '100%', fontSize: 11 }} onClick={handleSendCadenceMessage} disabled={sending}><Send size={10} /> Enviar e avancar</button>
+                                <textarea className="input" value={cadenceMsgText} onChange={e => setCadenceMsgText(e.target.value)} rows={3} style={{ marginTop: 8, fontSize: 11, resize: 'vertical', background: 'rgba(255,179,0,0.05)', border: '1px solid rgba(255,179,0,0.2)' }} />
+                                <button className="btn btn-primary btn-sm" style={{ marginTop: 8, width: '100%', fontSize: 11 }} onClick={handleSendCadenceMessage} disabled={sending || !cadenceMsgText.trim()}><Send size={10} /> Enviar e avancar</button>
                                 <button className="btn btn-secondary btn-sm" style={{ marginTop: 6, width: '100%', fontSize: 10 }} onClick={handleAdvanceCadence}><ChevronRight size={10} /> So avancar (sem enviar)</button>
                               </>
                             ) : (
