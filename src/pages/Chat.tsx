@@ -95,7 +95,7 @@ export default function Chat() {
     try {
       const lc = await fetchLeadCadence(selectedLeadId, accountId)
       setLeadCadence(lc)
-      if (lc?.attempt_message) setCadenceMsgText(lc.attempt_message.replace(/\{\{name\}\}/g, lead?.name || data.lead.name || 'Cliente'))
+      if (lc?.attempt_message) setCadenceMsgText(lc.attempt_message.replace(/\{\{name\}\}/g, data.lead.name || 'Cliente'))
       else setCadenceMsgText('')
     } catch { setLeadCadence(null); setCadenceMsgText('') }
   }, [selectedLeadId, accountId])
