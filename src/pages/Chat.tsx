@@ -452,11 +452,14 @@ export default function Chat() {
                       <>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div style={{ fontSize: 12, fontWeight: 600 }}>{leadCadence.cadence_name}</div>
-                          <button className="btn btn-danger btn-sm" style={{ padding: '2px 6px', fontSize: 9 }} onClick={async () => {
-                            if (!accountId || !confirm('Remover cadencia deste lead?')) return
-                            await removeLeadCadence(leadCadence.id, accountId)
-                            loadLead()
-                          }}>Remover</button>
+                          <div style={{ display: 'flex', gap: 3 }}>
+                            <button className="btn btn-secondary btn-sm" style={{ padding: '2px 6px', fontSize: 9 }} onClick={() => { const base = import.meta.env.BASE_URL.replace(/\/$/, ''); window.open(`${base}/cadences`, '_blank') }}>Editar</button>
+                            <button className="btn btn-danger btn-sm" style={{ padding: '2px 6px', fontSize: 9 }} onClick={async () => {
+                              if (!accountId || !confirm('Remover cadencia deste lead?')) return
+                              await removeLeadCadence(leadCadence.id, accountId)
+                              loadLead()
+                            }}>Remover</button>
+                          </div>
                         </div>
                         {leadCadence.status === 'completed' ? (
                           <div style={{ fontSize: 11, color: '#34C759', display: 'flex', alignItems: 'center', gap: 3, marginTop: 4 }}><Check size={10} /> Concluida</div>

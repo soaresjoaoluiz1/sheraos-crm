@@ -39,7 +39,7 @@ export default function Leads() {
   const [dateTo, setDateTo] = useState('')
   const [tagFilter, setTagFilter] = useState('')
   const [showNew, setShowNew] = useState(false)
-  const [newLead, setNewLead] = useState({ name: '', phone: '', email: '', city: '', source: 'manual' })
+  const [newLead, setNewLead] = useState<Record<string, any>>({ name: '', phone: '', email: '', city: '', source: 'manual', empresa: '', cpf_cnpj: '', instagram: '', trabalha_anuncio: 0, investimento_anuncios: '' })
   const [showArchived, setShowArchived] = useState(false)
   const [archivedCount, setArchivedCount] = useState<{ count: number; withActivity: number }>({ count: 0, withActivity: 0 })
   // Bulk
@@ -96,7 +96,7 @@ export default function Leads() {
   const handleCreate = async () => {
     if (!accountId || !newLead.name) return
     await createLead(accountId, newLead)
-    setShowNew(false); setNewLead({ name: '', phone: '', email: '', city: '', source: 'manual' }); loadLeads()
+    setShowNew(false); setNewLead({ name: '', phone: '', email: '', city: '', source: 'manual', empresa: '', cpf_cnpj: '', instagram: '', trabalha_anuncio: 0, investimento_anuncios: '' }); loadLeads()
   }
 
   const toggleSelect = (id: number) => {
@@ -288,14 +288,28 @@ export default function Leads() {
         <div className="modal-overlay" onClick={() => setShowNew(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <h2>Novo Lead</h2>
-            <div className="form-group"><label>Nome</label><input className="input" value={newLead.name} onChange={e => setNewLead(p => ({ ...p, name: e.target.value }))} /></div>
+            <div className="form-group"><label>Nome *</label><input className="input" value={newLead.name} onChange={e => setNewLead(p => ({ ...p, name: e.target.value }))} /></div>
             <div className="form-row">
               <div className="form-group"><label>Telefone</label><input className="input" value={newLead.phone} onChange={e => setNewLead(p => ({ ...p, phone: e.target.value }))} /></div>
               <div className="form-group"><label>Email</label><input className="input" value={newLead.email} onChange={e => setNewLead(p => ({ ...p, email: e.target.value }))} /></div>
             </div>
             <div className="form-row">
               <div className="form-group"><label>Cidade</label><input className="input" value={newLead.city} onChange={e => setNewLead(p => ({ ...p, city: e.target.value }))} /></div>
-              <div className="form-group"><label>Fonte</label><select className="select" value={newLead.source} onChange={e => setNewLead(p => ({ ...p, source: e.target.value }))}><option value="manual">Manual</option><option value="whatsapp">WhatsApp</option><option value="website">Website</option></select></div>
+              <div className="form-group"><label>Fonte</label><select className="select" value={newLead.source} onChange={e => setNewLead(p => ({ ...p, source: e.target.value }))}><option value="manual">Manual</option><option value="whatsapp">WhatsApp</option><option value="website">Website</option><option value="indicacao">Indicacao</option><option value="anuncio">Anuncio</option></select></div>
+            </div>
+            <div className="form-row">
+              <div className="form-group"><label>Nome da Empresa</label><input className="input" value={newLead.empresa} onChange={e => setNewLead(p => ({ ...p, empresa: e.target.value }))} placeholder="Empresa do lead" /></div>
+              <div className="form-group"><label>CPF/CNPJ</label><input className="input" value={newLead.cpf_cnpj} onChange={e => setNewLead(p => ({ ...p, cpf_cnpj: e.target.value }))} placeholder="000.000.000-00" /></div>
+            </div>
+            <div className="form-row">
+              <div className="form-group"><label>Instagram</label><input className="input" value={newLead.instagram} onChange={e => setNewLead(p => ({ ...p, instagram: e.target.value }))} placeholder="@perfil" /></div>
+              <div className="form-group"><label>Investimento Anuncios (R$)</label><input className="input" type="number" step="0.01" value={newLead.investimento_anuncios} onChange={e => setNewLead(p => ({ ...p, investimento_anuncios: e.target.value }))} placeholder="5000.00" /></div>
+            </div>
+            <div className="form-group">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input type="checkbox" checked={!!newLead.trabalha_anuncio} onChange={e => setNewLead(p => ({ ...p, trabalha_anuncio: e.target.checked ? 1 : 0 }))} style={{ accentColor: '#FFB300', width: 16, height: 16 }} />
+                Trabalha com anuncio
+              </label>
             </div>
             <div className="modal-actions"><button className="btn btn-secondary" onClick={() => setShowNew(false)}>Cancelar</button><button className="btn btn-primary" onClick={handleCreate}>Criar Lead</button></div>
           </div>

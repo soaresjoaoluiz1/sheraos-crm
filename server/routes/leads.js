@@ -70,7 +70,7 @@ router.get('/', (req, res) => {
 // Create lead manually
 router.post('/', requireRole('super_admin', 'gerente'), (req, res) => {
   if (!req.accountId) return res.status(400).json({ error: 'account_id required' })
-  const { name, phone, email, city, source, source_detail, notes, funnel_id, attendant_id } = req.body
+  const { name, phone, email, city, source, source_detail, notes, funnel_id, attendant_id, empresa, cpf_cnpj, instagram, trabalha_anuncio, investimento_anuncios } = req.body
 
   // Get default funnel if not specified
   let fid = funnel_id
@@ -85,9 +85,9 @@ router.post('/', requireRole('super_admin', 'gerente'), (req, res) => {
   if (!firstStage) return res.status(400).json({ error: 'Funil sem etapas' })
 
   const result = db.prepare(`
-    INSERT INTO leads (account_id, funnel_id, stage_id, attendant_id, name, phone, email, city, source, source_detail, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(req.accountId, fid, firstStage.id, attendant_id || null, name, phone, email, city, source || 'manual', source_detail, notes)
+    INSERT INTO leads (account_id, funnel_id, stage_id, attendant_id, name, phone, email, city, source, source_detail, notes, empresa, cpf_cnpj, instagram, trabalha_anuncio, investimento_anuncios)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(req.accountId, fid, firstStage.id, attendant_id || null, name, phone, email, city, source || 'manual', source_detail, notes, empresa || null, cpf_cnpj || null, instagram || null, trabalha_anuncio ? 1 : 0, investimento_anuncios || null)
 
   // Log stage history
   db.prepare('INSERT INTO stage_history (lead_id, to_stage_id, trigger_type, triggered_by) VALUES (?, ?, ?, ?)').run(
