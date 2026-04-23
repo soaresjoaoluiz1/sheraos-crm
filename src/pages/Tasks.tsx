@@ -41,6 +41,8 @@ export default function Tasks() {
   }, [accountId])
 
   useEffect(() => { load() }, [load])
+  // Auto-refresh every 60 seconds to update buckets (overdue/today/etc)
+  useEffect(() => { const interval = setInterval(load, 60000); return () => clearInterval(interval) }, [load])
   useSSE('task:updated', useCallback(() => load(), [load]))
   useSSE('lead:updated', useCallback(() => load(), [load]))
 
@@ -63,7 +65,12 @@ export default function Tasks() {
     setActioning(t.lead_cadence_id)
     try {
       const text = t.auto_message.replace(/\{\{name\}\}/g, t.lead_name || 'Cliente')
-      await sendMessage(t.lead_id, accountId, text)
+      const sendResult = await sendMessage(t.lead_id, accountId, text)
+      if (!sendResult.delivered) {
+        alert('Mensagem NAO foi entregue no WhatsApp. Tarefa mantida. Verifique a conexao e tente novamente.')
+        setActioning(null)
+        return
+      }
       const result = await completeTask(t.lead_cadence_id, accountId)
       setConfirmModal({ leadName: t.lead_name || t.lead_phone || 'Lead', nextStep: result.nextStep })
       load()

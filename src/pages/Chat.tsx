@@ -49,7 +49,7 @@ export default function Chat() {
   const [noteText, setNoteText] = useState('')
   const [sending, setSending] = useState(false)
   const [editing, setEditing] = useState(false)
-  const [editData, setEditData] = useState({ name: '', phone: '', email: '', city: '' })
+  const [editData, setEditData] = useState<Record<string, any>>({ name: '', phone: '', email: '', city: '' })
   const [rightTab, setRightTab] = useState<'info' | 'notes' | 'history'>('info')
   const [showTagMenu, setShowTagMenu] = useState(false)
   const [newTagName, setNewTagName] = useState('')
@@ -137,7 +137,12 @@ export default function Chat() {
   const handleSendMsg = async () => {
     if (!msgText.trim() || !lead || !accountId) return
     setSending(true)
-    try { const msg = await sendMessage(lead.id, accountId, msgText); setMessages(prev => [...prev, msg]); setMsgText('') } catch {}
+    try {
+      const result = await sendMessage(lead.id, accountId, msgText)
+      setMessages(prev => [...prev, result.message])
+      setMsgText('')
+      if (!result.delivered) alert('Mensagem salva mas NAO enviada no WhatsApp. Verifique a conexao.')
+    } catch (e: any) { alert('Erro: ' + (e?.message || 'desconhecido')) }
     setSending(false)
   }
 
@@ -163,10 +168,14 @@ export default function Chat() {
     const text = leadCadence.attempt_message.replace(/\{\{name\}\}/g, lead.name || 'Cliente')
     setSending(true)
     try {
-      const msg = await sendMessage(lead.id, accountId, text)
-      setMessages(prev => [...prev, msg])
-      await advanceLeadCadence(leadCadence.id, accountId)
-      loadLead()
+      const result = await sendMessage(lead.id, accountId, text)
+      setMessages(prev => [...prev, result.message])
+      if (result.delivered) {
+        await advanceLeadCadence(leadCadence.id, accountId)
+        loadLead()
+      } else {
+        alert('Mensagem NAO foi entregue no WhatsApp. Cadencia mantida na etapa atual. Verifique a conexao e tente novamente.')
+      }
     } catch (err: any) {
       alert('Erro ao enviar: ' + (err?.message || 'desconhecido'))
     }
@@ -284,12 +293,13 @@ export default function Chat() {
                 {messages.length === 0 && <div style={{ textAlign: 'center', color: '#6B6580', padding: 40, fontSize: 13 }}>Nenhuma mensagem</div>}
                 {messages.map(m => (
                   <div key={m.id}>
-                    <div className={`chat-bubble ${m.direction}`}>
+                    <div className={`chat-bubble ${m.direction}`} style={m.direction === 'outbound' && !m.wa_msg_id ? { border: '1px solid #FF6B6B', opacity: 0.8 } : undefined}>
                       {m.media_type && m.media_type !== 'text'
                         ? <MessageMedia message={m} leadId={lead.id} />
                         : (m.content || <em style={{ opacity: 0.5 }}>Sem conteudo</em>)}
                     </div>
                     <div className="chat-bubble-time" style={{ textAlign: m.direction === 'outbound' ? 'right' : 'left' }}>
+                      {m.direction === 'outbound' && !m.wa_msg_id && <span style={{ color: '#FF6B6B', marginRight: 4 }}>✗ nao entregue</span>}
                       {m.sender_name && <span>{m.sender_name} · </span>}{new Date(m.created_at).toLocaleString('pt-BR')}
                     </div>
                   </div>

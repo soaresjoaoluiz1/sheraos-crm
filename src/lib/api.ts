@@ -94,7 +94,8 @@ export const fetchArchivedCount = (accountId: number) => apiFetch<{ count: numbe
 
 // Messages
 export const fetchMessages = (leadId: number, accountId: number) => apiFetch<{ messages: Message[] }>(`/api/messages/${leadId}?account_id=${accountId}`).then(d => d.messages)
-export const sendMessage = (leadId: number, accountId: number, content: string) => apiFetch<{ message: Message }>(`/api/messages/${leadId}?account_id=${accountId}`, { method: 'POST', body: JSON.stringify({ content }) }).then(d => d.message)
+export interface SendResult { message: Message; delivered: boolean; error?: string }
+export const sendMessage = (leadId: number, accountId: number, content: string) => apiFetch<SendResult>(`/api/messages/${leadId}?account_id=${accountId}`, { method: 'POST', body: JSON.stringify({ content }) })
 
 // Dashboard
 export const fetchDashboardStats = (accountId: number, days = 7) => apiFetch<DashboardStats>(`/api/dashboard/stats?account_id=${accountId}&days=${days}`)

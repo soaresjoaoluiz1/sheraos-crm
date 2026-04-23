@@ -71,14 +71,16 @@ router.post('/:leadId', async (req, res) => {
       console.error(`[Messages] Failed to send to ${jid} via ${instance.instance_name}:`, JSON.stringify(sendData)?.substring(0, 200))
     }
 
-    // Store message (even if Evolution failed, so user sees it in chat)
+    const delivered = !!sendData?.key?.id
+
+    // Store message with delivery status
     const result = db.prepare(`
       INSERT INTO messages (lead_id, account_id, direction, content, sender_name, wa_msg_id)
       VALUES (?, ?, 'outbound', ?, ?, ?)
     `).run(lead.id, lead.account_id, content, req.user.name, sendData?.key?.id || null)
 
     const message = db.prepare('SELECT * FROM messages WHERE id = ?').get(result.lastInsertRowid)
-    res.json({ message })
+    res.json({ message, delivered, error: delivered ? undefined : 'Falha ao enviar pelo WhatsApp. Verifique a conexao.' })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
