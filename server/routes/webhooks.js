@@ -23,6 +23,11 @@ async function fetchAndSaveProfilePic(instance, phone, leadId) {
 
 // Helper: get or create lead from phone
 function getOrCreateLead(accountId, phone, name, source, waJid, instanceId) {
+  // Normalize phone
+  if (phone) {
+    phone = phone.replace(/[^\d]/g, '')
+    if (!phone.startsWith('55') && phone.length >= 10 && phone.length <= 11) phone = '55' + phone
+  }
   // Find existing by phone or wa_remote_jid
   let lead = null
   if (waJid) lead = db.prepare('SELECT * FROM leads WHERE account_id = ? AND wa_remote_jid = ?').get(accountId, waJid)
@@ -163,8 +168,9 @@ router.post('/evolution/:accountSlug', (req, res) => {
       // No real phone number available — skip
       return res.json({ ok: true })
     }
-    const phone = realJid.replace('@s.whatsapp.net', '').replace('@c.us', '')
+    let phone = realJid.replace('@s.whatsapp.net', '').replace('@c.us', '').replace(/[^\d]/g, '')
     if (!phone) return res.json({ ok: true })
+    if (!phone.startsWith('55') && phone.length >= 10 && phone.length <= 11) phone = '55' + phone
     // Use the normalized phone-based JID for consistent dedup
     const dedupJid = `${phone}@s.whatsapp.net`
 
@@ -255,7 +261,7 @@ router.post('/meta-leads/:accountSlug', async (req, res) => {
         for (const field of (data.field_data || [])) {
           const val = field.values?.[0] || ''
           if (field.name === 'full_name') name = val
-          else if (field.name === 'phone_number') phone = val.replace(/[^\d+]/g, '')
+          else if (field.name === 'phone_number') { phone = val.replace(/[^\d]/g, ''); if (!phone.startsWith('55') && phone.length >= 10 && phone.length <= 11) phone = '55' + phone }
           else if (field.name === 'email') email = val
         }
 

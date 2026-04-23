@@ -6,6 +6,15 @@ import { broadcastSSE } from '../sse.js'
 
 const router = Router()
 
+// Normalize phone to Brazil format (55XXXXXXXXXXX)
+function normalizePhone(phone) {
+  if (!phone) return phone
+  phone = phone.replace(/[^\d+]/g, '')
+  if (phone.startsWith('+')) phone = phone.slice(1)
+  if (!phone.startsWith('55') && phone.length >= 10 && phone.length <= 11) phone = '55' + phone
+  return phone
+}
+
 // List leads with filters
 router.get('/', (req, res) => {
   if (!req.accountId) return res.status(400).json({ error: 'account_id required' })
@@ -72,12 +81,7 @@ router.post('/', requireRole('super_admin', 'gerente'), (req, res) => {
   if (!req.accountId) return res.status(400).json({ error: 'account_id required' })
   let { name, phone, email, city, source, source_detail, notes, funnel_id, attendant_id, empresa, cpf_cnpj, instagram, trabalha_anuncio, investimento_anuncios } = req.body
 
-  // Normalize phone to Brazil format (55XXXXXXXXXXX)
-  if (phone) {
-    phone = phone.replace(/[^\d+]/g, '') // remove tudo exceto digitos e +
-    if (phone.startsWith('+')) phone = phone.slice(1)
-    if (!phone.startsWith('55') && phone.length >= 10 && phone.length <= 11) phone = '55' + phone
-  }
+  phone = normalizePhone(phone)
 
   // Get default funnel if not specified
   let fid = funnel_id
@@ -155,12 +159,7 @@ router.put('/:id', (req, res) => {
 
   let { name, phone, email, city, notes, custom_fields, empresa, cpf_cnpj, instagram, trabalha_anuncio, investimento_anuncios } = req.body
 
-  // Normalize phone to Brazil format
-  if (phone) {
-    phone = phone.replace(/[^\d+]/g, '')
-    if (phone.startsWith('+')) phone = phone.slice(1)
-    if (!phone.startsWith('55') && phone.length >= 10 && phone.length <= 11) phone = '55' + phone
-  }
+  phone = normalizePhone(phone)
 
   const sets = []; const params = []
   if (name !== undefined) { sets.push('name = ?'); params.push(name) }

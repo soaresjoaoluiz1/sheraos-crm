@@ -38,11 +38,15 @@ router.post('/:leadId', async (req, res) => {
     const instance = db.prepare('SELECT * FROM whatsapp_instances WHERE account_id = ? AND status = ?').get(lead.account_id, 'connected')
     if (!instance) return res.status(400).json({ error: 'Nenhuma instancia WhatsApp conectada' })
 
-    const jid = lead.wa_remote_jid || lead.phone
+    let jid = lead.wa_remote_jid || lead.phone
     if (!jid) return res.status(400).json({ error: 'Lead sem telefone' })
 
+    // Normalize number for Evolution API
+    let number = jid.replace('@s.whatsapp.net', '').replace('@c.us', '').replace(/[^\d]/g, '')
+    if (!number.startsWith('55') && number.length >= 10 && number.length <= 11) number = '55' + number
+
     // Send via Evolution API (with 1 retry on failure)
-    const sendPayload = { number: jid.replace('@s.whatsapp.net', ''), text: content }
+    const sendPayload = { number, text: content }
     let sendData = null
     for (let attempt = 0; attempt < 2; attempt++) {
       try {

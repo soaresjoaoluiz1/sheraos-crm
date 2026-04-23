@@ -84,7 +84,7 @@ router.post('/:id/send', requireRole('super_admin', 'gerente'), async (req, res)
       const sendRes = await fetch(`${instance.api_url}/message/sendText/${instance.instance_name}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'apikey': instance.api_key },
-        body: JSON.stringify({ number: r.phone, text }),
+        body: JSON.stringify({ number: (r.phone || '').replace(/[^\d]/g, '').replace(/^(?!55)(\d{10,11})$/, '55$1'), text }),
       })
       const data = await sendRes.json()
 
