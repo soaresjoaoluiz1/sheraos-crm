@@ -5,26 +5,60 @@ import { broadcastSSE } from './sse.js'
 // Runs every 5 minutes
 const INTERVAL_MS = 5 * 60 * 1000
 
-// ─── Check WhatsApp instance connections ─────────────────────────
+// ─── Check WhatsApp instances + auto-reconnect ─────────────────
 async function checkWhatsAppInstances() {
+  // First check if Evolution API is alive
+  let evolutionAlive = false
+  try {
+    const r = await fetch('http://127.0.0.1:8080/', { timeout: 5000 })
+    evolutionAlive = r.ok || r.status === 401 || r.status === 404
+  } catch {
+    console.error('[Health] Evolution API is DOWN — cannot check instances')
+    return
+  }
+
   const instances = db.prepare("SELECT * FROM whatsapp_instances WHERE status IN ('connected', 'connecting')").all()
   for (const inst of instances) {
     try {
-      const r = await fetch(`${inst.api_url}/instance/connectionState/${inst.instance_name}`, {
-        headers: { apikey: inst.api_key }, timeout: 10000,
+      const r = await fetch(`${inst.api_url}/instance/connectionState/${encodeURIComponent(inst.instance_name)}`, {
+        headers: { apikey: inst.api_key },
       })
       const data = await r.json()
       const state = data?.instance?.state || ''
       let newStatus = 'disconnected'
       if (state === 'open' || state === 'connected') newStatus = 'connected'
       else if (state === 'connecting') newStatus = 'connecting'
+      else if (state === 'close' || state === 'closed') newStatus = 'disconnected'
 
       if (newStatus !== inst.status) {
         db.prepare("UPDATE whatsapp_instances SET status = ?, updated_at = datetime('now') WHERE id = ?").run(newStatus, inst.id)
-        console.log(`[Scheduler] Instance ${inst.instance_name}: ${inst.status} → ${newStatus}`)
+        console.log(`[Health] ${inst.instance_name}: ${inst.status} → ${newStatus}`)
+      }
+
+      // AUTO-RECONNECT: if was connected but now disconnected/closed, try to reconnect
+      if (inst.status === 'connected' && (newStatus === 'disconnected' || state === 'close' || state === 'closed')) {
+        console.log(`[Health] ${inst.instance_name} — connection lost, attempting auto-reconnect...`)
+        try {
+          const reconnectRes = await fetch(`${inst.api_url}/instance/connect/${encodeURIComponent(inst.instance_name)}`, {
+            headers: { apikey: inst.api_key },
+          })
+          const reconnectData = await reconnectRes.json()
+          if (reconnectData?.instance?.state === 'open' || reconnectData?.instance?.state === 'connecting') {
+            db.prepare("UPDATE whatsapp_instances SET status = 'connecting', updated_at = datetime('now') WHERE id = ?").run(inst.id)
+            console.log(`[Health] ${inst.instance_name} — reconnect initiated successfully`)
+          } else {
+            console.log(`[Health] ${inst.instance_name} — reconnect response:`, JSON.stringify(reconnectData).substring(0, 150))
+          }
+        } catch (reconnectErr) {
+          console.error(`[Health] ${inst.instance_name} — reconnect failed:`, reconnectErr.message)
+        }
       }
     } catch (err) {
-      // silent fail — don't spam logs
+      console.error(`[Health] ${inst.instance_name} — check failed:`, err.message)
+      // If check fails, mark as disconnected so we try to reconnect next cycle
+      if (inst.status === 'connected') {
+        db.prepare("UPDATE whatsapp_instances SET status = 'disconnected', updated_at = datetime('now') WHERE id = ?").run(inst.id)
+      }
     }
   }
 }

@@ -41,19 +41,41 @@ router.post('/:leadId', async (req, res) => {
     const jid = lead.wa_remote_jid || lead.phone
     if (!jid) return res.status(400).json({ error: 'Lead sem telefone' })
 
-    // Send via Evolution API
-    const sendRes = await fetch(`${instance.api_url}/message/sendText/${instance.instance_name}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'apikey': instance.api_key },
-      body: JSON.stringify({ number: jid.replace('@s.whatsapp.net', ''), text: content }),
-    })
-    const sendData = await sendRes.json()
+    // Send via Evolution API (with 1 retry on failure)
+    const sendPayload = { number: jid.replace('@s.whatsapp.net', ''), text: content }
+    let sendData = null
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const sendRes = await fetch(`${instance.api_url}/message/sendText/${encodeURIComponent(instance.instance_name)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': instance.api_key },
+          body: JSON.stringify(sendPayload),
+        })
+        sendData = await sendRes.json()
+        if (sendData.key?.id) break // success
+        if (attempt === 0 && (sendData.error || sendData.status === 500)) {
+          console.log(`[Messages] Send attempt 1 failed for ${instance.instance_name}, retrying in 2s...`)
+          await new Promise(r => setTimeout(r, 2000))
+        }
+      } catch (fetchErr) {
+        if (attempt === 0) {
+          console.log(`[Messages] Send fetch failed: ${fetchErr.message}, retrying in 2s...`)
+          await new Promise(r => setTimeout(r, 2000))
+        } else {
+          throw fetchErr
+        }
+      }
+    }
 
-    // Store message
+    if (!sendData?.key?.id) {
+      console.error(`[Messages] Failed to send to ${jid} via ${instance.instance_name}:`, JSON.stringify(sendData)?.substring(0, 200))
+    }
+
+    // Store message (even if Evolution failed, so user sees it in chat)
     const result = db.prepare(`
       INSERT INTO messages (lead_id, account_id, direction, content, sender_name, wa_msg_id)
       VALUES (?, ?, 'outbound', ?, ?, ?)
-    `).run(lead.id, lead.account_id, content, req.user.name, sendData.key?.id || null)
+    `).run(lead.id, lead.account_id, content, req.user.name, sendData?.key?.id || null)
 
     const message = db.prepare('SELECT * FROM messages WHERE id = ?').get(result.lastInsertRowid)
     res.json({ message })
