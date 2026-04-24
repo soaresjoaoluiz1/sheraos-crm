@@ -83,7 +83,12 @@ export default function LeadDetail() {
   const handleSendMsg = async () => {
     if (!msgText.trim() || !lead || !accountId) return
     setSending(true)
-    try { const msg = await sendMessage(lead.id, accountId, msgText); setMessages(prev => [...prev, msg]); setMsgText('') } catch {}
+    try {
+      const result = await sendMessage(lead.id, accountId, msgText)
+      setMessages(prev => [...prev, result.message])
+      setMsgText('')
+      if (!result.delivered) alert('Mensagem salva mas NAO enviada no WhatsApp. Verifique a conexao.')
+    } catch (e: any) { alert('Erro: ' + (e?.message || 'desconhecido')) }
     setSending(false)
   }
 
