@@ -309,19 +309,43 @@ router.post('/sheets/:accountSlug', (req, res) => {
     const account = db.prepare('SELECT * FROM accounts WHERE slug = ? AND is_active = 1').get(req.params.accountSlug)
     if (!account) return res.status(404).json({ error: 'Account not found' })
 
-    const { name, phone, email, city, source, notes, empresa, cpf_cnpj, instagram } = req.body
+    const body = req.body
+    // Extract known fields (supports both PT-BR and Facebook format)
+    const name = body.name || body.first_name || body.nome || ''
+    const phone = body.phone || body.phone_number || body.telefone || body.whatsapp || body.celular || ''
+    const email = body.email || ''
+    const city = body.city || body.cidade || ''
+    const empresa = body.empresa || ''
+    const cpf_cnpj = body.cpf_cnpj || body.cpf || body.cnpj || ''
+    const instagram = body.instagram || ''
+    const source = body.source || body.fonte || body.form_name || 'google_sheets'
+    const source_detail = body.source_detail || [body.campaign_name, body.adset_name, body.ad_name].filter(Boolean).join(' > ') || ''
+
     if (!name && !phone) return res.status(400).json({ error: 'name ou phone obrigatorio' })
 
-    const { lead, isNew } = getOrCreateLead(account.id, phone, name, source || 'google_sheets', null)
+    const { lead, isNew } = getOrCreateLead(account.id, phone, name, source, null)
     if (!lead) return res.status(400).json({ error: 'Falha ao criar lead (sem funil configurado?)' })
 
-    // Update optional fields if not already set
+    // Update optional fields
     if (email) db.prepare('UPDATE leads SET email = COALESCE(email, ?) WHERE id = ?').run(email, lead.id)
     if (city) db.prepare('UPDATE leads SET city = COALESCE(city, ?) WHERE id = ?').run(city, lead.id)
-    if (notes) db.prepare('UPDATE leads SET notes = COALESCE(notes, ?) WHERE id = ?').run(notes, lead.id)
     if (empresa) db.prepare('UPDATE leads SET empresa = COALESCE(empresa, ?) WHERE id = ?').run(empresa, lead.id)
     if (cpf_cnpj) db.prepare('UPDATE leads SET cpf_cnpj = COALESCE(cpf_cnpj, ?) WHERE id = ?').run(cpf_cnpj, lead.id)
     if (instagram) db.prepare('UPDATE leads SET instagram = COALESCE(instagram, ?) WHERE id = ?').run(instagram, lead.id)
+    if (source_detail) db.prepare('UPDATE leads SET source_detail = COALESCE(source_detail, ?) WHERE id = ?').run(source_detail, lead.id)
+
+    // Collect custom/dynamic fields (Facebook form questions, etc)
+    const knownKeys = new Set(['name','first_name','nome','phone','phone_number','telefone','whatsapp','celular','email','city','cidade','empresa','cpf_cnpj','cpf','cnpj','instagram','source','fonte','form_name','source_detail','campaign_name','campaign_id','adset_name','adset_id','ad_name','ad_id','form_id','id','created_time','is_organic','platform','lead_status'])
+    const customFields = Object.entries(body)
+      .filter(([k, v]) => !knownKeys.has(k) && v && String(v).trim())
+      .map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`)
+      .join('\n')
+
+    if (customFields) {
+      const existing = db.prepare('SELECT notes FROM leads WHERE id = ?').get(lead.id)
+      const newNotes = existing?.notes ? existing.notes + '\n' + customFields : customFields
+      db.prepare('UPDATE leads SET notes = ? WHERE id = ?').run(newNotes, lead.id)
+    }
 
     if (isNew) {
       try { broadcastSSE(account.id, 'lead:created', lead) } catch {}

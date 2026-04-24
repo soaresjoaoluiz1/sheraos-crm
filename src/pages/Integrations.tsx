@@ -274,58 +274,76 @@ export default function Integrations() {
               <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Como configurar:</div>
               <ol style={{ fontSize: 11, color: '#9B96B0', lineHeight: 1.8, paddingLeft: 16, margin: 0 }}>
                 <li>Abra sua planilha no Google Sheets</li>
-                <li>A planilha precisa ter colunas: <strong style={{ color: '#FFB300' }}>Nome | Telefone | Email | Cidade</strong> (nessa ordem, na linha 1)</li>
-                <li>Menu: <strong>Extensoes → Apps Script</strong></li>
-                <li>Apague o codigo padrao e cole o script abaixo</li>
-                <li>Substitua a URL do webhook pela URL acima</li>
-                <li>Salve e configure o trigger (relogio → adicionar gatilho → onEdit ou onChange)</li>
-                <li>Pronto! Cada nova linha na planilha cria um lead no CRM</li>
+                <li>Funciona com qualquer planilha — formato livre ou exportado do Facebook Ads</li>
+                <li>Colunas reconhecidas automaticamente: <strong style={{ color: '#FFB300' }}>first_name, phone_number, email, cidade, empresa, instagram</strong></li>
+                <li>Perguntas personalizadas do formulario Meta sao salvas nas <strong>observacoes</strong> do lead</li>
+                <li>Dados de campanha (campaign_name, ad_name) sao salvos como fonte</li>
+                <li>Menu: <strong>Extensoes → Apps Script</strong> → cole o script abaixo</li>
+                <li>Configure o trigger: <strong>relogio → adicionar gatilho → onChange → Da planilha</strong></li>
+                <li>Pronto! Cada nova linha cria um lead no CRM automaticamente</li>
               </ol>
             </div>
 
             <details style={{ marginTop: 12 }}>
               <summary style={{ fontSize: 12, color: '#FFB300', cursor: 'pointer', fontWeight: 600 }}>Ver script do Apps Script (clique pra expandir)</summary>
-              <pre style={{ marginTop: 8, padding: 12, background: '#0A0118', borderRadius: 8, fontSize: 10, color: '#C8C4D4', overflow: 'auto', maxHeight: 300, whiteSpace: 'pre-wrap' }}>{`// Cole este script no Apps Script da sua planilha
+              <pre style={{ marginTop: 8, padding: 12, background: '#0A0118', borderRadius: 8, fontSize: 10, color: '#C8C4D4', overflow: 'auto', maxHeight: 400, whiteSpace: 'pre-wrap' }}>{`// Cole este script no Apps Script da sua planilha
+// Funciona com planilhas do Facebook Ads e qualquer formato
 const WEBHOOK_URL = 'https://drosagencia.com.br/crm/api/webhooks/sheets/${accountSlug}';
-const HEADER_ROW = 1; // linha do cabecalho
+const HEADER_ROW = 1;
+var SENT_COL = null; // coluna "enviado" (criada automaticamente)
 
-function onEdit(e) {
-  const sheet = e.source.getActiveSheet();
-  const row = e.range.getRow();
-  if (row <= HEADER_ROW) return; // ignora edição no cabeçalho
+function onChange(e) {
+  var sheet = SpreadsheetApp.getActiveSheet();
+  var lastRow = sheet.getLastRow();
+  if (lastRow <= HEADER_ROW) return;
 
-  const data = sheet.getRange(row, 1, 1, sheet.getLastColumn()).getValues()[0];
-  const headers = sheet.getRange(HEADER_ROW, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var headers = sheet.getRange(HEADER_ROW, 1, 1, sheet.getLastColumn()).getValues()[0];
 
-  const payload = {};
-  const fieldMap = {
-    'nome': 'name', 'name': 'name',
-    'telefone': 'phone', 'phone': 'phone', 'whatsapp': 'phone', 'celular': 'phone',
-    'email': 'email', 'e-mail': 'email',
-    'cidade': 'city', 'city': 'city',
-    'empresa': 'empresa',
-    'cpf': 'cpf_cnpj', 'cnpj': 'cpf_cnpj', 'cpf/cnpj': 'cpf_cnpj',
-    'instagram': 'instagram',
-    'fonte': 'source', 'source': 'source',
-    'observacoes': 'notes', 'obs': 'notes', 'notes': 'notes',
-  };
+  // Encontrar ou criar coluna "crm_enviado"
+  var sentIdx = headers.indexOf('crm_enviado');
+  if (sentIdx === -1) {
+    sentIdx = headers.length;
+    sheet.getRange(HEADER_ROW, sentIdx + 1).setValue('crm_enviado');
+    headers.push('crm_enviado');
+  }
+  SENT_COL = sentIdx + 1;
 
-  headers.forEach((h, i) => {
-    const key = fieldMap[String(h).toLowerCase().trim()];
-    if (key && data[i]) payload[key] = String(data[i]).trim();
-  });
+  // Processar todas as linhas nao enviadas
+  for (var row = HEADER_ROW + 1; row <= lastRow; row++) {
+    var sent = sheet.getRange(row, SENT_COL).getValue();
+    if (sent) continue; // ja enviado
 
-  if (!payload.name && !payload.phone) return;
+    var data = sheet.getRange(row, 1, 1, headers.length).getValues()[0];
+    var payload = {};
 
-  try {
-    UrlFetchApp.fetch(WEBHOOK_URL, {
-      method: 'post',
-      contentType: 'application/json',
-      payload: JSON.stringify(payload),
-      muteHttpExceptions: true,
+    // Envia TODOS os campos — o CRM separa automaticamente
+    headers.forEach(function(h, i) {
+      if (h && h !== 'crm_enviado' && data[i] !== '' && data[i] != null) {
+        payload[String(h).trim()] = String(data[i]).trim();
+      }
     });
-  } catch (err) {
-    Logger.log('Erro: ' + err.message);
+
+    // Precisa ter pelo menos nome ou telefone
+    var hasName = payload.first_name || payload.nome || payload.name;
+    var hasPhone = payload.phone_number || payload.telefone || payload.phone;
+    if (!hasName && !hasPhone) continue;
+
+    try {
+      var response = UrlFetchApp.fetch(WEBHOOK_URL, {
+        method: 'post',
+        contentType: 'application/json',
+        payload: JSON.stringify(payload),
+        muteHttpExceptions: true,
+      });
+      var result = JSON.parse(response.getContentText());
+      if (result.ok) {
+        sheet.getRange(row, SENT_COL).setValue('SIM');
+      } else {
+        sheet.getRange(row, SENT_COL).setValue('ERRO: ' + (result.error || ''));
+      }
+    } catch (err) {
+      sheet.getRange(row, SENT_COL).setValue('ERRO: ' + err.message);
+    }
   }
 }`}</pre>
             </details>
