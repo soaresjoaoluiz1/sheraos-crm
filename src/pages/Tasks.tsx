@@ -157,7 +157,7 @@ export default function Tasks() {
                   )}
                 </>
               )}
-              <button className="btn btn-secondary btn-sm" onClick={() => navigate(`/chat`)} style={{ fontSize: 11 }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => navigate(`/chat?lead=${t.lead_id}`)} style={{ fontSize: 11 }}>
                 <MessageCircle size={11} /> Abrir Chat
               </button>
               {t.lead_id && (

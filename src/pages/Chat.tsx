@@ -32,7 +32,11 @@ export default function Chat() {
   const [instances, setInstances] = useState<WhatsAppInstance[]>([])
   const [selectedInstance, setSelectedInstance] = useState<number | 'all'>('all')
   const [leads, setLeads] = useState<Lead[]>([])
-  const [selectedLeadId, setSelectedLeadId] = useState<number | null>(null)
+  const [selectedLeadId, setSelectedLeadId] = useState<number | null>(() => {
+    const params = new URLSearchParams(window.location.search)
+    const leadParam = params.get('lead')
+    return leadParam ? parseInt(leadParam) : null
+  })
   const [lead, setLead] = useState<Lead | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [history, setHistory] = useState<StageHistoryEntry[]>([])
