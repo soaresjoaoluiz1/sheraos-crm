@@ -209,10 +209,10 @@ export default function LeadDetail() {
                   <div className="form-group"><label>Instagram</label><input className="input" value={editData.instagram} onChange={e => setEditData(p => ({ ...p, instagram: e.target.value }))} placeholder="@perfil" /></div>
                   <div className="form-group">
                     <label>Trabalha com anuncio?</label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginTop: 4 }}>
-                      <input type="checkbox" checked={editData.trabalha_anuncio} onChange={e => setEditData(p => ({ ...p, trabalha_anuncio: e.target.checked }))} style={{ width: 16, height: 16, accentColor: '#FFB300' }} />
-                      <span style={{ fontSize: 13 }}>{editData.trabalha_anuncio ? 'Sim' : 'Nao'}</span>
-                    </label>
+                    <select className="select" value={editData.trabalha_anuncio || 0} onChange={e => setEditData(p => ({ ...p, trabalha_anuncio: parseInt(e.target.value) }))}>
+                      <option value={0}>Nao</option>
+                      <option value={1}>Sim</option>
+                    </select>
                   </div>
                   <div className="form-group"><label>Investimento Anuncios Mensal (R$)</label><input className="input" type="number" step="0.01" value={editData.investimento_anuncios} onChange={e => setEditData(p => ({ ...p, investimento_anuncios: e.target.value }))} placeholder="5000.00" /></div>
                 </>

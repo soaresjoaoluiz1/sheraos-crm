@@ -83,10 +83,10 @@ export default function Clients() {
             <div className="form-row">
               <div className="form-group">
                 <label>Trabalha com anuncio?</label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginTop: 8 }}>
-                  <input type="checkbox" checked={form.trabalha_anuncio} onChange={e => u('trabalha_anuncio', e.target.checked)} style={{ width: 18, height: 18, accentColor: '#FFB300' }} />
-                  <span style={{ fontSize: 13 }}>{form.trabalha_anuncio ? 'Sim' : 'Nao'}</span>
-                </label>
+                <select className="select" value={form.trabalha_anuncio ? 1 : 0} onChange={e => u('trabalha_anuncio', parseInt(e.target.value))}>
+                  <option value={0}>Nao</option>
+                  <option value={1}>Sim</option>
+                </select>
               </div>
               <div className="form-group"><label>Investimento em Anuncios (R$)</label><input className="input" type="number" step="0.01" value={form.investimento_anuncios} onChange={e => u('investimento_anuncios', e.target.value)} placeholder="5000.00" /></div>
             </div>

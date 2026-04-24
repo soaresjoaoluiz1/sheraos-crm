@@ -110,10 +110,10 @@ export default function ClientDetail() {
           <div className="form-row">
             <div className="form-group">
               <label>Trabalha com anuncio?</label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginTop: 8 }}>
-                <input type="checkbox" checked={!!account.trabalha_anuncio} onChange={e => setAccount({ ...account, trabalha_anuncio: e.target.checked ? 1 : 0 })} style={{ width: 18, height: 18, accentColor: '#FFB300' }} />
-                <span style={{ fontSize: 13 }}>{account.trabalha_anuncio ? 'Sim' : 'Nao'}</span>
-              </label>
+              <select className="select" value={account.trabalha_anuncio || 0} onChange={e => setAccount({ ...account, trabalha_anuncio: parseInt(e.target.value) })}>
+                <option value={0}>Nao</option>
+                <option value={1}>Sim</option>
+              </select>
             </div>
             <div className="form-group"><label>Investimento em Anuncios (R$)</label><input className="input" type="number" step="0.01" value={account.investimento_anuncios || ''} onChange={e => setAccount({ ...account, investimento_anuncios: parseFloat(e.target.value) || null })} placeholder="5000.00" /></div>
           </div>

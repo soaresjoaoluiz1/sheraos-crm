@@ -306,10 +306,11 @@ export default function Leads() {
               <div className="form-group"><label>Investimento Anuncios (R$)</label><input className="input" type="number" step="0.01" value={newLead.investimento_anuncios} onChange={e => setNewLead(p => ({ ...p, investimento_anuncios: e.target.value }))} placeholder="5000.00" /></div>
             </div>
             <div className="form-group">
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <input type="checkbox" checked={!!newLead.trabalha_anuncio} onChange={e => setNewLead(p => ({ ...p, trabalha_anuncio: e.target.checked ? 1 : 0 }))} style={{ accentColor: '#FFB300', width: 16, height: 16 }} />
-                Trabalha com anuncio
-              </label>
+              <label>Trabalha com anuncio?</label>
+              <select className="select" value={newLead.trabalha_anuncio || 0} onChange={e => setNewLead(p => ({ ...p, trabalha_anuncio: parseInt(e.target.value) }))}>
+                <option value={0}>Nao</option>
+                <option value={1}>Sim</option>
+              </select>
             </div>
             <div className="modal-actions"><button className="btn btn-secondary" onClick={() => setShowNew(false)}>Cancelar</button><button className="btn btn-primary" onClick={handleCreate}>Criar Lead</button></div>
           </div>

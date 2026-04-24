@@ -376,10 +376,13 @@ export default function Chat() {
                         <input className="input" placeholder="Nome da Empresa" value={editData.empresa} onChange={e => setEditData(p => ({ ...p, empresa: e.target.value }))} style={{ fontSize: 12 }} />
                         <input className="input" placeholder="CPF/CNPJ" value={editData.cpf_cnpj} onChange={e => setEditData(p => ({ ...p, cpf_cnpj: e.target.value }))} style={{ fontSize: 12 }} />
                         <input className="input" placeholder="Instagram (@perfil)" value={editData.instagram} onChange={e => setEditData(p => ({ ...p, instagram: e.target.value }))} style={{ fontSize: 12 }} />
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#9B96B0' }}>
-                          <input type="checkbox" checked={!!editData.trabalha_anuncio} onChange={e => setEditData(p => ({ ...p, trabalha_anuncio: e.target.checked ? 1 : 0 }))} style={{ accentColor: '#FFB300' }} />
-                          Trabalha com anuncio
-                        </label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <span style={{ fontSize: 11, color: '#9B96B0' }}>Anuncio:</span>
+                          <select className="select" value={editData.trabalha_anuncio || 0} onChange={e => setEditData(p => ({ ...p, trabalha_anuncio: parseInt(e.target.value) }))} style={{ fontSize: 11, width: 70, padding: '3px 6px' }}>
+                            <option value={0}>Nao</option>
+                            <option value={1}>Sim</option>
+                          </select>
+                        </div>
                         <input className="input" placeholder="Investimento Anuncios (R$)" type="number" step="0.01" value={editData.investimento_anuncios} onChange={e => setEditData(p => ({ ...p, investimento_anuncios: e.target.value }))} style={{ fontSize: 12 }} />
                       </div>
                     ) : (
