@@ -3,10 +3,10 @@ import { useAccount } from '../context/AccountContext'
 import {
   fetchWhatsAppInstances, createWhatsAppInstance, connectWhatsAppInstance,
   checkWhatsAppStatus, refreshWhatsAppQR, disconnectWhatsApp, deleteWhatsAppInstance,
-  fetchEvolutionConfig, saveEvolutionConfig,
+  fetchEvolutionConfig, saveEvolutionConfig, apiFetch,
   type WhatsAppInstance,
 } from '../lib/api'
-import { Plug, Plus, Wifi, WifiOff, Loader, Trash2, QrCode, Power, PowerOff, RefreshCw, Smartphone, Save, Check, Settings } from 'lucide-react'
+import { Plug, Plus, Wifi, WifiOff, Loader, Trash2, QrCode, Power, PowerOff, RefreshCw, Smartphone, Save, Check, Settings, FileSpreadsheet, Copy } from 'lucide-react'
 
 export default function Integrations() {
   const { accountId } = useAccount()
@@ -24,6 +24,8 @@ export default function Integrations() {
   const [evoSaved, setEvoSaved] = useState(false)
   const [evoConfigured, setEvoConfigured] = useState(false)
   const [savingConfig, setSavingConfig] = useState(false)
+  const [accountSlug, setAccountSlug] = useState('')
+  const [sheetsCopied, setSheetsCopied] = useState(false)
 
   const load = useCallback(() => {
     if (!accountId) return
@@ -37,6 +39,8 @@ export default function Integrations() {
       setEvoKey(config.api_key || '')
       setEvoConfigured(!!(config.api_url && config.api_key))
     }).finally(() => setLoading(false))
+    // Load account slug for webhook URLs
+    apiFetch(`/api/accounts/${accountId}`).then((d: any) => setAccountSlug(d.account?.slug || '')).catch(() => {})
   }, [accountId])
 
   useEffect(() => { load() }, [load])
@@ -245,6 +249,88 @@ export default function Integrations() {
           <h3>Configure a Evolution API acima</h3>
           <p style={{ color: '#9B96B0', fontSize: 13 }}>Salve a URL e API Key do servidor Evolution para comecar a conectar numeros de WhatsApp.</p>
         </div>
+      )}
+
+      {/* Google Sheets Integration */}
+      {accountSlug && (
+        <section className="dash-section" style={{ marginTop: 24 }}>
+          <div className="section-title"><FileSpreadsheet size={14} /> Integracao Google Sheets</div>
+          <div className="card">
+            <p style={{ fontSize: 12, color: '#9B96B0', marginBottom: 12 }}>
+              Conecte uma planilha do Google Sheets ao CRM. Leads adicionados na planilha sao criados automaticamente no sistema.
+            </p>
+
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 11, color: '#9B96B0', display: 'block', marginBottom: 4 }}>URL do Webhook (cole no Apps Script)</label>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input className="input" readOnly value={`https://drosagencia.com.br/crm/api/webhooks/sheets/${accountSlug}`} style={{ fontSize: 11 }} />
+                <button className="btn btn-secondary btn-sm" onClick={() => { navigator.clipboard.writeText(`https://drosagencia.com.br/crm/api/webhooks/sheets/${accountSlug}`); setSheetsCopied(true); setTimeout(() => setSheetsCopied(false), 2000) }}>
+                  {sheetsCopied ? <><Check size={12} /> Copiado</> : <><Copy size={12} /> Copiar</>}
+                </button>
+              </div>
+            </div>
+
+            <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-subtle)', borderRadius: 8, padding: 14 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Como configurar:</div>
+              <ol style={{ fontSize: 11, color: '#9B96B0', lineHeight: 1.8, paddingLeft: 16, margin: 0 }}>
+                <li>Abra sua planilha no Google Sheets</li>
+                <li>A planilha precisa ter colunas: <strong style={{ color: '#FFB300' }}>Nome | Telefone | Email | Cidade</strong> (nessa ordem, na linha 1)</li>
+                <li>Menu: <strong>Extensoes → Apps Script</strong></li>
+                <li>Apague o codigo padrao e cole o script abaixo</li>
+                <li>Substitua a URL do webhook pela URL acima</li>
+                <li>Salve e configure o trigger (relogio → adicionar gatilho → onEdit ou onChange)</li>
+                <li>Pronto! Cada nova linha na planilha cria um lead no CRM</li>
+              </ol>
+            </div>
+
+            <details style={{ marginTop: 12 }}>
+              <summary style={{ fontSize: 12, color: '#FFB300', cursor: 'pointer', fontWeight: 600 }}>Ver script do Apps Script (clique pra expandir)</summary>
+              <pre style={{ marginTop: 8, padding: 12, background: '#0A0118', borderRadius: 8, fontSize: 10, color: '#C8C4D4', overflow: 'auto', maxHeight: 300, whiteSpace: 'pre-wrap' }}>{`// Cole este script no Apps Script da sua planilha
+const WEBHOOK_URL = 'https://drosagencia.com.br/crm/api/webhooks/sheets/${accountSlug}';
+const HEADER_ROW = 1; // linha do cabecalho
+
+function onEdit(e) {
+  const sheet = e.source.getActiveSheet();
+  const row = e.range.getRow();
+  if (row <= HEADER_ROW) return; // ignora edição no cabeçalho
+
+  const data = sheet.getRange(row, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const headers = sheet.getRange(HEADER_ROW, 1, 1, sheet.getLastColumn()).getValues()[0];
+
+  const payload = {};
+  const fieldMap = {
+    'nome': 'name', 'name': 'name',
+    'telefone': 'phone', 'phone': 'phone', 'whatsapp': 'phone', 'celular': 'phone',
+    'email': 'email', 'e-mail': 'email',
+    'cidade': 'city', 'city': 'city',
+    'empresa': 'empresa',
+    'cpf': 'cpf_cnpj', 'cnpj': 'cpf_cnpj', 'cpf/cnpj': 'cpf_cnpj',
+    'instagram': 'instagram',
+    'fonte': 'source', 'source': 'source',
+    'observacoes': 'notes', 'obs': 'notes', 'notes': 'notes',
+  };
+
+  headers.forEach((h, i) => {
+    const key = fieldMap[String(h).toLowerCase().trim()];
+    if (key && data[i]) payload[key] = String(data[i]).trim();
+  });
+
+  if (!payload.name && !payload.phone) return;
+
+  try {
+    UrlFetchApp.fetch(WEBHOOK_URL, {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true,
+    });
+  } catch (err) {
+    Logger.log('Erro: ' + err.message);
+  }
+}`}</pre>
+            </details>
+          </div>
+        </section>
       )}
 
       {/* New Instance Modal — only asks for name */}

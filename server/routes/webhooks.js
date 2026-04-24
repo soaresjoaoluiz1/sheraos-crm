@@ -303,4 +303,36 @@ router.post('/site/:accountSlug', (req, res) => {
   }
 })
 
+// ─── Google Sheets webhook ──────────────────────────────────────
+router.post('/sheets/:accountSlug', (req, res) => {
+  try {
+    const account = db.prepare('SELECT * FROM accounts WHERE slug = ? AND is_active = 1').get(req.params.accountSlug)
+    if (!account) return res.status(404).json({ error: 'Account not found' })
+
+    const { name, phone, email, city, source, notes, empresa, cpf_cnpj, instagram } = req.body
+    if (!name && !phone) return res.status(400).json({ error: 'name ou phone obrigatorio' })
+
+    const { lead, isNew } = getOrCreateLead(account.id, phone, name, source || 'google_sheets', null)
+    if (!lead) return res.status(400).json({ error: 'Falha ao criar lead (sem funil configurado?)' })
+
+    // Update optional fields if not already set
+    if (email) db.prepare('UPDATE leads SET email = COALESCE(email, ?) WHERE id = ?').run(email, lead.id)
+    if (city) db.prepare('UPDATE leads SET city = COALESCE(city, ?) WHERE id = ?').run(city, lead.id)
+    if (notes) db.prepare('UPDATE leads SET notes = COALESCE(notes, ?) WHERE id = ?').run(notes, lead.id)
+    if (empresa) db.prepare('UPDATE leads SET empresa = COALESCE(empresa, ?) WHERE id = ?').run(empresa, lead.id)
+    if (cpf_cnpj) db.prepare('UPDATE leads SET cpf_cnpj = COALESCE(cpf_cnpj, ?) WHERE id = ?').run(cpf_cnpj, lead.id)
+    if (instagram) db.prepare('UPDATE leads SET instagram = COALESCE(instagram, ?) WHERE id = ?').run(instagram, lead.id)
+
+    if (isNew) {
+      try { broadcastSSE(account.id, 'lead:created', lead) } catch {}
+    }
+
+    console.log(`[Webhook Sheets] ${isNew ? 'New' : 'Existing'} lead: ${name || phone} → account ${account.name}`)
+    res.json({ ok: true, leadId: lead.id, isNew })
+  } catch (err) {
+    console.error('[Webhook Sheets]', err.message)
+    res.status(500).json({ error: err.message })
+  }
+})
+
 export default router
