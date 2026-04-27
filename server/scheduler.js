@@ -251,8 +251,9 @@ async function pollMissedMessages() {
       }
 
       if (imported > 0) console.log(`[Polling] ${inst.instance_name}: imported ${imported} missed messages`)
+      else console.log(`[Polling] ${inst.instance_name}: ${messages.length} msgs checked, all synced`)
     } catch (err) {
-      // Silent — don't spam logs on polling failures
+      console.error(`[Polling] ${inst.instance_name}: error — ${err.message}`)
     }
   }
 }
@@ -299,6 +300,7 @@ async function tick() {
 
 // ─── Polling tick (every 3 min) ──────────────────────────────────
 async function pollTick() {
+  console.log('[Polling] Running...')
   try {
     await pollMissedMessages()
   } catch (err) {
