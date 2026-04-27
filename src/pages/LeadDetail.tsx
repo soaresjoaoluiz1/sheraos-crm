@@ -219,7 +219,7 @@ export default function LeadDetail() {
               ) : (
                 <>
                   <div className="lead-info-row"><span className="lead-info-label">Nome</span><span className="lead-info-value">{lead.name || '-'}</span></div>
-                  <div className="lead-info-row"><span className="lead-info-label"><Phone size={12} /> Telefone</span><span className="lead-info-value">{lead.phone || '-'}</span></div>
+                  <div className="lead-info-row"><span className="lead-info-label"><Phone size={12} /> Telefone</span><span className="lead-info-value">{lead.phone || '-'} {lead.phone && lead.phone.replace(/\D/g,'').length !== 13 && <span style={{ color: '#FF6B6B', fontSize: 10 }}>⚠ incompleto</span>}</span></div>
                   <div className="lead-info-row"><span className="lead-info-label"><Mail size={12} /> Email</span><span className="lead-info-value">{lead.email || '-'}</span></div>
                   <div className="lead-info-row"><span className="lead-info-label"><MapPin size={12} /> Cidade</span><span className="lead-info-value">{lead.city || '-'}</span></div>
                   {lead.empresa && <div className="lead-info-row"><span className="lead-info-label">Empresa</span><span className="lead-info-value">{lead.empresa}</span></div>}

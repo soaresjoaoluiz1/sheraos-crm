@@ -40,6 +40,8 @@ router.post('/:leadId', async (req, res) => {
 
     let jid = lead.wa_remote_jid || lead.phone
     if (!jid) return res.status(400).json({ error: 'Lead sem telefone' })
+    // Check if it's a @lid without real phone
+    if (jid.endsWith('@lid') && !lead.phone) return res.status(400).json({ error: 'Lead sem telefone real (ID temporario do WhatsApp). Edite o lead e adicione o telefone manualmente.' })
 
     // Normalize number for Evolution API
     let number = jid.replace('@s.whatsapp.net', '').replace('@c.us', '').replace('@lid', '').replace(/[^\d]/g, '')

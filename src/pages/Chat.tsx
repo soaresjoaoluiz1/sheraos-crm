@@ -388,7 +388,7 @@ export default function Chat() {
                     ) : (
                       <div style={{ fontSize: 11, display: 'flex', flexDirection: 'column', gap: 4 }}>
                         <div><span style={{ color: '#6B6580' }}>Nome:</span> {lead.name || '-'}</div>
-                        <div><span style={{ color: '#6B6580' }}>Tel:</span> {lead.phone || '-'}</div>
+                        <div><span style={{ color: '#6B6580' }}>Tel:</span> {lead.phone || '-'} {lead.phone && lead.phone.replace(/\D/g,'').length !== 13 && <span style={{ color: '#FF6B6B', fontSize: 9 }}>⚠ numero incompleto</span>}</div>
                         <div><span style={{ color: '#6B6580' }}>Email:</span> {lead.email || '-'}</div>
                         <div><span style={{ color: '#6B6580' }}>Cidade:</span> {lead.city || '-'}</div>
                         {lead.empresa && <div><span style={{ color: '#6B6580' }}>Empresa:</span> {lead.empresa}</div>}
