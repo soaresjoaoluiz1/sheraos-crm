@@ -6,12 +6,22 @@ import { broadcastSSE } from '../sse.js'
 
 const router = Router()
 
-// Normalize phone to Brazil format (55XXXXXXXXXXX)
+// Normalize phone to Brazil format (55DDXXXXXXXXX = 13 digits)
 function normalizePhone(phone) {
   if (!phone) return phone
-  phone = phone.replace(/[^\d+]/g, '')
-  if (phone.startsWith('+')) phone = phone.slice(1)
-  if (!phone.startsWith('55') && phone.length >= 10 && phone.length <= 11) phone = '55' + phone
+  phone = phone.replace(/[^\d]/g, '')
+  // 13 dig starting with 55 → already correct
+  if (phone.startsWith('55') && phone.length === 13) return phone
+  // 12 dig starting with 55 (55+DDD+8dig) → add 9 after DDD
+  if (phone.startsWith('55') && phone.length === 12) return phone.slice(0, 4) + '9' + phone.slice(4)
+  // 11 dig NOT starting with 55 (DDD+9+8dig) → add 55
+  if (!phone.startsWith('55') && phone.length === 11) return '55' + phone
+  // 10 dig NOT starting with 55 (DDD+8dig) → add 55 + 9 after DDD
+  if (!phone.startsWith('55') && phone.length === 10) return '55' + phone.slice(0, 2) + '9' + phone.slice(2)
+  // 11 dig starting with 55 (ambiguous: could be 55+9digits or DDD55+9digits)
+  // Assume DDD 55 (Santa Maria/RS) + 9 digits
+  if (phone.startsWith('55') && phone.length === 11) return '55' + phone
+  // Anything else: return as-is (can't normalize safely)
   return phone
 }
 

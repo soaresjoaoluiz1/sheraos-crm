@@ -22,12 +22,19 @@ async function fetchAndSaveProfilePic(instance, phone, leadId) {
 }
 
 // Helper: get or create lead from phone
+function normalizePhone(p) {
+  if (!p) return p
+  p = p.replace(/[^\d]/g, '')
+  if (p.startsWith('55') && p.length === 13) return p
+  if (p.startsWith('55') && p.length === 12) return p.slice(0, 4) + '9' + p.slice(4)
+  if (!p.startsWith('55') && p.length === 11) return '55' + p
+  if (!p.startsWith('55') && p.length === 10) return '55' + p.slice(0, 2) + '9' + p.slice(2)
+  if (p.startsWith('55') && p.length === 11) return '55' + p
+  return p
+}
+
 function getOrCreateLead(accountId, phone, name, source, waJid, instanceId) {
-  // Normalize phone
-  if (phone) {
-    phone = phone.replace(/[^\d]/g, '')
-    if (!phone.startsWith('55') && phone.length >= 10 && phone.length <= 11) phone = '55' + phone
-  }
+  phone = normalizePhone(phone)
   // Find existing by phone or wa_remote_jid
   let lead = null
   if (waJid) lead = db.prepare('SELECT * FROM leads WHERE account_id = ? AND wa_remote_jid = ?').get(accountId, waJid)
