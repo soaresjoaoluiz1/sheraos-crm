@@ -7,6 +7,7 @@ import { broadcastSSE } from '../sse.js'
 const router = Router()
 
 // Normalize phone to Brazil format (55DDXXXXXXXXX = 13 digits)
+// Only normalizes when we have enough info. Never invents DDD.
 function normalizePhone(phone) {
   if (!phone) return phone
   phone = phone.replace(/[^\d]/g, '')
@@ -18,10 +19,7 @@ function normalizePhone(phone) {
   if (!phone.startsWith('55') && phone.length === 11) return '55' + phone
   // 10 dig NOT starting with 55 (DDD+8dig) → add 55 + 9 after DDD
   if (!phone.startsWith('55') && phone.length === 10) return '55' + phone.slice(0, 2) + '9' + phone.slice(2)
-  // 11 dig starting with 55 (ambiguous: could be 55+9digits or DDD55+9digits)
-  // Assume DDD 55 (Santa Maria/RS) + 9 digits
-  if (phone.startsWith('55') && phone.length === 11) return '55' + phone
-  // Anything else: return as-is (can't normalize safely)
+  // Anything else (9 dig, 11 with 55, etc): return as-is — can't normalize safely, no DDD
   return phone
 }
 

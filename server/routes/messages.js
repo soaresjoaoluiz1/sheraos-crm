@@ -46,7 +46,6 @@ router.post('/:leadId', async (req, res) => {
     if (number.startsWith('55') && number.length === 12) number = number.slice(0, 4) + '9' + number.slice(4)
     else if (!number.startsWith('55') && number.length === 11) number = '55' + number
     else if (!number.startsWith('55') && number.length === 10) number = '55' + number.slice(0, 2) + '9' + number.slice(2)
-    else if (number.startsWith('55') && number.length === 11) number = '55' + number
 
     // Send via Evolution API (with 1 retry on failure)
     const sendPayload = { number, text: content }

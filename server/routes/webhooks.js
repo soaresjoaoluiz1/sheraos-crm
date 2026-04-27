@@ -29,8 +29,7 @@ function normalizePhone(p) {
   if (p.startsWith('55') && p.length === 12) return p.slice(0, 4) + '9' + p.slice(4)
   if (!p.startsWith('55') && p.length === 11) return '55' + p
   if (!p.startsWith('55') && p.length === 10) return '55' + p.slice(0, 2) + '9' + p.slice(2)
-  if (p.startsWith('55') && p.length === 11) return '55' + p
-  return p
+  return p // can't normalize safely — return as-is
 }
 
 function getOrCreateLead(accountId, phone, name, source, waJid, instanceId) {
