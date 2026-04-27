@@ -171,14 +171,14 @@ router.post('/evolution/:accountSlug', (req, res) => {
     const realJid = senderPn || remoteJid
     let phone = ''
     let dedupJid = ''
+    let isLid = false
 
     if (senderPn) {
-      // Has real phone
       phone = normalizePhone(senderPn.replace('@s.whatsapp.net', '').replace('@c.us', '').replace(/[^\d]/g, ''))
       dedupJid = `${phone}@s.whatsapp.net`
     } else if (realJid.endsWith('@lid')) {
-      // LID — accept if has pushName (real contact)
       if (!pushName) return res.json({ ok: true })
+      isLid = true
       phone = realJid.replace('@lid', '')
       dedupJid = realJid
     } else {
@@ -187,8 +187,29 @@ router.post('/evolution/:accountSlug', (req, res) => {
     }
     if (!phone) return res.json({ ok: true })
 
-    // Get or create lead (pass instance_id so lead is linked to the WhatsApp number)
-    const { lead, isNew } = getOrCreateLead(account.id, phone, pushName, 'whatsapp', dedupJid, waInstance?.id || null)
+    // Get or create lead
+    let lead, isNew
+    if (isLid) {
+      // @lid: first try by LID jid, then by pushName in same account
+      lead = db.prepare('SELECT * FROM leads WHERE account_id = ? AND wa_remote_jid = ?').get(account.id, dedupJid)
+      if (!lead && pushName) {
+        lead = db.prepare('SELECT * FROM leads WHERE account_id = ? AND name = ?').get(account.id, pushName)
+        if (lead) {
+          // Link LID to existing lead for future lookups
+          db.prepare("UPDATE leads SET wa_remote_jid = ?, updated_at = datetime('now') WHERE id = ?").run(dedupJid, lead.id)
+        }
+      }
+      if (!lead) {
+        // Create new lead with LID (no real phone)
+        const r = getOrCreateLead(account.id, null, pushName, 'whatsapp', dedupJid, waInstance?.id || null)
+        lead = r.lead; isNew = r.isNew
+      } else {
+        isNew = false
+      }
+    } else {
+      const r = getOrCreateLead(account.id, phone, pushName, 'whatsapp', dedupJid, waInstance?.id || null)
+      lead = r.lead; isNew = r.isNew
+    }
     if (!lead) return res.json({ ok: true })
 
     // Fetch profile picture in background (no await)

@@ -240,14 +240,23 @@ async function pollMissedMessages() {
         const dedupJid = isLid ? `${phone}@lid` : `${phone}@s.whatsapp.net`
         let lead = db.prepare('SELECT * FROM leads WHERE account_id = ? AND (wa_remote_jid = ? OR phone = ?)').get(inst.acc_id, dedupJid, phone)
 
+        // For @lid: also try matching by pushName (same person, different ID)
+        if (!lead && isLid && pushName) {
+          lead = db.prepare('SELECT * FROM leads WHERE account_id = ? AND name = ?').get(inst.acc_id, pushName)
+          if (lead) {
+            db.prepare("UPDATE leads SET wa_remote_jid = ?, updated_at = datetime('now') WHERE id = ?").run(dedupJid, lead.id)
+          }
+        }
+
         if (!lead) {
-          // Create lead using default funnel
+          // Create new lead
           const funnel = db.prepare('SELECT id FROM funnels WHERE account_id = ? AND is_default = 1 AND is_active = 1').get(inst.acc_id)
           if (!funnel) continue
           const stage = db.prepare('SELECT id FROM funnel_stages WHERE funnel_id = ? ORDER BY position LIMIT 1').get(funnel.id)
           if (!stage) continue
-          const result = db.prepare('INSERT INTO leads (account_id, funnel_id, stage_id, name, phone, source, wa_remote_jid, instance_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
-            inst.acc_id, funnel.id, stage.id, pushName || phone || 'Sem nome', phone, 'whatsapp', dedupJid, inst.id
+          const leadPhone = isLid ? null : phone // LID leads have no real phone
+          const result = db.prepare("INSERT INTO leads (account_id, funnel_id, stage_id, name, phone, source, wa_remote_jid, instance_id, opted_in_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))").run(
+            inst.acc_id, funnel.id, stage.id, pushName || phone || 'Sem nome', leadPhone, 'whatsapp', dedupJid, inst.id
           )
           lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(result.lastInsertRowid)
           db.prepare('INSERT INTO stage_history (lead_id, to_stage_id, trigger_type) VALUES (?, ?, ?)').run(lead.id, stage.id, 'polling')
