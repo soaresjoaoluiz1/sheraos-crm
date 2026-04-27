@@ -225,11 +225,16 @@ th.right, td.right { text-align: right; }
    ========================================= */
 
 .chat-panel { display: flex; flex-direction: column; height: 420px; background: var(--bg-surface); border-radius: var(--radius-md); border: 1px solid var(--border-subtle); overflow: hidden; }
-.chat-messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 6px; }
-.chat-bubble { max-width: 75%; padding: 10px 14px; border-radius: 14px; font-size: 13px; line-height: 1.5; }
-.chat-bubble.inbound { background: var(--bg-card); color: var(--text-primary); align-self: flex-start; border-bottom-left-radius: 4px; }
-.chat-bubble.outbound { background: linear-gradient(135deg, #2563EB 0%, #3B82F6 100%); color: white; align-self: flex-end; border-bottom-right-radius: 4px; }
-.chat-bubble-time { font-size: 9px; color: var(--text-muted); margin-top: 3px; padding: 0 4px; }
+.chat-messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 4px; background: var(--bg-primary); }
+.chat-msg-row { display: flex; flex-direction: column; }
+.chat-msg-row.inbound { align-items: flex-start; }
+.chat-msg-row.outbound { align-items: flex-end; }
+.chat-bubble { max-width: 65%; padding: 8px 12px; border-radius: 8px; font-size: 13px; line-height: 1.5; position: relative; word-wrap: break-word; }
+.chat-bubble.inbound { background: var(--bg-card); color: var(--text-primary); border-top-left-radius: 0; }
+.chat-bubble.outbound { background: #005C4B; color: white; border-top-right-radius: 0; }
+.chat-bubble-time { font-size: 9px; color: var(--text-muted); margin-top: 2px; padding: 0 4px; display: flex; align-items: center; gap: 4px; }
+.chat-msg-row.outbound .chat-bubble-time { justify-content: flex-end; }
+.chat-msg-row.inbound .chat-bubble-time { justify-content: flex-start; }
 .chat-input { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--border-subtle); background: var(--bg-secondary); }
 
 /* =========================================

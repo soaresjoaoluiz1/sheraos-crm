@@ -298,15 +298,20 @@ export default function Chat() {
               <div className="chat-messages">
                 {messages.length === 0 && <div style={{ textAlign: 'center', color: '#6B6580', padding: 40, fontSize: 13 }}>Nenhuma mensagem</div>}
                 {messages.map(m => (
-                  <div key={m.id}>
+                  <div key={m.id} className={`chat-msg-row ${m.direction}`}>
                     <div className={`chat-bubble ${m.direction}`} style={m.direction === 'outbound' && !m.wa_msg_id ? { border: '1px solid #FF6B6B', opacity: 0.8 } : undefined}>
                       {m.media_type && m.media_type !== 'text'
                         ? <MessageMedia message={m} leadId={lead.id} />
                         : (m.content || <em style={{ opacity: 0.5 }}>Sem conteudo</em>)}
                     </div>
-                    <div className="chat-bubble-time" style={{ textAlign: m.direction === 'outbound' ? 'right' : 'left' }}>
-                      {m.direction === 'outbound' && !m.wa_msg_id && <span style={{ color: '#FF6B6B', marginRight: 4 }}>✗ nao entregue</span>}
-                      {m.sender_name && <span>{m.sender_name} · </span>}{new Date(m.created_at).toLocaleString('pt-BR')}
+                    <div className="chat-bubble-time">
+                      {m.sender_name && <span>{m.sender_name} · </span>}
+                      <span>{new Date(m.created_at).toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                      {m.direction === 'outbound' && (
+                        m.wa_msg_id
+                          ? <span style={{ color: '#53BDEB', marginLeft: 2 }}>✓✓</span>
+                          : <span style={{ color: '#FF6B6B', marginLeft: 2 }}>✗</span>
+                      )}
                     </div>
                   </div>
                 ))}
