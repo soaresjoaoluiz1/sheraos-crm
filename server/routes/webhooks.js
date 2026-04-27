@@ -169,15 +169,23 @@ router.post('/evolution/:accountSlug', (req, res) => {
 
     // Prefer senderPn (real phone) over remoteJid (might be @lid = legacy ID)
     const realJid = senderPn || remoteJid
-    if (realJid.endsWith('@lid')) {
-      // LID = internal WhatsApp ID, no real phone — skip
-      return res.json({ ok: true })
+    let phone = ''
+    let dedupJid = ''
+
+    if (senderPn) {
+      // Has real phone
+      phone = normalizePhone(senderPn.replace('@s.whatsapp.net', '').replace('@c.us', '').replace(/[^\d]/g, ''))
+      dedupJid = `${phone}@s.whatsapp.net`
+    } else if (realJid.endsWith('@lid')) {
+      // LID — accept if has pushName (real contact)
+      if (!pushName) return res.json({ ok: true })
+      phone = realJid.replace('@lid', '')
+      dedupJid = realJid
+    } else {
+      phone = normalizePhone(realJid.replace('@s.whatsapp.net', '').replace('@c.us', '').replace(/[^\d]/g, ''))
+      dedupJid = `${phone}@s.whatsapp.net`
     }
-    let phone = realJid.replace('@s.whatsapp.net', '').replace('@c.us', '').replace(/[^\d]/g, '')
     if (!phone) return res.json({ ok: true })
-    phone = normalizePhone(phone)
-    if (!phone || phone.length < 10 || phone.length > 13) return res.json({ ok: true })
-    const dedupJid = `${phone}@s.whatsapp.net`
 
     // Get or create lead (pass instance_id so lead is linked to the WhatsApp number)
     const { lead, isNew } = getOrCreateLead(account.id, phone, pushName, 'whatsapp', dedupJid, waInstance?.id || null)
