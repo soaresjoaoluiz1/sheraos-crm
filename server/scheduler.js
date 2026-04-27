@@ -218,7 +218,6 @@ async function pollMissedMessages() {
           phone = normalizePhone(jid.replace('@s.whatsapp.net', '').replace('@c.us', ''))
         }
         if (!phone) continue
-        const dedupJid = `${phone}@s.whatsapp.net`
 
         const fromMe = !!key.fromMe
         const pushName = m.pushName || ''
