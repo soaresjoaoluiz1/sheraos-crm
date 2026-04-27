@@ -162,6 +162,116 @@ async function sendBroadcastInBackground(broadcastId) {
   broadcastSSE(broadcast.account_id, 'broadcast:completed', { id: broadcastId, sent, failed })
 }
 
+// ─── Polling backup: fetch missed messages from Evolution ────────
+async function pollMissedMessages() {
+  const instances = db.prepare("SELECT wi.*, a.id as acc_id, a.slug FROM whatsapp_instances wi JOIN accounts a ON a.id = wi.account_id WHERE wi.status = 'connected'").all()
+  if (!instances.length) return
+
+  // Import getOrCreateLead from webhooks logic inline
+  function normalizePhone(p) {
+    if (!p) return p
+    p = p.replace(/[^\d]/g, '')
+    if (!p.startsWith('55') && p.length >= 10 && p.length <= 11) p = '55' + p
+    return p
+  }
+
+  for (const inst of instances) {
+    try {
+      // Fetch recent messages from Evolution (last 5 min)
+      const r = await fetch(`${inst.api_url}/chat/findMessages/${encodeURIComponent(inst.instance_name)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: inst.api_key },
+        body: JSON.stringify({ where: {}, limit: 50 }),
+      })
+      if (!r.ok) continue
+      const data = await r.json()
+      const messages = data?.messages?.records || data?.messages || data || []
+      if (!Array.isArray(messages)) continue
+
+      let imported = 0
+      for (const m of messages) {
+        const key = m.key
+        if (!key || !key.id || !key.remoteJid) continue
+        // Skip groups, broadcasts, status
+        if (key.remoteJid.includes('@g.us') || key.remoteJid.includes('@broadcast') || key.remoteJid.includes('status@')) continue
+        // Skip if already in DB
+        const exists = db.prepare('SELECT id FROM messages WHERE wa_msg_id = ?').get(key.id)
+        if (exists) continue
+
+        // Skip @lid (no real phone)
+        const jid = m.senderPn || key.remoteJid
+        if (jid.endsWith('@lid')) continue
+
+        let phone = normalizePhone(jid.replace('@s.whatsapp.net', '').replace('@c.us', ''))
+        if (!phone) continue
+
+        const fromMe = !!key.fromMe
+        const pushName = m.pushName || ''
+        const timestamp = m.messageTimestamp || null
+
+        // Parse content
+        const msg = m.message || {}
+        let content = msg.conversation || msg.extendedTextMessage?.text || ''
+        let mediaType = 'text'
+        if (msg.imageMessage) { mediaType = 'image'; content = content || '[Imagem]' }
+        else if (msg.videoMessage) { mediaType = 'video'; content = content || '[Video]' }
+        else if (msg.audioMessage) { mediaType = 'audio'; content = content || '[Audio]' }
+        else if (msg.documentMessage) { mediaType = 'document'; content = content || '[Documento]' }
+        else if (msg.stickerMessage) { mediaType = 'sticker'; content = '[Sticker]' }
+        else if (msg.reactionMessage) continue // skip reactions
+
+        if (!content && mediaType === 'text') continue
+
+        // Get or create lead
+        const dedupJid = `${phone}@s.whatsapp.net`
+        let lead = db.prepare('SELECT * FROM leads WHERE account_id = ? AND (wa_remote_jid = ? OR phone = ?)').get(inst.acc_id, dedupJid, phone)
+
+        if (!lead) {
+          // Create lead using default funnel
+          const funnel = db.prepare('SELECT id FROM funnels WHERE account_id = ? AND is_default = 1 AND is_active = 1').get(inst.acc_id)
+          if (!funnel) continue
+          const stage = db.prepare('SELECT id FROM funnel_stages WHERE funnel_id = ? ORDER BY position LIMIT 1').get(funnel.id)
+          if (!stage) continue
+          const result = db.prepare('INSERT INTO leads (account_id, funnel_id, stage_id, name, phone, source, wa_remote_jid, instance_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
+            inst.acc_id, funnel.id, stage.id, pushName || phone, phone, 'whatsapp', dedupJid, inst.id
+          )
+          lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(result.lastInsertRowid)
+          db.prepare('INSERT INTO stage_history (lead_id, to_stage_id, trigger_type) VALUES (?, ?, ?)').run(lead.id, stage.id, 'polling')
+          broadcastSSE(inst.acc_id, 'lead:created', lead)
+        }
+
+        // Store message
+        db.prepare('INSERT INTO messages (lead_id, account_id, direction, content, media_type, sender_name, wa_msg_id, wa_timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
+          lead.id, inst.acc_id, fromMe ? 'outbound' : 'inbound', content, mediaType, fromMe ? '' : pushName, key.id, timestamp
+        )
+        imported++
+
+        // SSE notify
+        broadcastSSE(inst.acc_id, 'lead:message', { lead_id: lead.id })
+      }
+
+      if (imported > 0) console.log(`[Polling] ${inst.instance_name}: imported ${imported} missed messages`)
+    } catch (err) {
+      // Silent — don't spam logs on polling failures
+    }
+  }
+}
+
+// ─── Re-register webhooks on every health check ─────────────────
+async function reRegisterWebhooks() {
+  const instances = db.prepare("SELECT wi.*, a.slug FROM whatsapp_instances wi JOIN accounts a ON a.id = wi.account_id WHERE wi.status = 'connected'").all()
+  for (const inst of instances) {
+    try {
+      const webhookUrl = `https://drosagencia.com.br/crm/api/webhooks/evolution/${inst.slug}`
+      await fetch(`${inst.api_url}/webhook/set/${encodeURIComponent(inst.instance_name)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: inst.api_key },
+        body: JSON.stringify({ webhook: { url: webhookUrl, enabled: true, events: ['MESSAGES_UPSERT'] } }),
+      })
+    } catch {}
+  }
+}
+
 // ─── Clean up stale QR codes (older than 2 minutes) ──────────────
 function cleanupStaleQRCodes() {
   db.prepare(`
@@ -171,7 +281,7 @@ function cleanupStaleQRCodes() {
   `).run()
 }
 
-// ─── Main tick ───────────────────────────────────────────────────
+// ─── Main tick (every 5 min) ─────────────────────────────────────
 async function tick() {
   try {
     await Promise.all([
@@ -180,13 +290,27 @@ async function tick() {
       processScheduledBroadcasts(),
     ])
     cleanupStaleQRCodes()
+    // Re-register webhooks every tick to prevent stale webhooks
+    await reRegisterWebhooks()
   } catch (err) {
     console.error('[Scheduler] Tick error:', err.message)
   }
 }
 
+// ─── Polling tick (every 3 min) ──────────────────────────────────
+async function pollTick() {
+  try {
+    await pollMissedMessages()
+  } catch (err) {
+    console.error('[Polling] Error:', err.message)
+  }
+}
+
 export function startScheduler() {
-  console.log('[Scheduler] Started — running every 5 minutes')
-  tick() // Run once immediately
+  console.log('[Scheduler] Started — main every 5 min, polling every 3 min')
+  tick()
   setInterval(tick, INTERVAL_MS)
+  // Polling runs on separate interval (3 min)
+  setTimeout(() => pollTick(), 30000) // first poll after 30s
+  setInterval(pollTick, 3 * 60 * 1000)
 }
