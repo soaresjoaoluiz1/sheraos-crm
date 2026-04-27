@@ -201,19 +201,14 @@ async function pollMissedMessages() {
         const exists = db.prepare('SELECT id FROM messages WHERE wa_msg_id = ?').get(key.id)
         if (exists) continue
 
-        // Handle @lid (Legacy ID) — no real phone, use LID as identifier
+        // Get real phone — skip @lid without senderPn (no real phone available)
         const jid = m.senderPn || key.remoteJid
-        let phone = ''
-        let dedupJid = ''
+        if (jid.endsWith('@lid')) continue // LID = internal WhatsApp ID, not a real phone
+        if (key.remoteJid.endsWith('@lid') && !m.senderPn) continue // double check
 
-        if (jid.endsWith('@lid')) {
-          phone = jid.replace('@lid', '')
-          dedupJid = jid
-        } else {
-          phone = normalizePhone(jid.replace('@s.whatsapp.net', '').replace('@c.us', ''))
-          if (!phone) continue
-          dedupJid = `${phone}@s.whatsapp.net`
-        }
+        let phone = normalizePhone(jid.replace('@s.whatsapp.net', '').replace('@c.us', ''))
+        if (!phone || phone.length < 10 || phone.length > 13) continue // invalid phone
+        const dedupJid = `${phone}@s.whatsapp.net`
 
         const fromMe = !!key.fromMe
         const pushName = m.pushName || ''
