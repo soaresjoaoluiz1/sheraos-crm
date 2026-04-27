@@ -227,11 +227,11 @@ export default function LeadDetail() {
                   {lead.instagram && <div className="lead-info-row"><span className="lead-info-label">Instagram</span><span className="lead-info-value">{lead.instagram}</span></div>}
                   <div className="lead-info-row"><span className="lead-info-label">Anuncio</span><span className="lead-info-value" style={{ color: lead.trabalha_anuncio ? '#34C759' : '#9B96B0' }}>{lead.trabalha_anuncio ? 'Sim' : 'Nao'}</span></div>
                   <div className="lead-info-row">
-                    <span className="lead-info-label">Opt-in Broadcast</span>
+                    <span className="lead-info-label">Recebe Disparos</span>
                     <span className="lead-info-value" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      {lead.opted_in_at && (!lead.opted_out_at || lead.opted_in_at > lead.opted_out_at)
-                        ? <><span style={{ color: '#34C759' }}>Autorizado</span><button className="btn btn-danger btn-sm" style={{ fontSize: 9, padding: '1px 6px' }} onClick={async () => { await optOutLead(lead.id); loadLead() }}>Revogar</button></>
-                        : <><span style={{ color: '#9B96B0' }}>Nao autorizado</span><button className="btn btn-primary btn-sm" style={{ fontSize: 9, padding: '1px 6px' }} onClick={async () => { await optInLead(lead.id); loadLead() }}>Autorizar</button></>}
+                      {!lead.opted_out_at || (lead.opted_in_at && lead.opted_in_at > lead.opted_out_at)
+                        ? <><span style={{ color: '#34C759' }}>Sim</span><button className="btn btn-danger btn-sm" style={{ fontSize: 9, padding: '1px 6px' }} onClick={async () => { await optOutLead(lead.id); loadLead() }}>Bloquear</button></>
+                        : <><span style={{ color: '#FF6B6B' }}>Bloqueado</span><button className="btn btn-primary btn-sm" style={{ fontSize: 9, padding: '1px 6px' }} onClick={async () => { await optInLead(lead.id); loadLead() }}>Desbloquear</button></>}
                     </span>
                   </div>
                   {lead.investimento_anuncios && <div className="lead-info-row"><span className="lead-info-label">Investimento</span><span className="lead-info-value">R$ {Number(lead.investimento_anuncios).toLocaleString('pt-BR')}</span></div>}

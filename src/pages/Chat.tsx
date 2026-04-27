@@ -396,10 +396,10 @@ export default function Chat() {
                         {lead.instagram && <div><span style={{ color: '#6B6580' }}>Instagram:</span> {lead.instagram}</div>}
                         <div><span style={{ color: '#6B6580' }}>Anuncio:</span> <span style={{ color: lead.trabalha_anuncio ? '#34C759' : '#9B96B0' }}>{lead.trabalha_anuncio ? 'Sim' : 'Nao'}</span></div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <span style={{ color: '#6B6580' }}>Broadcast:</span>
-                          {lead.opted_in_at && (!lead.opted_out_at || lead.opted_in_at > lead.opted_out_at)
-                            ? <span style={{ color: '#34C759', fontSize: 11 }}>Autorizado</span>
-                            : <span style={{ color: '#9B96B0', fontSize: 11 }}>Nao autorizado</span>}
+                          <span style={{ color: '#6B6580' }}>Disparos:</span>
+                          {!lead.opted_out_at || (lead.opted_in_at && lead.opted_in_at > lead.opted_out_at)
+                            ? <span style={{ color: '#34C759', fontSize: 11 }}>Sim</span>
+                            : <span style={{ color: '#FF6B6B', fontSize: 11 }}>Bloqueado</span>}
                         </div>
                         {lead.investimento_anuncios && <div><span style={{ color: '#6B6580' }}>Investimento:</span> R$ {Number(lead.investimento_anuncios).toLocaleString('pt-BR')}</div>}
                         <div><span style={{ color: '#6B6580' }}>Fonte:</span> {lead.source || '-'}</div>

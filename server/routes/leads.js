@@ -104,8 +104,8 @@ router.post('/', requireRole('super_admin', 'gerente'), (req, res) => {
   if (!firstStage) return res.status(400).json({ error: 'Funil sem etapas' })
 
   const result = db.prepare(`
-    INSERT INTO leads (account_id, funnel_id, stage_id, attendant_id, name, phone, email, city, source, source_detail, notes, empresa, cpf_cnpj, instagram, trabalha_anuncio, investimento_anuncios)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO leads (account_id, funnel_id, stage_id, attendant_id, name, phone, email, city, source, source_detail, notes, empresa, cpf_cnpj, instagram, trabalha_anuncio, investimento_anuncios, opted_in_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
   `).run(req.accountId, fid, firstStage.id, attendant_id || null, name, phone, email, city, source || 'manual', source_detail, notes, empresa || null, cpf_cnpj || null, instagram || null, trabalha_anuncio ? 1 : 0, investimento_anuncios || null)
 
   // Log stage history
