@@ -198,12 +198,19 @@ async function pollMissedMessages() {
         const exists = db.prepare('SELECT id FROM messages WHERE wa_msg_id = ?').get(key.id)
         if (exists) continue
 
-        // Skip @lid (no real phone)
+        // Handle @lid (Legacy ID) — no real phone, use LID as identifier
         const jid = m.senderPn || key.remoteJid
-        if (jid.endsWith('@lid')) continue
+        let phone = ''
+        let dedupJid = ''
 
-        let phone = normalizePhone(jid.replace('@s.whatsapp.net', '').replace('@c.us', ''))
-        if (!phone) continue
+        if (jid.endsWith('@lid')) {
+          phone = jid.replace('@lid', '')
+          dedupJid = jid
+        } else {
+          phone = normalizePhone(jid.replace('@s.whatsapp.net', '').replace('@c.us', ''))
+          if (!phone) continue
+          dedupJid = `${phone}@s.whatsapp.net`
+        }
 
         const fromMe = !!key.fromMe
         const pushName = m.pushName || ''
@@ -222,8 +229,7 @@ async function pollMissedMessages() {
 
         if (!content && mediaType === 'text') continue
 
-        // Get or create lead
-        const dedupJid = `${phone}@s.whatsapp.net`
+        // Get or create lead (dedupJid already set above)
         let lead = db.prepare('SELECT * FROM leads WHERE account_id = ? AND (wa_remote_jid = ? OR phone = ?)').get(inst.acc_id, dedupJid, phone)
 
         if (!lead) {
