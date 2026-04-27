@@ -8,7 +8,7 @@ import {
   sendMessage, addLeadNote, addLeadTag, removeLeadTag, createTag,
   fetchLeadCadence, fetchCadences, assignLeadCadence, advanceLeadCadence, removeLeadCadence,
   fetchReadyMessages, fetchLeadQualifications, answerQualification,
-  archiveLead, unarchiveLead,
+  archiveLead, unarchiveLead, optInLead, optOutLead,
   type Lead, type Message, type StageHistoryEntry, type LeadNote, type Funnel, type User as UserType, type Tag,
   type LeadCadence, type Cadence, type ReadyMessage, type LeadQualification,
 } from '../lib/api'
@@ -226,6 +226,14 @@ export default function LeadDetail() {
                   {lead.cpf_cnpj && <div className="lead-info-row"><span className="lead-info-label">CPF/CNPJ</span><span className="lead-info-value">{lead.cpf_cnpj}</span></div>}
                   {lead.instagram && <div className="lead-info-row"><span className="lead-info-label">Instagram</span><span className="lead-info-value">{lead.instagram}</span></div>}
                   <div className="lead-info-row"><span className="lead-info-label">Anuncio</span><span className="lead-info-value" style={{ color: lead.trabalha_anuncio ? '#34C759' : '#9B96B0' }}>{lead.trabalha_anuncio ? 'Sim' : 'Nao'}</span></div>
+                  <div className="lead-info-row">
+                    <span className="lead-info-label">Opt-in Broadcast</span>
+                    <span className="lead-info-value" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {lead.opted_in_at && (!lead.opted_out_at || lead.opted_in_at > lead.opted_out_at)
+                        ? <><span style={{ color: '#34C759' }}>Autorizado</span><button className="btn btn-danger btn-sm" style={{ fontSize: 9, padding: '1px 6px' }} onClick={async () => { await optOutLead(lead.id); loadLead() }}>Revogar</button></>
+                        : <><span style={{ color: '#9B96B0' }}>Nao autorizado</span><button className="btn btn-primary btn-sm" style={{ fontSize: 9, padding: '1px 6px' }} onClick={async () => { await optInLead(lead.id); loadLead() }}>Autorizar</button></>}
+                    </span>
+                  </div>
                   {lead.investimento_anuncios && <div className="lead-info-row"><span className="lead-info-label">Investimento</span><span className="lead-info-value">R$ {Number(lead.investimento_anuncios).toLocaleString('pt-BR')}</span></div>}
                   <div className="lead-info-row"><span className="lead-info-label">Fonte</span><span className="lead-info-value">{lead.source || '-'}</span></div>
                   <div className="lead-info-row"><span className="lead-info-label">Etapa</span><span className="stage-badge" style={{ background: `${currentStage?.color}20`, color: currentStage?.color }}>{currentStage?.name}</span></div>

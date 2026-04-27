@@ -386,6 +386,10 @@ addColumnIfNotExists('leads', 'cpf_cnpj', 'TEXT')
 addColumnIfNotExists('leads', 'instagram', 'TEXT')
 addColumnIfNotExists('leads', 'trabalha_anuncio', 'INTEGER NOT NULL DEFAULT 0')
 addColumnIfNotExists('leads', 'investimento_anuncios', 'REAL')
+// Opt-in/opt-out for WhatsApp broadcasts (Meta compliance)
+addColumnIfNotExists('leads', 'opted_in_at', 'TEXT')
+addColumnIfNotExists('leads', 'opted_out_at', 'TEXT')
+addColumnIfNotExists('leads', 'last_broadcast_at', 'TEXT')
 
 // Broadcasts: message variations (JSON array) + delay between sends
 addColumnIfNotExists('broadcasts', 'message_variations', 'TEXT')

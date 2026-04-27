@@ -354,6 +354,35 @@ router.delete('/tags/:tagId', requireRole('super_admin', 'gerente'), (req, res) 
 })
 
 // =============================================
+// OPT-IN / OPT-OUT (WhatsApp broadcast consent)
+// =============================================
+
+router.post('/:id/opt-in', (req, res) => {
+  const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id)
+  if (!lead) return res.status(404).json({ error: 'Lead nao encontrado' })
+  db.prepare("UPDATE leads SET opted_in_at = datetime('now'), opted_out_at = NULL WHERE id = ?").run(lead.id)
+  res.json({ ok: true })
+})
+
+router.post('/:id/opt-out', (req, res) => {
+  const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id)
+  if (!lead) return res.status(404).json({ error: 'Lead nao encontrado' })
+  db.prepare("UPDATE leads SET opted_out_at = datetime('now') WHERE id = ?").run(lead.id)
+  res.json({ ok: true })
+})
+
+// Bulk opt-in
+router.post('/bulk/opt-in', (req, res) => {
+  if (!req.accountId) return res.status(400).json({ error: 'account_id required' })
+  const { lead_ids } = req.body
+  if (!lead_ids?.length) return res.status(400).json({ error: 'lead_ids required' })
+  const stmt = db.prepare("UPDATE leads SET opted_in_at = datetime('now'), opted_out_at = NULL WHERE id = ? AND account_id = ?")
+  let count = 0
+  for (const id of lead_ids) { stmt.run(id, req.accountId); count++ }
+  res.json({ ok: true, count })
+})
+
+// =============================================
 // BULK ACTIONS
 // =============================================
 

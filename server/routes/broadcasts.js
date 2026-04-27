@@ -26,18 +26,27 @@ router.post('/', requireRole('super_admin', 'gerente'), (req, res) => {
     req.accountId, name, message_template, variationsJson, delay, media_url || null, lead_ids?.length || 0, req.user.id
   )
 
-  // Add recipients
+  // Add recipients (only opted-in leads, respecting 24h cooldown)
+  let skippedNoOptin = 0, skippedCooldown = 0
   if (lead_ids && Array.isArray(lead_ids)) {
     const stmt = db.prepare('INSERT INTO broadcast_recipients (broadcast_id, lead_id, phone) VALUES (?, ?, ?)')
     for (const leadId of lead_ids) {
-      const lead = db.prepare('SELECT phone FROM leads WHERE id = ? AND phone IS NOT NULL AND is_archived = 0').get(leadId)
-      if (lead) stmt.run(result.lastInsertRowid, leadId, lead.phone)
+      const lead = db.prepare('SELECT phone, opted_in_at, opted_out_at, last_broadcast_at FROM leads WHERE id = ? AND phone IS NOT NULL AND is_archived = 0').get(leadId)
+      if (!lead) continue
+      // Check opt-in (skip if never opted in or opted out)
+      if (!lead.opted_in_at || (lead.opted_out_at && lead.opted_out_at > lead.opted_in_at)) { skippedNoOptin++; continue }
+      // Check 24h cooldown
+      if (lead.last_broadcast_at) {
+        const lastSent = new Date(lead.last_broadcast_at)
+        if (Date.now() - lastSent.getTime() < 24 * 60 * 60 * 1000) { skippedCooldown++; continue }
+      }
+      stmt.run(result.lastInsertRowid, leadId, lead.phone)
     }
     db.prepare('UPDATE broadcasts SET total_count = (SELECT COUNT(*) FROM broadcast_recipients WHERE broadcast_id = ?) WHERE id = ?').run(result.lastInsertRowid, result.lastInsertRowid)
   }
 
   const broadcast = db.prepare('SELECT * FROM broadcasts WHERE id = ?').get(result.lastInsertRowid)
-  res.json({ broadcast })
+  res.json({ broadcast, skippedNoOptin, skippedCooldown })
 })
 
 // Get broadcast detail
@@ -90,6 +99,7 @@ router.post('/:id/send', requireRole('super_admin', 'gerente'), async (req, res)
 
       if (data.key?.id) {
         db.prepare("UPDATE broadcast_recipients SET status = 'sent', wa_msg_id = ?, sent_at = datetime('now') WHERE id = ?").run(data.key.id, r.id)
+        db.prepare("UPDATE leads SET last_broadcast_at = datetime('now') WHERE id = ?").run(r.lead_id)
         sent++
       } else {
         db.prepare("UPDATE broadcast_recipients SET status = 'failed', error = ? WHERE id = ?").run(JSON.stringify(data), r.id)
