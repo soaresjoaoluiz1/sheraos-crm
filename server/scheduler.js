@@ -237,7 +237,7 @@ async function pollMissedMessages() {
           const stage = db.prepare('SELECT id FROM funnel_stages WHERE funnel_id = ? ORDER BY position LIMIT 1').get(funnel.id)
           if (!stage) continue
           const result = db.prepare('INSERT INTO leads (account_id, funnel_id, stage_id, name, phone, source, wa_remote_jid, instance_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
-            inst.acc_id, funnel.id, stage.id, pushName || phone, phone, 'whatsapp', dedupJid, inst.id
+            inst.acc_id, funnel.id, stage.id, pushName || phone || 'Sem nome', phone, 'whatsapp', dedupJid, inst.id
           )
           lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(result.lastInsertRowid)
           db.prepare('INSERT INTO stage_history (lead_id, to_stage_id, trigger_type) VALUES (?, ?, ?)').run(lead.id, stage.id, 'polling')
