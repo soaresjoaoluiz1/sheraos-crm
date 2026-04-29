@@ -39,7 +39,8 @@ router.post('/:leadId', async (req, res) => {
       ? db.prepare('SELECT * FROM whatsapp_instances WHERE id = ? AND status = ?').get(lead.instance_id, 'connected')
       : null
     if (!instance) {
-      instance = db.prepare('SELECT * FROM whatsapp_instances WHERE account_id = ? AND status = ? ORDER BY id LIMIT 1').get(lead.account_id, 'connected')
+      // Prefer the most recently created connected instance (usually the active one for new leads)
+      instance = db.prepare('SELECT * FROM whatsapp_instances WHERE account_id = ? AND status = ? ORDER BY id DESC LIMIT 1').get(lead.account_id, 'connected')
     }
     if (!instance) return res.status(400).json({ error: 'Nenhuma instancia WhatsApp conectada' })
 

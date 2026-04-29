@@ -87,7 +87,7 @@ router.get('/', (req, res) => {
 // Create lead manually — atendente can create too, but lead is force-assigned to them
 router.post('/', (req, res) => {
   if (!req.accountId) return res.status(400).json({ error: 'account_id required' })
-  let { name, phone, email, city, source, source_detail, notes, funnel_id, attendant_id, empresa, cpf_cnpj, instagram, trabalha_anuncio, investimento_anuncios } = req.body
+  let { name, phone, email, city, source, source_detail, notes, funnel_id, attendant_id, instance_id, empresa, cpf_cnpj, instagram, trabalha_anuncio, investimento_anuncios } = req.body
 
   phone = normalizePhone(phone)
 
@@ -106,10 +106,16 @@ router.post('/', (req, res) => {
   const firstStage = db.prepare('SELECT id FROM funnel_stages WHERE funnel_id = ? ORDER BY position LIMIT 1').get(fid)
   if (!firstStage) return res.status(400).json({ error: 'Funil sem etapas' })
 
+  // Default instance_id to the most recently created connected instance for this account
+  if (!instance_id) {
+    const def = db.prepare("SELECT id FROM whatsapp_instances WHERE account_id = ? AND status = 'connected' ORDER BY id DESC LIMIT 1").get(req.accountId)
+    instance_id = def?.id || null
+  }
+
   const result = db.prepare(`
-    INSERT INTO leads (account_id, funnel_id, stage_id, attendant_id, name, phone, email, city, source, source_detail, notes, empresa, cpf_cnpj, instagram, trabalha_anuncio, investimento_anuncios, opted_in_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-  `).run(req.accountId, fid, firstStage.id, attendant_id || null, name, phone, email, city, source || 'manual', source_detail, notes, empresa || null, cpf_cnpj || null, instagram || null, trabalha_anuncio ? 1 : 0, investimento_anuncios || null)
+    INSERT INTO leads (account_id, funnel_id, stage_id, attendant_id, instance_id, name, phone, email, city, source, source_detail, notes, empresa, cpf_cnpj, instagram, trabalha_anuncio, investimento_anuncios, opted_in_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+  `).run(req.accountId, fid, firstStage.id, attendant_id || null, instance_id || null, name, phone, email, city, source || 'manual', source_detail, notes, empresa || null, cpf_cnpj || null, instagram || null, trabalha_anuncio ? 1 : 0, investimento_anuncios || null)
 
   // Log stage history
   db.prepare('INSERT INTO stage_history (lead_id, to_stage_id, trigger_type, triggered_by) VALUES (?, ?, ?, ?)').run(

@@ -6,8 +6,8 @@ import { useSSE } from '../context/SSEContext'
 import AccountSelector from '../components/AccountSelector'
 import {
   fetchLeads, fetchFunnels, fetchUsers, fetchTags, createLead, bulkAssignLeads, bulkMoveLeads,
-  archiveLead, unarchiveLead, fetchArchivedCount,
-  formatNumber, type Lead, type Funnel, type User as UserType, type Tag,
+  archiveLead, unarchiveLead, fetchArchivedCount, fetchWhatsAppInstances,
+  formatNumber, type Lead, type Funnel, type User as UserType, type Tag, type WhatsAppInstance,
 } from '../lib/api'
 import { Plus, Download, Phone, MessageCircle, Clock, CheckSquare, Square, Users, ArrowRight, Archive, ArchiveRestore } from 'lucide-react'
 
@@ -47,11 +47,14 @@ export default function Leads() {
   const [showBulkAssign, setShowBulkAssign] = useState(false)
   const [showBulkStage, setShowBulkStage] = useState(false)
 
+  const [whatsappInstances, setWhatsappInstances] = useState<WhatsAppInstance[]>([])
+
   useEffect(() => {
     if (!accountId) return
     fetchFunnels(accountId).then(setFunnels).catch(() => {})
     fetchUsers(accountId).then(setUsers).catch(() => {})
     fetchTags(accountId).then(setTags).catch(() => {})
+    fetchWhatsAppInstances(accountId).then(insts => setWhatsappInstances(insts.filter(i => i.status === 'connected'))).catch(() => {})
   }, [accountId])
 
   const loadLeads = () => {
@@ -305,12 +308,23 @@ export default function Leads() {
               <div className="form-group"><label>Instagram</label><input className="input" value={newLead.instagram} onChange={e => setNewLead(p => ({ ...p, instagram: e.target.value }))} placeholder="@perfil" /></div>
               <div className="form-group"><label>Investimento Anuncios (R$)</label><input className="input" type="number" step="0.01" value={newLead.investimento_anuncios} onChange={e => setNewLead(p => ({ ...p, investimento_anuncios: e.target.value }))} placeholder="5000.00" /></div>
             </div>
-            <div className="form-group">
-              <label>Trabalha com anuncio?</label>
-              <select className="select" value={newLead.trabalha_anuncio || 0} onChange={e => setNewLead(p => ({ ...p, trabalha_anuncio: parseInt(e.target.value) }))}>
-                <option value={0}>Nao</option>
-                <option value={1}>Sim</option>
-              </select>
+            <div className="form-row">
+              <div className="form-group">
+                <label>Trabalha com anuncio?</label>
+                <select className="select" value={newLead.trabalha_anuncio || 0} onChange={e => setNewLead(p => ({ ...p, trabalha_anuncio: parseInt(e.target.value) }))}>
+                  <option value={0}>Nao</option>
+                  <option value={1}>Sim</option>
+                </select>
+              </div>
+              {whatsappInstances.length > 0 && (
+                <div className="form-group">
+                  <label>Numero WhatsApp (envia por)</label>
+                  <select className="select" value={newLead.instance_id || ''} onChange={e => setNewLead(p => ({ ...p, instance_id: e.target.value ? parseInt(e.target.value) : null }))}>
+                    <option value="">Padrao (mais recente)</option>
+                    {whatsappInstances.map(i => <option key={i.id} value={i.id}>{i.instance_name}</option>)}
+                  </select>
+                </div>
+              )}
             </div>
             <div className="modal-actions"><button className="btn btn-secondary" onClick={() => setShowNew(false)}>Cancelar</button><button className="btn btn-primary" onClick={handleCreate}>Criar Lead</button></div>
           </div>
