@@ -85,10 +85,16 @@ router.delete('/:id', requireRole('super_admin', 'gerente'), (req, res) => {
   res.json({ ok: true })
 })
 
-// Assign lead to cadence
-router.post('/:id/assign', requireRole('super_admin', 'gerente'), (req, res) => {
+// Assign lead to cadence — atendente can do this for their own leads
+router.post('/:id/assign', (req, res) => {
   const { lead_id } = req.body
   if (!lead_id) return res.status(400).json({ error: 'lead_id required' })
+
+  // Atendente: only allowed on leads assigned to them
+  if (req.user.role === 'atendente') {
+    const lead = db.prepare('SELECT attendant_id FROM leads WHERE id = ?').get(lead_id)
+    if (!lead || lead.attendant_id !== req.user.id) return res.status(403).json({ error: 'Sem permissao' })
+  }
 
   const cadence = db.prepare('SELECT * FROM cadences WHERE id = ? AND is_active = 1').get(req.params.id)
   if (!cadence) return res.status(404).json({ error: 'Cadencia nao encontrada' })
