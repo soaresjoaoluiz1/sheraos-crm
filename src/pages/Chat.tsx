@@ -12,7 +12,7 @@ import {
 } from '../lib/api'
 import {
   MessageCircle, Search, Send, Phone, User, Edit3, Save, X, Plus,
-  StickyNote, Tag as TagIcon, GitBranch, Smartphone, ListOrdered, ChevronRight, Check, Clock, Archive, ListTodo,
+  StickyNote, Tag as TagIcon, GitBranch, Smartphone, ListOrdered, ChevronRight, Check, Clock, Archive, ListTodo, ChevronDown, ChevronUp,
 } from 'lucide-react'
 import MessageMedia from '../components/MessageMedia'
 import { applyMessageVars } from '../lib/messageVars'
@@ -54,6 +54,7 @@ export default function Chat() {
   const [noteText, setNoteText] = useState('')
   const [sending, setSending] = useState(false)
   const [editing, setEditing] = useState(false)
+  const [infoCollapsed, setInfoCollapsed] = useState(() => localStorage.getItem('chat_info_collapsed') === '1')
   const [editData, setEditData] = useState<Record<string, any>>({ name: '', phone: '', email: '', city: '' })
   const [rightTab, setRightTab] = useState<'info' | 'notes' | 'history'>('info')
   const [showTagMenu, setShowTagMenu] = useState(false)
@@ -368,10 +369,13 @@ export default function Chat() {
 
                   {/* Info */}
                   <div className="card" style={{ padding: 12, marginBottom: 12 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                      <div style={{ fontSize: 10, color: '#9B96B0', textTransform: 'uppercase' }}>Informacoes</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: infoCollapsed ? 0 : 8 }}>
+                      <div onClick={() => { if (!editing) { setInfoCollapsed(p => { const v = !p; localStorage.setItem('chat_info_collapsed', v ? '1' : '0'); return v }) } }} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: editing ? 'default' : 'pointer', flex: 1 }}>
+                        {!editing && (infoCollapsed ? <ChevronDown size={12} style={{ color: '#9B96B0' }} /> : <ChevronUp size={12} style={{ color: '#9B96B0' }} />)}
+                        <div style={{ fontSize: 10, color: '#9B96B0', textTransform: 'uppercase' }}>Informacoes</div>
+                      </div>
                       {!editing ? (
-                        <button className="btn btn-secondary btn-sm" onClick={() => setEditing(true)} style={{ padding: '2px 6px', fontSize: 10 }}><Edit3 size={10} /></button>
+                        <button className="btn btn-secondary btn-sm" onClick={() => { setInfoCollapsed(false); setEditing(true) }} style={{ padding: '2px 6px', fontSize: 10 }}><Edit3 size={10} /></button>
                       ) : (
                         <div style={{ display: 'flex', gap: 2 }}>
                           <button className="btn btn-primary btn-sm" onClick={handleSaveEdit} style={{ padding: '2px 6px', fontSize: 10 }}><Save size={10} /></button>
@@ -379,7 +383,7 @@ export default function Chat() {
                         </div>
                       )}
                     </div>
-                    {editing ? (
+                    {!infoCollapsed && (editing ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                         <input className="input" placeholder="Nome" value={editData.name} onChange={e => setEditData(p => ({ ...p, name: e.target.value }))} style={{ fontSize: 12 }} />
                         <input className="input" placeholder="Telefone" value={editData.phone} onChange={e => setEditData(p => ({ ...p, phone: e.target.value }))} style={{ fontSize: 12 }} />
@@ -417,7 +421,7 @@ export default function Chat() {
                         <div><span style={{ color: '#6B6580' }}>Fonte:</span> {lead.source || '-'}</div>
                         <div><span style={{ color: '#6B6580' }}>Criado:</span> {new Date(lead.created_at).toLocaleDateString('pt-BR')}</div>
                       </div>
-                    )}
+                    ))}
                   </div>
 
                   {/* Tags */}
