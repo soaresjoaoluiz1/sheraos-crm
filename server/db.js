@@ -405,6 +405,39 @@ addColumnIfNotExists('users', 'primary_instance_id', 'INTEGER REFERENCES whatsap
 // messages.instance_id: qual instancia enviou/recebeu cada mensagem (mostrado internamente no chat)
 addColumnIfNotExists('messages', 'instance_id', 'INTEGER REFERENCES whatsapp_instances(id) ON DELETE SET NULL')
 
+// ─── Multi-conversation: cada lead pode ter conversa com varias instancias
+// e cada conversa tem seu proprio atendente
+db.exec(`
+  CREATE TABLE IF NOT EXISTS lead_instance_assignments (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    lead_id       INTEGER NOT NULL,
+    instance_id   INTEGER NOT NULL,
+    attendant_id  INTEGER,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(lead_id, instance_id),
+    FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE CASCADE,
+    FOREIGN KEY (instance_id) REFERENCES whatsapp_instances(id) ON DELETE CASCADE,
+    FOREIGN KEY (attendant_id) REFERENCES users(id) ON DELETE SET NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_lia_lead ON lead_instance_assignments(lead_id);
+  CREATE INDEX IF NOT EXISTS idx_lia_instance ON lead_instance_assignments(instance_id);
+  CREATE INDEX IF NOT EXISTS idx_lia_attendant ON lead_instance_assignments(attendant_id);
+`)
+
+// Backfill: pra cada lead com instance_id, cria assignment se nao existir
+try {
+  db.prepare(`
+    INSERT OR IGNORE INTO lead_instance_assignments (lead_id, instance_id, attendant_id)
+    SELECT id, instance_id, attendant_id FROM leads WHERE instance_id IS NOT NULL
+  `).run()
+  // Tambem cria assignments pra cada lead com last_instance_id != instance_id
+  db.prepare(`
+    INSERT OR IGNORE INTO lead_instance_assignments (lead_id, instance_id, attendant_id)
+    SELECT id, last_instance_id, attendant_id FROM leads
+    WHERE last_instance_id IS NOT NULL AND last_instance_id != COALESCE(instance_id, -1)
+  `).run()
+} catch (e) { console.log('[DB] Backfill lead_instance_assignments:', e.message) }
+
 // Standalone tasks (not tied to cadences)
 db.exec(`
   CREATE TABLE IF NOT EXISTS standalone_tasks (

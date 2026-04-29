@@ -293,6 +293,11 @@ async function pollMissedMessages() {
         )
         // Update lead's last_instance_id (so future sends remember this number)
         db.prepare("UPDATE leads SET last_instance_id = ?, updated_at = datetime('now') WHERE id = ?").run(inst.id, lead.id)
+        // Ensure assignment exists for (lead, instance). Default attendant = instance.default_attendant_id
+        db.prepare(`
+          INSERT OR IGNORE INTO lead_instance_assignments (lead_id, instance_id, attendant_id)
+          VALUES (?, ?, (SELECT default_attendant_id FROM whatsapp_instances WHERE id = ?))
+        `).run(lead.id, inst.id, inst.id)
         imported++
 
         // SSE notify

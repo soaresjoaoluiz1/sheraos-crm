@@ -6,17 +6,39 @@ const router = Router()
 
 // Resolve which WhatsApp instance to use when sending a message.
 // Priority:
-//   1. Override (param) — user explicitly chose
-//   2. lead.last_instance_id — last instance that conversed
-//   3. lead.instance_id — original instance that created the lead
-//   4. user.primary_instance_id — user's default
-//   5. Most recently created connected instance on the account (fallback)
+//   1. Override (explicit user choice — dropdown ou filtro de instancia ativo)
+//   2. Se user e atendente DO LEAD (atendente principal): usa last_instance_id (continuidade)
+//   3. Se user tem assignment em alguma instancia desse lead: usa essa instancia
+//   4. user.primary_instance_id (gerente/admin entrando "por fora")
+//   5. lead.last_instance_id (fallback continuidade)
+//   6. lead.instance_id (original)
+//   7. Most recently created connected instance on the account
 function resolveInstanceForSend({ lead, user, override }) {
   const tryGet = (id) => id ? db.prepare('SELECT * FROM whatsapp_instances WHERE id = ? AND status = ?').get(id, 'connected') : null
-  return tryGet(override)
+
+  // 1. Override sempre vence
+  const ovr = tryGet(override)
+  if (ovr) return ovr
+
+  // 2. Se for o atendente principal do lead → continuidade
+  if (user?.id && lead.attendant_id === user.id) {
+    const cont = tryGet(lead.last_instance_id) || tryGet(lead.instance_id)
+    if (cont) return cont
+  }
+
+  // 3. Se user tem assignment em alguma instancia desse lead → usa essa
+  if (user?.id) {
+    const assignment = db.prepare(
+      'SELECT instance_id FROM lead_instance_assignments WHERE lead_id = ? AND attendant_id = ? LIMIT 1'
+    ).get(lead.id, user.id)
+    const inst = tryGet(assignment?.instance_id)
+    if (inst) return inst
+  }
+
+  // 4-7. Gerente/admin "por fora" ou fallbacks
+  return tryGet(user?.primary_instance_id)
     || tryGet(lead.last_instance_id)
     || tryGet(lead.instance_id)
-    || tryGet(user?.primary_instance_id)
     || db.prepare('SELECT * FROM whatsapp_instances WHERE account_id = ? AND status = ? ORDER BY id DESC LIMIT 1').get(lead.account_id, 'connected')
 }
 
@@ -26,7 +48,7 @@ router.get('/:leadId', (req, res) => {
   const lead = db.prepare('SELECT account_id, attendant_id FROM leads WHERE id = ?').get(req.params.leadId)
   if (!lead) return res.status(404).json({ error: 'Lead nao encontrado' })
   if (req.accountId && lead.account_id !== req.accountId) return res.status(403).json({ error: 'Sem permissao' })
-  if (req.user.role === 'atendente' && lead.attendant_id !== req.user.id) return res.status(403).json({ error: 'Sem permissao' })
+  if (req.user.role === 'atendente' && lead.attendant_id !== req.user.id && !db.prepare('SELECT 1 FROM lead_instance_assignments WHERE lead_id = ? AND attendant_id = ?').get(lead.id, req.user.id)) return res.status(403).json({ error: 'Sem permissao' })
 
   const { page = '1', limit = '50' } = req.query
   const offset = (parseInt(page) - 1) * parseInt(limit)
@@ -106,6 +128,11 @@ router.post('/:leadId', async (req, res) => {
     // Update lead's last_instance_id (so future messages remember which number to use)
     if (delivered) {
       db.prepare("UPDATE leads SET last_instance_id = ?, updated_at = datetime('now') WHERE id = ?").run(instance.id, lead.id)
+      // Ensure assignment exists for (lead, instance). Sender becomes attendant if no one assigned yet.
+      db.prepare(`
+        INSERT OR IGNORE INTO lead_instance_assignments (lead_id, instance_id, attendant_id)
+        VALUES (?, ?, ?)
+      `).run(lead.id, instance.id, req.user.id)
     }
 
     const message = db.prepare('SELECT * FROM messages WHERE id = ?').get(result.lastInsertRowid)

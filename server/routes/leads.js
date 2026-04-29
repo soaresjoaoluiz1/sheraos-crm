@@ -35,8 +35,11 @@ router.get('/', (req, res) => {
   if (show_archived === '1') where.push('l.is_archived = 1')
   else if (show_archived !== 'all') where.push('l.is_archived = 0')
 
-  // Atendente sees only their leads
-  if (req.user.role === 'atendente') { where.push('l.attendant_id = ?'); params.push(req.user.id) }
+  // Atendente sees leads where he is the main attendant OR assigned to any instance of the lead
+  if (req.user.role === 'atendente') {
+    where.push('(l.attendant_id = ? OR l.id IN (SELECT lead_id FROM lead_instance_assignments WHERE attendant_id = ?))')
+    params.push(req.user.id, req.user.id)
+  }
 
   if (stage_id) { where.push('l.stage_id = ?'); params.push(stage_id) }
   if (attendant_id) { where.push('l.attendant_id = ?'); params.push(attendant_id) }
@@ -146,7 +149,7 @@ router.get('/:id', (req, res) => {
     WHERE l.id = ?
   `).get(req.params.id)
   if (!lead) return res.status(404).json({ error: 'Lead nao encontrado' })
-  if (req.user.role === 'atendente' && lead.attendant_id !== req.user.id) return res.status(403).json({ error: 'Sem permissao' })
+  if (req.user.role === 'atendente' && lead.attendant_id !== req.user.id && !db.prepare('SELECT 1 FROM lead_instance_assignments WHERE lead_id = ? AND attendant_id = ?').get(lead.id, req.user.id)) return res.status(403).json({ error: 'Sem permissao' })
 
   // Opening an archived lead acknowledges any new activity — clear the badge
   if (lead.is_archived && lead.has_new_after_archive) {
@@ -222,7 +225,7 @@ router.put('/:id/stage', (req, res) => {
 router.patch('/:id/archive', (req, res) => {
   const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id)
   if (!lead) return res.status(404).json({ error: 'Lead nao encontrado' })
-  if (req.user.role === 'atendente' && lead.attendant_id !== req.user.id) return res.status(403).json({ error: 'Sem permissao' })
+  if (req.user.role === 'atendente' && lead.attendant_id !== req.user.id && !db.prepare('SELECT 1 FROM lead_instance_assignments WHERE lead_id = ? AND attendant_id = ?').get(lead.id, req.user.id)) return res.status(403).json({ error: 'Sem permissao' })
   db.prepare("UPDATE leads SET is_archived = 1, archived_at = datetime('now'), has_new_after_archive = 0, updated_at = datetime('now') WHERE id = ?").run(lead.id)
   const updated = db.prepare('SELECT * FROM leads WHERE id = ?').get(lead.id)
   try { broadcastSSE(lead.account_id, 'lead:archived', { id: lead.id }) } catch {}
@@ -233,7 +236,7 @@ router.patch('/:id/archive', (req, res) => {
 router.patch('/:id/unarchive', (req, res) => {
   const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id)
   if (!lead) return res.status(404).json({ error: 'Lead nao encontrado' })
-  if (req.user.role === 'atendente' && lead.attendant_id !== req.user.id) return res.status(403).json({ error: 'Sem permissao' })
+  if (req.user.role === 'atendente' && lead.attendant_id !== req.user.id && !db.prepare('SELECT 1 FROM lead_instance_assignments WHERE lead_id = ? AND attendant_id = ?').get(lead.id, req.user.id)) return res.status(403).json({ error: 'Sem permissao' })
   db.prepare("UPDATE leads SET is_archived = 0, archived_at = NULL, has_new_after_archive = 0, updated_at = datetime('now') WHERE id = ?").run(lead.id)
   const updated = db.prepare('SELECT * FROM leads WHERE id = ?').get(lead.id)
   try { broadcastSSE(lead.account_id, 'lead:unarchived', updated) } catch {}

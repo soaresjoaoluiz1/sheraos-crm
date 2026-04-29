@@ -250,6 +250,11 @@ router.post('/evolution/:accountSlug', (req, res) => {
       // Update lead's last_instance_id (next message from CRM will use this instance)
       if (waInstance?.id) {
         db.prepare("UPDATE leads SET last_instance_id = ?, updated_at = datetime('now') WHERE id = ?").run(waInstance.id, lead.id)
+        // Ensure assignment exists for (lead, instance). Default attendant = instance.default_attendant_id
+        db.prepare(`
+          INSERT OR IGNORE INTO lead_instance_assignments (lead_id, instance_id, attendant_id)
+          VALUES (?, ?, (SELECT default_attendant_id FROM whatsapp_instances WHERE id = ?))
+        `).run(lead.id, waInstance.id, waInstance.id)
       }
     }
 

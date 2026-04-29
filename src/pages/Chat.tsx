@@ -165,25 +165,35 @@ export default function Chat() {
     if (!msgText.trim() || !lead || !accountId) return
     setSending(true)
     try {
-      const result = await sendMessage(lead.id, accountId, msgText, sendInstanceOverride || undefined)
+      // Filtro de instancia ativo no header funciona como override implicito
+      const filterOverride = (typeof selectedInstance === 'number') ? selectedInstance : undefined
+      const override = sendInstanceOverride || filterOverride
+      const result = await sendMessage(lead.id, accountId, msgText, override)
       setMessages(prev => [...prev, result.message])
       setMsgText('')
       if (!result.delivered) alert('Mensagem salva mas NAO enviada no WhatsApp. Verifique a conexao.')
-      // After sending, the lead's last_instance_id is updated server-side. Reset override.
       setSendInstanceOverride(null)
-      // Reload lead to get updated last_instance_id
       loadLead()
     } catch (e: any) { alert('Erro: ' + (e?.message || 'desconhecido')) }
     setSending(false)
   }
 
-  // Resolve which instance the next send will use (priority: override > last_instance_id > instance_id > user.primary)
+  // Resolve which instance the next send will use (mirror do backend)
   const resolvedSendInstance = (() => {
     if (!lead || !instances.length) return null
+    // 1. Override manual
     if (sendInstanceOverride) return instances.find(i => i.id === sendInstanceOverride)
+    // 2. Filtro de instancia ativo
+    if (typeof selectedInstance === 'number') return instances.find(i => i.id === selectedInstance)
+    // 3. User e atendente principal → continuidade
+    if (user?.id && lead.attendant_id === user.id) {
+      return instances.find(i => i.id === lead.last_instance_id) || instances.find(i => i.id === lead.instance_id) || null
+    }
+    // 4. Primary do user (gerente/admin "por fora")
+    if (user?.primary_instance_id) return instances.find(i => i.id === user.primary_instance_id)
+    // 5. Fallbacks
     if (lead.last_instance_id) return instances.find(i => i.id === lead.last_instance_id)
     if (lead.instance_id) return instances.find(i => i.id === lead.instance_id)
-    if (user?.primary_instance_id) return instances.find(i => i.id === user.primary_instance_id)
     return instances.find(i => i.status === 'connected') || instances[0]
   })()
 
