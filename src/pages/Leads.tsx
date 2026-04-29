@@ -246,7 +246,7 @@ export default function Leads() {
           <table>
             <thead><tr>
               {user?.role !== 'atendente' && <th style={{ width: 32 }}><button style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9B96B0' }} onClick={toggleSelectAll}>{selected.size === leads.length && leads.length > 0 ? <CheckSquare size={14} /> : <Square size={14} />}</button></th>}
-              <th>Nome</th><th>Telefone</th><th>Etapa</th><th>Atendente</th><th>Fonte</th><th>Cidade</th><th className="right">Criado</th><th style={{ width: 44 }}></th>
+              <th>Nome</th><th>Telefone</th><th>Etapa</th><th>Atendente</th><th>Fonte</th><th>Cidade</th><th className="right">Criado</th><th style={{ width: 88 }}></th>
             </tr></thead>
             <tbody>
               {leads.map(l => (
@@ -261,7 +261,14 @@ export default function Leads() {
                   <td onClick={() => navigate(`/leads/${l.id}`)} style={{ fontSize: 11 }}>{l.source === 'whatsapp' ? <MessageCircle size={10} /> : <Phone size={10} />} {l.source}</td>
                   <td onClick={() => navigate(`/leads/${l.id}`)}>{l.city || '-'}</td>
                   <td className="right" onClick={() => navigate(`/leads/${l.id}`)}><Clock size={10} /> {timeAgo(l.created_at)}</td>
-                  <td style={{ textAlign: 'right' }}>
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      style={{ padding: '4px 6px', marginRight: 4, color: '#34C759' }}
+                      title="Abrir chat"
+                      onClick={e => { e.stopPropagation(); navigate(`/chat?lead=${l.id}`) }}>
+                      <MessageCircle size={12} />
+                    </button>
                     <button
                       className="btn btn-secondary btn-sm"
                       style={{ padding: '4px 6px', position: 'relative' }}

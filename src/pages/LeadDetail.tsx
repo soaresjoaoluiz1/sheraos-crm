@@ -36,7 +36,7 @@ export default function LeadDetail() {
   const [showTagMenu, setShowTagMenu] = useState(false)
   const [newTagName, setNewTagName] = useState('')
   const [newTagColor, setNewTagColor] = useState('#FFB300')
-  const [activeTab, setActiveTab] = useState<'chat' | 'notes' | 'history' | 'qualification'>('chat')
+  const [activeTab, setActiveTab] = useState<'notes' | 'history' | 'qualification'>('notes')
   const chatEndRef = useRef<HTMLDivElement>(null)
   const [leadCadence, setLeadCadence] = useState<LeadCadence | null>(null)
   const [cadences, setCadences] = useState<Cadence[]>([])
@@ -340,53 +340,19 @@ export default function LeadDetail() {
 
         {/* Right column: Chat + Notes tabs */}
         <div>
-          {/* Tab switcher */}
+          {/* Botao destacado pra abrir o chat */}
+          <button onClick={() => navigate(`/chat?lead=${lead.id}`)} style={{ width: '100%', padding: '14px 16px', background: 'linear-gradient(135deg, #34C759, #2BA84A)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 10, boxShadow: '0 2px 8px rgba(52,199,89,0.25)' }}>
+            <MessageCircle size={18} /> Abrir Chat ({messages.length} {messages.length === 1 ? 'mensagem' : 'mensagens'})
+          </button>
+
+          {/* Tab switcher (sem chat) */}
           <div style={{ display: 'flex', gap: 4, marginBottom: 8, flexWrap: 'wrap' }}>
-            {(['chat', 'notes', 'qualification', 'history'] as const).map(tab => (
+            {(['notes', 'qualification', 'history'] as const).map(tab => (
               <button key={tab} className={`btn btn-sm ${activeTab === tab ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setActiveTab(tab)}>
-                {tab === 'chat' ? <><MessageCircle size={12} /> Chat ({messages.length})</> : tab === 'notes' ? <><StickyNote size={12} /> Notas ({notes.length})</> : tab === 'qualification' ? <><ClipboardList size={12} /> Qualificacao</> : <><GitBranch size={12} /> Historico</>}
+                {tab === 'notes' ? <><StickyNote size={12} /> Notas ({notes.length})</> : tab === 'qualification' ? <><ClipboardList size={12} /> Qualificacao</> : <><GitBranch size={12} /> Historico</>}
               </button>
             ))}
           </div>
-
-          {/* Chat tab */}
-          {activeTab === 'chat' && (
-            <div className="chat-panel">
-              <div className="chat-messages">
-                {messages.length === 0 && <div style={{ textAlign: 'center', color: '#6B6580', padding: 40, fontSize: 13 }}>Nenhuma mensagem</div>}
-                {messages.map(m => (
-                  <div key={m.id}>
-                    <div className={`chat-bubble ${m.direction}`}>
-                      {m.media_type && m.media_type !== 'text'
-                        ? <MessageMedia message={m} leadId={lead.id} />
-                        : (m.content || <em style={{ opacity: 0.5 }}>Sem conteudo</em>)}
-                    </div>
-                    <div className="chat-bubble-time" style={{ textAlign: m.direction === 'outbound' ? 'right' : 'left' }}>
-                      {m.sender_name && <span>{m.sender_name} · </span>}{new Date(m.created_at).toLocaleString('pt-BR')}
-                    </div>
-                  </div>
-                ))}
-                <div ref={chatEndRef} />
-              </div>
-              <div className="chat-input" style={{ position: 'relative' }}>
-                <div style={{ position: 'relative', flex: 1, display: 'flex', gap: 4, alignItems: 'center' }}>
-                  <button className="btn btn-secondary btn-icon" onClick={() => setShowReadyMsgs(!showReadyMsgs)} title="Mensagens prontas" style={{ flexShrink: 0 }}><Zap size={16} /></button>
-                  <input className="input" style={{ flex: 1 }} placeholder="Mensagem..." value={msgText} onChange={e => setMsgText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); handleSendMsg() } }} disabled={sending} />
-                </div>
-                <button className="btn btn-primary btn-icon" onClick={handleSendMsg} disabled={sending || !msgText.trim()}><Send size={16} /></button>
-                {showReadyMsgs && readyMsgs.length > 0 && (
-                  <div style={{ position: 'absolute', left: 0, bottom: '100%', marginBottom: 4, background: 'var(--bg-card)', border: '1px solid var(--border-medium)', borderRadius: 8, padding: 6, zIndex: 50, width: '100%', maxHeight: 200, overflowY: 'auto' }}>
-                    {readyMsgs.filter(m => !m.stage_id || m.stage_id === lead.stage_id).map(m => (
-                      <button key={m.id} onClick={() => handleSelectReadyMsg(m.content)} style={{ display: 'block', padding: '8px 10px', border: 'none', background: 'none', color: '#fff', fontSize: 12, cursor: 'pointer', borderRadius: 4, width: '100%', textAlign: 'left', borderBottom: '1px solid var(--border-subtle)' }}>
-                        <div style={{ fontWeight: 600, marginBottom: 2 }}>{m.title}</div>
-                        <div style={{ color: '#9B96B0', fontSize: 11 }}>{m.content.substring(0, 80)}{m.content.length > 80 ? '...' : ''}</div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
 
           {/* Notes tab */}
           {activeTab === 'notes' && (
