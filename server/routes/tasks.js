@@ -283,13 +283,56 @@ router.post('/standalone', (req, res) => {
 // List standalone tasks by lead
 router.get('/standalone/by-lead/:leadId', (req, res) => {
   if (!req.accountId) return res.status(400).json({ error: 'account_id required' })
-  const tasks = db.prepare(`
+
+  // Standalone tasks
+  const standaloneTasks = db.prepare(`
     SELECT st.*, u.name as assigned_name
     FROM standalone_tasks st
     LEFT JOIN users u ON u.id = st.assigned_to
     WHERE st.lead_id = ? AND st.account_id = ? AND st.status = 'pending'
     ORDER BY st.due_datetime ASC
-  `).all(req.params.leadId, req.accountId)
+  `).all(req.params.leadId, req.accountId).map(t => ({ ...t, type: 'standalone' }))
+
+  // Cadence tasks (current_attempt of active cadences for this lead)
+  const cadenceTasks = db.prepare(`
+    SELECT
+      lc.id as lead_cadence_id,
+      lc.lead_id,
+      lc.cadence_id,
+      lc.current_attempt_id,
+      lc.last_executed_at,
+      lc.started_at,
+      c.name as cadence_name,
+      ca.position as attempt_position,
+      ca.action_type,
+      ca.description as attempt_description,
+      ca.delay_days,
+      ca.scheduled_time,
+      ca.schedule_mode,
+      ca.delay_minutes,
+      ca.auto_message,
+      (SELECT COUNT(*) FROM cadence_attempts WHERE cadence_id = lc.cadence_id) as total_attempts
+    FROM lead_cadences lc
+    JOIN cadence_attempts ca ON ca.id = lc.current_attempt_id
+    JOIN cadences c ON c.id = lc.cadence_id
+    JOIN leads l ON l.id = lc.lead_id
+    WHERE lc.lead_id = ? AND l.account_id = ? AND lc.status = 'active' AND l.is_active = 1
+  `).all(req.params.leadId, req.accountId).map(t => {
+    const due = computeDueDatetime({
+      startedAt: t.started_at,
+      lastExecutedAt: t.last_executed_at,
+      delay_days: t.delay_days,
+      scheduled_time: t.scheduled_time,
+      schedule_mode: t.schedule_mode,
+      delay_minutes: t.delay_minutes,
+    })
+    return { ...t, due_datetime: due.toISOString(), type: 'cadence' }
+  })
+
+  // Merge and sort by due
+  const tasks = [...standaloneTasks, ...cadenceTasks].sort((a, b) =>
+    new Date(a.due_datetime).getTime() - new Date(b.due_datetime).getTime()
+  )
   res.json({ tasks })
 })
 

@@ -6,7 +6,7 @@ import {
   fetchWhatsAppInstances, fetchLeads, fetchLead, fetchFunnels, fetchUsers, fetchTags,
   sendMessage, updateLead, moveLeadStage, assignLead, addLeadNote, addLeadTag, removeLeadTag,
   fetchLeadCadence, advanceLeadCadence, removeLeadCadence, fetchCadences, assignLeadCadence, createTag,
-  archiveLead, createStandaloneTask, fetchLeadTasks, completeStandaloneTask, deleteStandaloneTask,
+  archiveLead, createStandaloneTask, fetchLeadTasks, completeStandaloneTask, deleteStandaloneTask, completeTask, skipTask,
   type WhatsAppInstance, type Lead, type Message, type StageHistoryEntry, type LeadNote,
   type Funnel, type User as UserType, type Tag, type LeadCadence, type Cadence,
 } from '../lib/api'
@@ -527,27 +527,59 @@ export default function Chat() {
                         <ListTodo size={10} /> Tarefas Pendentes ({leadTasks.length})
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        {leadTasks.map(t => {
+                        {leadTasks.map((t: any) => {
                           const due = new Date(t.due_datetime)
                           const overdue = due.getTime() < Date.now()
+                          const isCadence = t.type === 'cadence'
+                          const accent = isCadence ? '#FFB300' : '#9B59B6'
+                          const key = isCadence ? `c-${t.lead_cadence_id}` : `s-${t.id}`
+                          const title = isCadence
+                            ? `${t.cadence_name} · Etapa ${(t.attempt_position || 0) + 1}/${t.total_attempts}`
+                            : t.title
+                          const desc = isCadence ? (t.attempt_description || t.auto_message) : t.description
                           return (
-                            <div key={t.id} style={{ padding: '8px 10px', background: overdue ? 'rgba(255,107,107,0.06)' : 'rgba(255,179,0,0.05)', border: `1px solid ${overdue ? 'rgba(255,107,107,0.2)' : 'rgba(255,179,0,0.15)'}`, borderRadius: 6 }}>
-                              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 2 }}>{t.title}</div>
-                              {t.description && <div style={{ fontSize: 11, color: '#9B96B0', marginBottom: 4 }}>{t.description}</div>}
+                            <div key={key} style={{ padding: '8px 10px', background: overdue ? 'rgba(255,107,107,0.06)' : `${accent}10`, border: `1px solid ${overdue ? 'rgba(255,107,107,0.2)' : `${accent}30`}`, borderLeft: `3px solid ${accent}`, borderRadius: 6 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+                                <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: `${accent}25`, color: accent, fontWeight: 700, textTransform: 'uppercase' }}>
+                                  {isCadence ? 'Cadencia' : 'Avulsa'}
+                                </span>
+                                <div style={{ fontSize: 12, fontWeight: 600, flex: 1 }}>{title}</div>
+                              </div>
+                              {desc && <div style={{ fontSize: 11, color: '#9B96B0', marginBottom: 4 }}>{desc.substring(0, 100)}{desc.length > 100 ? '...' : ''}</div>}
                               <div style={{ fontSize: 10, color: overdue ? '#FF6B6B' : '#9B96B0', display: 'flex', alignItems: 'center', gap: 3, marginBottom: 6 }}>
                                 <Clock size={9} /> {due.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                                {t.assigned_name && <span> · {t.assigned_name}</span>}
+                                {!isCadence && t.assigned_name && <span> · {t.assigned_name}</span>}
+                                {isCadence && t.action_type && <span> · {t.action_type}</span>}
                               </div>
                               <div style={{ display: 'flex', gap: 4 }}>
-                                <button className="btn btn-primary btn-sm" onClick={async () => { if (!accountId) return; await completeStandaloneTask(t.id, accountId); fetchLeadTasks(lead.id, accountId).then(setLeadTasks) }} style={{ fontSize: 10, padding: '3px 8px', background: '#34C759', borderColor: '#34C759', flex: 1 }}>
+                                <button className="btn btn-primary btn-sm" onClick={async () => {
+                                  if (!accountId || !lead) return
+                                  try {
+                                    if (isCadence) await completeTask(t.lead_cadence_id, accountId)
+                                    else await completeStandaloneTask(t.id, accountId)
+                                    fetchLeadTasks(lead.id, accountId).then(setLeadTasks)
+                                  } catch (e: any) { alert('Erro: ' + e.message) }
+                                }} style={{ fontSize: 10, padding: '3px 8px', background: '#34C759', borderColor: '#34C759', flex: 1 }}>
                                   <Check size={10} /> Concluir
                                 </button>
-                                <button className="btn btn-secondary btn-sm" onClick={() => setEditingTask(t)} style={{ fontSize: 10, padding: '3px 8px' }}>
-                                  <Edit3 size={10} />
-                                </button>
-                                <button className="btn btn-secondary btn-sm" onClick={async () => { if (!accountId) return; if (!confirm('Excluir tarefa?')) return; await deleteStandaloneTask(t.id, accountId); fetchLeadTasks(lead.id, accountId).then(setLeadTasks) }} style={{ fontSize: 10, padding: '3px 8px', color: '#FF6B6B' }}>
-                                  <Trash2 size={10} />
-                                </button>
+                                {isCadence ? (
+                                  <button className="btn btn-secondary btn-sm" onClick={async () => {
+                                    if (!accountId || !lead) return
+                                    if (!confirm('Pular esta etapa da cadencia?')) return
+                                    try { await skipTask(t.lead_cadence_id, accountId); fetchLeadTasks(lead.id, accountId).then(setLeadTasks) } catch (e: any) { alert('Erro: ' + e.message) }
+                                  }} style={{ fontSize: 10, padding: '3px 8px' }} title="Pular etapa">
+                                    <ChevronRight size={10} />
+                                  </button>
+                                ) : (
+                                  <>
+                                    <button className="btn btn-secondary btn-sm" onClick={() => setEditingTask(t)} style={{ fontSize: 10, padding: '3px 8px' }} title="Editar">
+                                      <Edit3 size={10} />
+                                    </button>
+                                    <button className="btn btn-secondary btn-sm" onClick={async () => { if (!accountId || !lead) return; if (!confirm('Excluir tarefa?')) return; await deleteStandaloneTask(t.id, accountId); fetchLeadTasks(lead.id, accountId).then(setLeadTasks) }} style={{ fontSize: 10, padding: '3px 8px', color: '#FF6B6B' }} title="Excluir">
+                                      <Trash2 size={10} />
+                                    </button>
+                                  </>
+                                )}
                               </div>
                             </div>
                           )
