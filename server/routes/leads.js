@@ -356,6 +356,24 @@ router.post('/tags/create', requireRole('super_admin', 'gerente'), (req, res) =>
   } catch { res.status(400).json({ error: 'Tag ja existe' }) }
 })
 
+router.put('/tags/:tagId', requireRole('super_admin', 'gerente'), (req, res) => {
+  if (!req.accountId) return res.status(400).json({ error: 'account_id required' })
+  const tag = db.prepare('SELECT * FROM tags WHERE id = ? AND account_id = ?').get(req.params.tagId, req.accountId)
+  if (!tag) return res.status(404).json({ error: 'Tag nao encontrada' })
+  const { name, color } = req.body
+  const sets = []
+  const params = []
+  if (name !== undefined && name.trim()) { sets.push('name = ?'); params.push(name.trim()) }
+  if (color !== undefined) { sets.push('color = ?'); params.push(color) }
+  if (!sets.length) return res.status(400).json({ error: 'Nada pra atualizar' })
+  params.push(req.params.tagId)
+  try {
+    db.prepare(`UPDATE tags SET ${sets.join(', ')} WHERE id = ?`).run(...params)
+    const updated = db.prepare('SELECT * FROM tags WHERE id = ?').get(req.params.tagId)
+    res.json({ tag: updated })
+  } catch { res.status(400).json({ error: 'Nome ja existe' }) }
+})
+
 router.delete('/tags/:tagId', requireRole('super_admin', 'gerente'), (req, res) => {
   db.prepare('DELETE FROM lead_tags WHERE tag_id = ?').run(req.params.tagId)
   db.prepare('DELETE FROM tags WHERE id = ?').run(req.params.tagId)

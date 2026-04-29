@@ -7,7 +7,7 @@ import { apiFetch, fetchTaskCounts } from '../lib/api'
 import {
   LayoutDashboard, Kanban, Users, MessageCircle, UserCog, GitBranch,
   Plug, Settings, Building2, LogOut, UsersRound, Menu, X,
-  ListOrdered, MessageSquarePlus, ClipboardList, Rocket, ListTodo, ExternalLink,
+  ListOrdered, MessageSquarePlus, ClipboardList, Rocket, ListTodo, ExternalLink, Tag as TagIcon,
 } from 'lucide-react'
 
 export default function Sidebar() {
@@ -106,6 +106,7 @@ export default function Sidebar() {
               <NavLink to="/messages" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={closeMobile}><MessageCircle size={16} /> Disparos</NavLink>
               <NavLink to="/team" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={closeMobile}><UserCog size={16} /> Equipe</NavLink>
               <NavLink to="/funnels" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={closeMobile}><GitBranch size={16} /> Funis</NavLink>
+              <NavLink to="/tags" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={closeMobile}><TagIcon size={16} /> Tags</NavLink>
               <NavLink to="/integrations" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={closeMobile}><Plug size={16} /> Integracoes</NavLink>
               <NavLink to="/settings" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={closeMobile}><Settings size={16} /> Configuracoes</NavLink>
               <div className="nav-section">Automacao</div>

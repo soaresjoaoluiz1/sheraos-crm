@@ -134,6 +134,7 @@ export const addLeadNote = (leadId: number, content: string) => apiFetch<{ note:
 // Tags
 export const fetchTags = (accountId: number) => apiFetch<{ tags: Tag[] }>(`/api/leads/tags/list?account_id=${accountId}`).then(d => d.tags)
 export const createTag = (accountId: number, name: string, color: string) => apiFetch<{ tag: Tag }>(`/api/leads/tags/create?account_id=${accountId}`, { method: 'POST', body: JSON.stringify({ name, color }) }).then(d => d.tag)
+export const updateTag = (tagId: number, accountId: number, data: { name?: string; color?: string }) => apiFetch<{ tag: Tag }>(`/api/leads/tags/${tagId}?account_id=${accountId}`, { method: 'PUT', body: JSON.stringify(data) }).then(d => d.tag)
 export const deleteTag = (tagId: number, accountId: number) => apiFetch(`/api/leads/tags/${tagId}?account_id=${accountId}`, { method: 'DELETE' })
 export const addLeadTag = (leadId: number, tagId: number) => apiFetch(`/api/leads/${leadId}/tags`, { method: 'POST', body: JSON.stringify({ tag_id: tagId }) })
 export const removeLeadTag = (leadId: number, tagId: number) => apiFetch(`/api/leads/${leadId}/tags/${tagId}`, { method: 'DELETE' })

@@ -19,6 +19,7 @@ import Cadences from './pages/Cadences'
 import ReadyMessages from './pages/ReadyMessages'
 import Qualifications from './pages/Qualifications'
 import Launches from './pages/Launches'
+import Tags from './pages/Tags'
 import AdminClients from './pages/admin/Clients'
 import AdminClientDetail from './pages/admin/ClientDetail'
 import AdminGlobalDashboard from './pages/admin/GlobalDashboard'
@@ -64,6 +65,7 @@ function AppRoutes() {
             <Route path="/ready-messages" element={<ReadyMessages />} />
             <Route path="/qualifications" element={<Qualifications />} />
             <Route path="/launches" element={<Launches />} />
+            <Route path="/tags" element={<Tags />} />
           </>}
 
           {/* All authenticated users */}
