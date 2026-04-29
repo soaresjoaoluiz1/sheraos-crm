@@ -4,7 +4,8 @@ import {
   fetchCadences, createCadence, updateCadenceAttempts, deleteCadence,
   type Cadence, type CadenceAttempt,
 } from '../lib/api'
-import { Plus, Trash2, Save, ListOrdered, Phone, Mail, MessageCircle, Video, MapPin, ChevronDown, ChevronUp } from 'lucide-react'
+import { Plus, Trash2, Save, ListOrdered, Phone, Mail, MessageCircle, Video, MapPin, ChevronDown, ChevronUp, HelpCircle, Copy, Check } from 'lucide-react'
+import { MESSAGE_VARIABLES } from '../lib/messageVars'
 
 const ACTION_TYPES = [
   { value: 'mensagem', label: 'Mensagem', icon: MessageCircle },
@@ -25,6 +26,14 @@ export default function Cadences() {
   const [newName, setNewName] = useState('')
   const [newDesc, setNewDesc] = useState('')
   const [expanded, setExpanded] = useState<number | null>(null)
+  const [showVars, setShowVars] = useState(false)
+  const [copiedVar, setCopiedVar] = useState<string | null>(null)
+
+  const copyVar = (token: string) => {
+    navigator.clipboard.writeText(token)
+    setCopiedVar(token)
+    setTimeout(() => setCopiedVar(null), 1500)
+  }
 
   const load = () => { if (accountId) { setLoading(true); fetchCadences(accountId).then(setCadences).finally(() => setLoading(false)) } }
   useEffect(load, [accountId])
@@ -55,8 +64,43 @@ export default function Cadences() {
     <div>
       <div className="page-header">
         <h1>Cadencias de Atendimento</h1>
-        <button className="btn btn-primary btn-sm" onClick={() => setShowNew(true)}><Plus size={14} /> Nova Cadencia</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-secondary btn-sm" onClick={() => setShowVars(true)} title="Ver variaveis disponiveis para mensagens"><HelpCircle size={14} /> Variaveis</button>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowNew(true)}><Plus size={14} /> Nova Cadencia</button>
+        </div>
       </div>
+
+      {showVars && (
+        <div className="modal-overlay" onClick={() => setShowVars(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 560 }}>
+            <h2>Variaveis para mensagens de cadencia</h2>
+            <p style={{ fontSize: 12, color: '#9B96B0', marginBottom: 16 }}>
+              Cole essas tags no campo "Mensagem" do passo da cadencia. Quando o atendente enviar, sao substituidas automaticamente pelos valores reais.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {MESSAGE_VARIABLES.map(v => (
+                <div key={v.token} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-subtle)', borderRadius: 8 }}>
+                  <code style={{ fontSize: 13, color: '#FFB300', fontFamily: 'monospace', flexShrink: 0, minWidth: 160 }}>{v.token}</code>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, color: '#E8E4F0' }}>{v.label}</div>
+                    <div style={{ fontSize: 11, color: '#6B6580' }}>Ex: <em>{v.example}</em></div>
+                  </div>
+                  <button className="btn btn-secondary btn-sm btn-icon" onClick={() => copyVar(v.token)} title="Copiar">
+                    {copiedVar === v.token ? <Check size={12} /> : <Copy size={12} />}
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop: 16, padding: 12, background: 'rgba(255,179,0,0.06)', border: '1px solid rgba(255,179,0,0.2)', borderRadius: 8, fontSize: 11, color: '#C8C4D4', lineHeight: 1.6 }}>
+              <strong style={{ color: '#FFB300' }}>Exemplo:</strong><br />
+              <em>"Oi, {'{{primeiro_nome}}'}! Aqui e o {'{{atendente_nome}}'} da Dros. Vi que voce e de {'{{cidade}}'}, certo?"</em><br />
+              Com lead "Daniel Paulo" de Porto Alegre + Hemily atendendo, vira:<br />
+              "Oi, Daniel! Aqui e a Hemily da Dros. Vi que voce e de Porto Alegre, certo?"
+            </div>
+            <div className="modal-actions"><button className="btn btn-secondary" onClick={() => setShowVars(false)}>Fechar</button></div>
+          </div>
+        </div>
+      )}
 
       {loading ? <div className="loading-container"><div className="spinner" /></div> : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -151,7 +195,7 @@ export default function Cadences() {
                     )}
                     <input className="input" value={a.instructions || ''} onChange={e => updateAttempt(i, 'instructions', e.target.value)} placeholder="Instrucoes (opcional)" style={{ fontSize: 12 }} />
                     {(a.action_type === 'whatsapp' || a.action_type === 'mensagem') && (
-                      <textarea className="input" value={a.auto_message || ''} onChange={e => updateAttempt(i, 'auto_message', e.target.value)} placeholder="Mensagem (opcional). Variaveis: {{name}} = nome do lead, {{atendente}} = nome completo de quem enviar, {{atendente_nome}} = primeiro nome" rows={2} style={{ fontSize: 12, resize: 'vertical' }} />
+                      <textarea className="input" value={a.auto_message || ''} onChange={e => updateAttempt(i, 'auto_message', e.target.value)} placeholder="Mensagem (opcional). Clique em 'Variaveis' no topo da tela para ver as tags disponiveis." rows={2} style={{ fontSize: 12, resize: 'vertical' }} />
                     )}
                   </div>
                   <button className="btn btn-danger btn-sm btn-icon" onClick={() => removeAttempt(i)} style={{ marginTop: 6 }}><Trash2 size={12} /></button>

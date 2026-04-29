@@ -172,7 +172,7 @@ export const fetchLeadCadence = (leadId: number, accountId: number) => apiFetch<
 
 export interface Task {
   lead_cadence_id: number; lead_id: number; cadence_id: number; current_attempt_id: number; status: string
-  lead_name: string | null; lead_phone: string | null; profile_pic_url: string | null
+  lead_name: string | null; lead_phone: string | null; lead_empresa: string | null; lead_city: string | null; profile_pic_url: string | null
   attendant_id: number | null; attendant_name: string | null
   stage_name: string | null; stage_color: string | null
   cadence_name: string; attempt_position: number; total_attempts: number

@@ -4,6 +4,7 @@ import { useAccount } from '../context/AccountContext'
 import { useAuth } from '../context/AuthContext'
 import { useSSE } from '../context/SSEContext'
 import { fetchMyTasks, completeTask, skipTask, sendMessage, completeStandaloneTask, type Task, type TaskGroups, type NextStep } from '../lib/api'
+import { applyMessageVars } from '../lib/messageVars'
 import {
   ListTodo, Phone, MessageCircle, Mail, Video, MapPin, Check, SkipForward,
   ExternalLink, Clock, AlertCircle, User, Calendar, CheckCircle, Send,
@@ -66,12 +67,12 @@ export default function Tasks() {
     if (!accountId || !t.auto_message) return
     setActioning(t.lead_cadence_id)
     try {
-      const me = user?.name || ''
-      const firstName = me.split(' ')[0] || me
-      const text = t.auto_message
-        .replace(/\{\{name\}\}/g, t.lead_name || 'Cliente')
-        .replace(/\{\{atendente\}\}/g, me)
-        .replace(/\{\{atendente_nome\}\}/g, firstName)
+      const text = applyMessageVars(t.auto_message, {
+        leadName: t.lead_name,
+        leadEmpresa: t.lead_empresa,
+        leadCity: t.lead_city,
+        attendantName: user?.name,
+      })
       const sendResult = await sendMessage(t.lead_id, accountId, text)
       if (!sendResult.delivered) {
         alert('Mensagem NAO foi entregue no WhatsApp. Tarefa mantida. Verifique a conexao e tente novamente.')

@@ -15,6 +15,7 @@ import {
   StickyNote, Tag as TagIcon, GitBranch, Smartphone, ListOrdered, ChevronRight, Check, Clock, Archive, ListTodo,
 } from 'lucide-react'
 import MessageMedia from '../components/MessageMedia'
+import { applyMessageVars } from '../lib/messageVars'
 
 function timeAgo(dateStr: string) {
   const diff = Date.now() - new Date(dateStr).getTime()
@@ -100,14 +101,12 @@ export default function Chat() {
       const lc = await fetchLeadCadence(selectedLeadId, accountId)
       setLeadCadence(lc)
       if (lc?.attempt_message) {
-        const me = user?.name || ''
-        const firstName = me.split(' ')[0] || me
-        setCadenceMsgText(
-          lc.attempt_message
-            .replace(/\{\{name\}\}/g, data.lead.name || 'Cliente')
-            .replace(/\{\{atendente\}\}/g, me)
-            .replace(/\{\{atendente_nome\}\}/g, firstName)
-        )
+        setCadenceMsgText(applyMessageVars(lc.attempt_message, {
+          leadName: data.lead.name,
+          leadEmpresa: data.lead.empresa,
+          leadCity: data.lead.city,
+          attendantName: user?.name,
+        }))
       } else setCadenceMsgText('')
     } catch { setLeadCadence(null); setCadenceMsgText('') }
   }, [selectedLeadId, accountId])

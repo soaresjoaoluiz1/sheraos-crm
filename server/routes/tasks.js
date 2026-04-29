@@ -54,6 +54,8 @@ function getMyTasks({ accountId, userId, role }) {
       lc.started_at,
       l.name as lead_name,
       l.phone as lead_phone,
+      l.empresa as lead_empresa,
+      l.city as lead_city,
       l.profile_pic_url,
       l.created_at as lead_created_at,
       l.stage_id,
