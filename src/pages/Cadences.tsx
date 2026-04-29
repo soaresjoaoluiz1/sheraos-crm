@@ -151,7 +151,7 @@ export default function Cadences() {
                     )}
                     <input className="input" value={a.instructions || ''} onChange={e => updateAttempt(i, 'instructions', e.target.value)} placeholder="Instrucoes (opcional)" style={{ fontSize: 12 }} />
                     {(a.action_type === 'whatsapp' || a.action_type === 'mensagem') && (
-                      <textarea className="input" value={a.auto_message || ''} onChange={e => updateAttempt(i, 'auto_message', e.target.value)} placeholder="Mensagem automatica (opcional) — use {{name}} para nome do lead" rows={2} style={{ fontSize: 12, resize: 'vertical' }} />
+                      <textarea className="input" value={a.auto_message || ''} onChange={e => updateAttempt(i, 'auto_message', e.target.value)} placeholder="Mensagem (opcional). Variaveis: {{name}} = nome do lead, {{atendente}} = nome completo de quem enviar, {{atendente_nome}} = primeiro nome" rows={2} style={{ fontSize: 12, resize: 'vertical' }} />
                     )}
                   </div>
                   <button className="btn btn-danger btn-sm btn-icon" onClick={() => removeAttempt(i)} style={{ marginTop: 6 }}><Trash2 size={12} /></button>

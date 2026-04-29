@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAccount } from '../context/AccountContext'
+import { useAuth } from '../context/AuthContext'
 import { useSSE } from '../context/SSEContext'
 import { fetchMyTasks, completeTask, skipTask, sendMessage, completeStandaloneTask, type Task, type TaskGroups, type NextStep } from '../lib/api'
 import {
@@ -28,6 +29,7 @@ const BUCKETS = [
 export default function Tasks() {
   const navigate = useNavigate()
   const { accountId } = useAccount()
+  const { user } = useAuth()
   const [tasks, setTasks] = useState<TaskGroups>({ overdue: [], today: [], tomorrow: [], week: [], later: [] })
   const [loading, setLoading] = useState(true)
   const [activeBucket, setActiveBucket] = useState<keyof TaskGroups>('today')
@@ -64,7 +66,12 @@ export default function Tasks() {
     if (!accountId || !t.auto_message) return
     setActioning(t.lead_cadence_id)
     try {
-      const text = t.auto_message.replace(/\{\{name\}\}/g, t.lead_name || 'Cliente')
+      const me = user?.name || ''
+      const firstName = me.split(' ')[0] || me
+      const text = t.auto_message
+        .replace(/\{\{name\}\}/g, t.lead_name || 'Cliente')
+        .replace(/\{\{atendente\}\}/g, me)
+        .replace(/\{\{atendente_nome\}\}/g, firstName)
       const sendResult = await sendMessage(t.lead_id, accountId, text)
       if (!sendResult.delivered) {
         alert('Mensagem NAO foi entregue no WhatsApp. Tarefa mantida. Verifique a conexao e tente novamente.')

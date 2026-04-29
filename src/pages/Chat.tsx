@@ -99,8 +99,16 @@ export default function Chat() {
     try {
       const lc = await fetchLeadCadence(selectedLeadId, accountId)
       setLeadCadence(lc)
-      if (lc?.attempt_message) setCadenceMsgText(lc.attempt_message.replace(/\{\{name\}\}/g, data.lead.name || 'Cliente'))
-      else setCadenceMsgText('')
+      if (lc?.attempt_message) {
+        const me = user?.name || ''
+        const firstName = me.split(' ')[0] || me
+        setCadenceMsgText(
+          lc.attempt_message
+            .replace(/\{\{name\}\}/g, data.lead.name || 'Cliente')
+            .replace(/\{\{atendente\}\}/g, me)
+            .replace(/\{\{atendente_nome\}\}/g, firstName)
+        )
+      } else setCadenceMsgText('')
     } catch { setLeadCadence(null); setCadenceMsgText('') }
   }, [selectedLeadId, accountId])
   useEffect(() => { loadLead() }, [loadLead])
