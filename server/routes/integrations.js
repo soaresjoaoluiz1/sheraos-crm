@@ -39,6 +39,21 @@ router.get('/whatsapp', requireRole('super_admin', 'gerente'), (req, res) => {
   res.json({ instances })
 })
 
+// Helper: register webhook on Evolution for a given instance
+async function registerEvolutionWebhook(baseUrl, apiKey, instanceName, accountSlug) {
+  const webhookUrl = `https://drosagencia.com.br/crm/api/webhooks/evolution/${accountSlug}`
+  try {
+    await fetch(`${baseUrl}/webhook/set/${encodeURIComponent(instanceName)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: apiKey },
+      body: JSON.stringify({ webhook: { url: webhookUrl, enabled: true, events: ['MESSAGES_UPSERT'] } }),
+    })
+    console.log(`[Evolution Webhook] Set for ${instanceName} → ${webhookUrl}`)
+  } catch (err) {
+    console.error('[Evolution Webhook Setup]', err.message)
+  }
+}
+
 // ─── Create instance on Evolution API + get QR code ──────────────
 router.post('/whatsapp', requireRole('super_admin', 'gerente'), async (req, res) => {
   if (!req.accountId) return res.status(400).json({ error: 'account_id required' })
@@ -46,7 +61,7 @@ router.post('/whatsapp', requireRole('super_admin', 'gerente'), async (req, res)
   if (!instance_name) return res.status(400).json({ error: 'instance_name obrigatorio' })
 
   // Get Evolution API credentials from account config (or fallback to body for backwards compat)
-  const account = db.prepare('SELECT evolution_api_url, evolution_api_key FROM accounts WHERE id = ?').get(req.accountId)
+  const account = db.prepare('SELECT evolution_api_url, evolution_api_key, slug FROM accounts WHERE id = ?').get(req.accountId)
   const api_url = req.body.api_url || account?.evolution_api_url
   const api_key = req.body.api_key || account?.evolution_api_key
   if (!api_url || !api_key) return res.status(400).json({ error: 'Configure a Evolution API primeiro em Integracoes' })
@@ -54,10 +69,11 @@ router.post('/whatsapp', requireRole('super_admin', 'gerente'), async (req, res)
   // Normalize api_url (remove trailing slash)
   const baseUrl = api_url.replace(/\/+$/, '')
 
-  // Check if instance already exists in DB
+  // Check if instance already exists in DB — re-register webhook to recover from past failures, then return
   const existing = db.prepare('SELECT id FROM whatsapp_instances WHERE account_id = ? AND instance_name = ?').get(req.accountId, instance_name)
   if (existing) {
     db.prepare("UPDATE whatsapp_instances SET api_url = ?, api_key = ?, updated_at = datetime('now') WHERE id = ?").run(baseUrl, api_key, existing.id)
+    await registerEvolutionWebhook(baseUrl, api_key, instance_name, account.slug)
     const instance = db.prepare('SELECT * FROM whatsapp_instances WHERE id = ?').get(existing.id)
     return res.json({ instance })
   }
@@ -83,18 +99,7 @@ router.post('/whatsapp', requireRole('super_admin', 'gerente'), async (req, res)
   const instance = db.prepare('SELECT * FROM whatsapp_instances WHERE id = ?').get(result.lastInsertRowid)
 
   // Setup webhook automatically (Evolution v2.3 format)
-  try {
-    const acct = db.prepare('SELECT slug FROM accounts WHERE id = ?').get(req.accountId)
-    const webhookUrl = `https://drosagencia.com.br/crm/api/webhooks/evolution/${acct.slug}`
-    await fetch(`${baseUrl}/webhook/set/${encodeURIComponent(instance_name)}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', apikey: api_key },
-      body: JSON.stringify({ webhook: { url: webhookUrl, enabled: true, events: ['MESSAGES_UPSERT'] } }),
-    })
-    console.log(`[Evolution Webhook] Set for ${instance_name} → ${webhookUrl}`)
-  } catch (err) {
-    console.error('[Evolution Webhook Setup]', err.message)
-  }
+  await registerEvolutionWebhook(baseUrl, api_key, instance_name, account.slug)
 
   res.json({ instance })
 })
@@ -112,6 +117,11 @@ router.post('/whatsapp/:id/connect', requireRole('super_admin', 'gerente'), asyn
     const qrCode = data?.base64 || data?.qrcode || null
 
     db.prepare("UPDATE whatsapp_instances SET qr_code = ?, status = 'connecting', updated_at = datetime('now') WHERE id = ?").run(qrCode, instance.id)
+
+    // Re-register webhook on every connect to recover from any past Evolution-side resets
+    const account = db.prepare('SELECT slug FROM accounts WHERE id = ?').get(instance.account_id)
+    if (account?.slug) await registerEvolutionWebhook(instance.api_url, instance.api_key, instance.instance_name, account.slug)
+
     const updated = db.prepare('SELECT * FROM whatsapp_instances WHERE id = ?').get(instance.id)
     res.json({ instance: updated })
   } catch (err) {
@@ -213,16 +223,11 @@ router.post('/whatsapp/:id/setup-webhook', requireRole('super_admin', 'gerente')
   const instance = getOwnedInstance(req, res)
   if (!instance) return
   const account = db.prepare('SELECT slug FROM accounts WHERE id = ?').get(instance.account_id)
+  if (!account?.slug) return res.status(404).json({ error: 'Conta nao encontrada' })
   const webhookUrl = `https://drosagencia.com.br/crm/api/webhooks/evolution/${account.slug}`
   try {
-    const r = await fetch(`${instance.api_url}/webhook/set/${encodeURIComponent(instance.instance_name)}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', apikey: instance.api_key },
-      body: JSON.stringify({ webhook: { url: webhookUrl, enabled: true, events: ['MESSAGES_UPSERT'] } }),
-    })
-    const data = await r.json()
-    console.log(`[Evolution Webhook] Updated ${instance.instance_name} → ${webhookUrl}`)
-    res.json({ ok: true, webhookUrl, response: data })
+    await registerEvolutionWebhook(instance.api_url, instance.api_key, instance.instance_name, account.slug)
+    res.json({ ok: true, webhookUrl })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

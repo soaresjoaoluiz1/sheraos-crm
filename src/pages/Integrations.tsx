@@ -3,10 +3,10 @@ import { useAccount } from '../context/AccountContext'
 import {
   fetchWhatsAppInstances, createWhatsAppInstance, connectWhatsAppInstance,
   checkWhatsAppStatus, refreshWhatsAppQR, disconnectWhatsApp, deleteWhatsAppInstance,
-  fetchEvolutionConfig, saveEvolutionConfig, apiFetch,
+  fetchEvolutionConfig, saveEvolutionConfig, setupWhatsAppWebhook, apiFetch,
   type WhatsAppInstance,
 } from '../lib/api'
-import { Plug, Plus, Wifi, WifiOff, Loader, Trash2, QrCode, Power, PowerOff, RefreshCw, Smartphone, Save, Check, Settings, FileSpreadsheet, Copy } from 'lucide-react'
+import { Plug, Plus, Wifi, WifiOff, Loader, Trash2, QrCode, Power, PowerOff, RefreshCw, Smartphone, Save, Check, Settings, FileSpreadsheet, Copy, Webhook } from 'lucide-react'
 
 export default function Integrations() {
   const { accountId } = useAccount()
@@ -125,6 +125,19 @@ export default function Integrations() {
     load()
   }
 
+  const [reconfiguring, setReconfiguring] = useState<number | null>(null)
+  const handleReconfigureWebhook = async (inst: WhatsAppInstance) => {
+    if (!accountId) return
+    setReconfiguring(inst.id)
+    try {
+      await setupWhatsAppWebhook(inst.id, accountId)
+      alert('Webhook reconfigurado com sucesso. Os leads voltarao a entrar em tempo real.')
+    } catch (e: any) {
+      alert('Erro ao reconfigurar webhook: ' + e.message)
+    }
+    setReconfiguring(null)
+  }
+
   const getStatusIcon = (status: string) => {
     if (status === 'connected') return <Wifi size={14} />
     if (status === 'connecting') return <Loader size={14} className="spinning" />
@@ -226,7 +239,17 @@ export default function Integrations() {
                       </button>
                     )}
                     {inst.status === 'connected' && (
-                      <button className="btn btn-secondary btn-sm" onClick={() => handleDisconnect(inst)}><PowerOff size={12} /> Desconectar</button>
+                      <>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => handleReconfigureWebhook(inst)}
+                          disabled={reconfiguring === inst.id}
+                          title="Reenvia o webhook pra Evolution. Use se os leads pararem de entrar em tempo real."
+                        >
+                          {reconfiguring === inst.id ? <Loader size={12} className="spinning" /> : <Webhook size={12} />} Reconfigurar webhook
+                        </button>
+                        <button className="btn btn-secondary btn-sm" onClick={() => handleDisconnect(inst)}><PowerOff size={12} /> Desconectar</button>
+                      </>
                     )}
                     <button className="btn btn-danger btn-sm btn-icon" onClick={() => handleDelete(inst)} title="Excluir"><Trash2 size={12} /></button>
                   </div>

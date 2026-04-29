@@ -34,8 +34,13 @@ router.post('/:leadId', async (req, res) => {
     `).get(req.params.leadId, content)
     if (duplicate) return res.status(409).json({ error: 'Mensagem identica ja enviada nos ultimos 5 minutos' })
 
-    // Find WhatsApp instance for this account
-    const instance = db.prepare('SELECT * FROM whatsapp_instances WHERE account_id = ? AND status = ?').get(lead.account_id, 'connected')
+    // Find WhatsApp instance — prefer the one tied to this lead, fallback to any connected on the account
+    let instance = lead.instance_id
+      ? db.prepare('SELECT * FROM whatsapp_instances WHERE id = ? AND status = ?').get(lead.instance_id, 'connected')
+      : null
+    if (!instance) {
+      instance = db.prepare('SELECT * FROM whatsapp_instances WHERE account_id = ? AND status = ? ORDER BY id LIMIT 1').get(lead.account_id, 'connected')
+    }
     if (!instance) return res.status(400).json({ error: 'Nenhuma instancia WhatsApp conectada' })
 
     let jid = lead.wa_remote_jid || lead.phone
