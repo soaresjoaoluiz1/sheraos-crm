@@ -234,6 +234,22 @@ router.post('/whatsapp/:id/setup-webhook', requireRole('super_admin', 'gerente')
   }
 })
 
+// ─── Update default attendant for an instance ────────────────────
+router.put('/whatsapp/:id/attendant', requireRole('super_admin', 'gerente'), (req, res) => {
+  const instance = getOwnedInstance(req, res)
+  if (!instance) return
+  const { attendant_id } = req.body
+  // null clears the assignment (back to round-robin)
+  if (attendant_id !== null && attendant_id !== undefined) {
+    const user = db.prepare('SELECT id, account_id, role FROM users WHERE id = ? AND is_active = 1').get(attendant_id)
+    if (!user) return res.status(400).json({ error: 'Usuario nao encontrado' })
+    if (user.account_id && user.account_id !== instance.account_id) return res.status(400).json({ error: 'Atendente nao pertence a esta conta' })
+  }
+  db.prepare("UPDATE whatsapp_instances SET default_attendant_id = ?, updated_at = datetime('now') WHERE id = ?").run(attendant_id || null, instance.id)
+  const updated = db.prepare('SELECT * FROM whatsapp_instances WHERE id = ?').get(instance.id)
+  res.json({ instance: updated })
+})
+
 // ─── Restart Baileys session on Evolution (fixes "open but no msgs" zombie state) ───
 router.post('/whatsapp/:id/restart', requireRole('super_admin', 'gerente'), async (req, res) => {
   const instance = getOwnedInstance(req, res)

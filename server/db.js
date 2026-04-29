@@ -341,6 +341,8 @@ function addColumnIfNotExists(table, column, type) {
 }
 // whatsapp_instances: qr_code for QR code base64
 addColumnIfNotExists('whatsapp_instances', 'qr_code', 'TEXT')
+// whatsapp_instances: default attendant for new inbound leads (overrides round-robin when set)
+addColumnIfNotExists('whatsapp_instances', 'default_attendant_id', 'INTEGER REFERENCES users(id) ON DELETE SET NULL')
 // leads: instance_id to track which WhatsApp number received this lead
 addColumnIfNotExists('leads', 'instance_id', 'INTEGER REFERENCES whatsapp_instances(id) ON DELETE SET NULL')
 // accounts: Evolution API credentials (shared across all instances)

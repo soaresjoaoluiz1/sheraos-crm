@@ -53,18 +53,24 @@ function getOrCreateLead(accountId, phone, name, source, waJid, instanceId) {
   const firstStage = db.prepare('SELECT id FROM funnel_stages WHERE funnel_id = ? ORDER BY position LIMIT 1').get(funnel.id)
   if (!firstStage) return { lead: null, isNew: false }
 
-  // Run distribution (round-robin or manual)
+  // Distribution: prefer instance.default_attendant_id, fallback to round-robin/manual
   let attendantId = null
-  const rule = db.prepare('SELECT * FROM distribution_rules WHERE account_id = ? AND funnel_id = ?').get(accountId, funnel.id)
-  if (rule && rule.type === 'round_robin' && rule.active_attendants) {
-    try {
-      const attendants = JSON.parse(rule.active_attendants)
-      if (attendants.length > 0) {
-        const idx = rule.last_assigned_index % attendants.length
-        attendantId = attendants[idx]
-        db.prepare("UPDATE distribution_rules SET last_assigned_index = ?, updated_at = datetime('now') WHERE id = ?").run(rule.last_assigned_index + 1, rule.id)
-      }
-    } catch {}
+  if (instanceId) {
+    const inst = db.prepare('SELECT default_attendant_id FROM whatsapp_instances WHERE id = ?').get(instanceId)
+    if (inst?.default_attendant_id) attendantId = inst.default_attendant_id
+  }
+  if (!attendantId) {
+    const rule = db.prepare('SELECT * FROM distribution_rules WHERE account_id = ? AND funnel_id = ?').get(accountId, funnel.id)
+    if (rule && rule.type === 'round_robin' && rule.active_attendants) {
+      try {
+        const attendants = JSON.parse(rule.active_attendants)
+        if (attendants.length > 0) {
+          const idx = rule.last_assigned_index % attendants.length
+          attendantId = attendants[idx]
+          db.prepare("UPDATE distribution_rules SET last_assigned_index = ?, updated_at = datetime('now') WHERE id = ?").run(rule.last_assigned_index + 1, rule.id)
+        }
+      } catch {}
+    }
   }
 
   const result = db.prepare(`

@@ -255,8 +255,25 @@ async function pollMissedMessages() {
           const stage = db.prepare('SELECT id FROM funnel_stages WHERE funnel_id = ? ORDER BY position LIMIT 1').get(funnel.id)
           if (!stage) continue
           const leadPhone = isLid ? null : phone // LID leads have no real phone
-          const result = db.prepare("INSERT INTO leads (account_id, funnel_id, stage_id, name, phone, source, wa_remote_jid, instance_id, opted_in_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))").run(
-            inst.acc_id, funnel.id, stage.id, pushName || phone || 'Sem nome', leadPhone, 'whatsapp', dedupJid, inst.id
+
+          // Distribution: prefer instance.default_attendant_id, fallback to round-robin
+          let attendantId = inst.default_attendant_id || null
+          if (!attendantId) {
+            const rule = db.prepare('SELECT * FROM distribution_rules WHERE account_id = ? AND funnel_id = ?').get(inst.acc_id, funnel.id)
+            if (rule && rule.type === 'round_robin' && rule.active_attendants) {
+              try {
+                const attendants = JSON.parse(rule.active_attendants)
+                if (attendants.length > 0) {
+                  const idx = rule.last_assigned_index % attendants.length
+                  attendantId = attendants[idx]
+                  db.prepare("UPDATE distribution_rules SET last_assigned_index = ?, updated_at = datetime('now') WHERE id = ?").run(rule.last_assigned_index + 1, rule.id)
+                }
+              } catch {}
+            }
+          }
+
+          const result = db.prepare("INSERT INTO leads (account_id, funnel_id, stage_id, attendant_id, name, phone, source, wa_remote_jid, instance_id, opted_in_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))").run(
+            inst.acc_id, funnel.id, stage.id, attendantId, pushName || phone || 'Sem nome', leadPhone, 'whatsapp', dedupJid, inst.id
           )
           lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(result.lastInsertRowid)
           db.prepare('INSERT INTO stage_history (lead_id, to_stage_id, trigger_type) VALUES (?, ?, ?)').run(lead.id, stage.id, 'polling')

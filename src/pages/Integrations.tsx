@@ -3,10 +3,10 @@ import { useAccount } from '../context/AccountContext'
 import {
   fetchWhatsAppInstances, createWhatsAppInstance, connectWhatsAppInstance,
   checkWhatsAppStatus, refreshWhatsAppQR, disconnectWhatsApp, deleteWhatsAppInstance,
-  fetchEvolutionConfig, saveEvolutionConfig, setupWhatsAppWebhook, restartWhatsAppInstance, syncWhatsAppNow, apiFetch,
-  type WhatsAppInstance,
+  fetchEvolutionConfig, saveEvolutionConfig, setupWhatsAppWebhook, restartWhatsAppInstance, syncWhatsAppNow, setInstanceAttendant, fetchUsers, apiFetch,
+  type WhatsAppInstance, type User as UserType,
 } from '../lib/api'
-import { Plug, Plus, Wifi, WifiOff, Loader, Trash2, QrCode, Power, PowerOff, RefreshCw, Smartphone, Save, Check, Settings, FileSpreadsheet, Copy, Webhook, RotateCw, Download } from 'lucide-react'
+import { Plug, Plus, Wifi, WifiOff, Loader, Trash2, QrCode, Power, PowerOff, RefreshCw, Smartphone, Save, Check, Settings, FileSpreadsheet, Copy, Webhook, RotateCw, Download, User } from 'lucide-react'
 
 export default function Integrations() {
   const { accountId } = useAccount()
@@ -26,6 +26,22 @@ export default function Integrations() {
   const [savingConfig, setSavingConfig] = useState(false)
   const [accountSlug, setAccountSlug] = useState('')
   const [sheetsCopied, setSheetsCopied] = useState(false)
+  const [users, setUsers] = useState<UserType[]>([])
+
+  useEffect(() => {
+    if (!accountId) return
+    fetchUsers(accountId).then(setUsers).catch(() => {})
+  }, [accountId])
+
+  const handleAttendantChange = async (inst: WhatsAppInstance, attendantId: number | null) => {
+    if (!accountId) return
+    try {
+      const { instance } = await setInstanceAttendant(inst.id, accountId, attendantId)
+      setInstances(prev => prev.map(i => i.id === instance.id ? instance : i))
+    } catch (e: any) {
+      alert('Erro: ' + e.message)
+    }
+  }
 
   const load = useCallback(() => {
     if (!accountId) return
@@ -264,6 +280,21 @@ export default function Integrations() {
                     <div>
                       <div style={{ fontWeight: 600, fontSize: 15 }}>{inst.instance_name}</div>
                       {inst.phone_number && <div style={{ fontSize: 12, color: '#C8C4D4' }}>{inst.phone_number}</div>}
+                      <div style={{ fontSize: 11, color: '#9B96B0', marginTop: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <User size={11} /> Leads novos vao para:
+                        <select
+                          className="select"
+                          value={inst.default_attendant_id ?? ''}
+                          onChange={e => handleAttendantChange(inst, e.target.value ? parseInt(e.target.value) : null)}
+                          style={{ height: 26, fontSize: 11, padding: '2px 8px', minWidth: 180 }}
+                          title="Quando uma mensagem chega nesse numero, o lead criado e atribuido a este atendente. Em branco = usa a roleta do funil."
+                        >
+                          <option value="">Roleta do funil</option>
+                          {users.filter(u => u.is_active && (u.role === 'atendente' || u.role === 'gerente')).map(u => (
+                            <option key={u.id} value={u.id}>{u.name}</option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
