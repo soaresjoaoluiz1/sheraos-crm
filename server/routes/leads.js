@@ -172,6 +172,55 @@ router.get('/:id', (req, res) => {
   res.json({ lead, messages: messages.reverse(), stageHistory, notes })
 })
 
+// List conversations (instancias) of a lead — uma "tab" por instancia
+router.get('/:id/conversations', (req, res) => {
+  const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id)
+  if (!lead) return res.status(404).json({ error: 'Lead nao encontrado' })
+  if (req.accountId && lead.account_id !== req.accountId) return res.status(403).json({ error: 'Sem permissao' })
+
+  // Quais instancias o user pode ver?
+  // - super_admin/gerente: todas as instancias que conversaram com este lead
+  // - atendente: apenas onde tem assignment OU e atendente principal do lead
+  let convs
+  if (req.user.role === 'atendente') {
+    convs = db.prepare(`
+      SELECT DISTINCT
+        wi.id as instance_id,
+        wi.instance_name,
+        wi.status,
+        lia.attendant_id,
+        u.name as attendant_name,
+        (SELECT COUNT(*) FROM messages WHERE lead_id = ? AND instance_id = wi.id) as msg_count,
+        (SELECT MAX(created_at) FROM messages WHERE lead_id = ? AND instance_id = wi.id) as last_msg_at
+      FROM whatsapp_instances wi
+      LEFT JOIN lead_instance_assignments lia ON lia.instance_id = wi.id AND lia.lead_id = ?
+      LEFT JOIN users u ON u.id = lia.attendant_id
+      WHERE wi.account_id = ?
+        AND (lia.attendant_id = ? OR ? = ?)
+        AND EXISTS (SELECT 1 FROM messages WHERE lead_id = ? AND instance_id = wi.id)
+      ORDER BY last_msg_at DESC
+    `).all(lead.id, lead.id, lead.id, lead.account_id, req.user.id, lead.attendant_id, req.user.id, lead.id)
+  } else {
+    convs = db.prepare(`
+      SELECT
+        wi.id as instance_id,
+        wi.instance_name,
+        wi.status,
+        lia.attendant_id,
+        u.name as attendant_name,
+        (SELECT COUNT(*) FROM messages WHERE lead_id = ? AND instance_id = wi.id) as msg_count,
+        (SELECT MAX(created_at) FROM messages WHERE lead_id = ? AND instance_id = wi.id) as last_msg_at
+      FROM whatsapp_instances wi
+      LEFT JOIN lead_instance_assignments lia ON lia.instance_id = wi.id AND lia.lead_id = ?
+      LEFT JOIN users u ON u.id = lia.attendant_id
+      WHERE wi.account_id = ?
+        AND EXISTS (SELECT 1 FROM messages WHERE lead_id = ? AND instance_id = wi.id)
+      ORDER BY last_msg_at DESC
+    `).all(lead.id, lead.id, lead.id, lead.account_id, lead.id)
+  }
+  res.json({ conversations: convs })
+})
+
 // Update lead
 router.put('/:id', (req, res) => {
   const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id)

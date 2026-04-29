@@ -6,7 +6,7 @@ import {
   fetchWhatsAppInstances, fetchLeads, fetchLead, fetchFunnels, fetchUsers, fetchTags,
   sendMessage, updateLead, moveLeadStage, assignLead, addLeadNote, addLeadTag, removeLeadTag,
   fetchLeadCadence, advanceLeadCadence, removeLeadCadence, fetchCadences, assignLeadCadence, createTag,
-  archiveLead, createStandaloneTask, fetchLeadTasks, completeStandaloneTask, deleteStandaloneTask, completeTask, skipTask,
+  archiveLead, createStandaloneTask, fetchLeadTasks, completeStandaloneTask, deleteStandaloneTask, completeTask, skipTask, fetchLeadConversations, type LeadConversation,
   type WhatsAppInstance, type Lead, type Message, type StageHistoryEntry, type LeadNote,
   type Funnel, type User as UserType, type Tag, type LeadCadence, type Cadence,
 } from '../lib/api'
@@ -62,6 +62,8 @@ export default function Chat() {
   const [editingTask, setEditingTask] = useState<any>(null)
   const [sendInstanceOverride, setSendInstanceOverride] = useState<number | null>(null)
   const [showSendInstance, setShowSendInstance] = useState(false)
+  const [conversations, setConversations] = useState<LeadConversation[]>([])
+  const [activeConvInstance, setActiveConvInstance] = useState<number | null>(null)
   const [editData, setEditData] = useState<Record<string, any>>({ name: '', phone: '', email: '', city: '' })
   const [rightTab, setRightTab] = useState<'info' | 'notes' | 'history'>('info')
   const [showTagMenu, setShowTagMenu] = useState(false)
@@ -100,13 +102,21 @@ export default function Chat() {
 
   // Load selected lead detail
   const loadLead = useCallback(async () => {
-    if (!selectedLeadId || !accountId) { setLead(null); setMessages([]); setLeadTasks([]); return }
+    if (!selectedLeadId || !accountId) { setLead(null); setMessages([]); setLeadTasks([]); setConversations([]); setActiveConvInstance(null); return }
     const data = await fetchLead(selectedLeadId, accountId)
     setLead(data.lead)
     setMessages(data.messages)
     setHistory(data.stageHistory)
     setNotes(data.notes || [])
     fetchLeadTasks(selectedLeadId, accountId).then(setLeadTasks).catch(() => setLeadTasks([]))
+    fetchLeadConversations(selectedLeadId, accountId).then(convs => {
+      setConversations(convs)
+      // Default: ultima instancia conversada (ou primeira que o user tem acesso)
+      if (convs.length > 0) {
+        const last = data.lead.last_instance_id && convs.find(c => c.instance_id === data.lead.last_instance_id)
+        setActiveConvInstance(last ? last.instance_id : convs[0].instance_id)
+      } else setActiveConvInstance(null)
+    }).catch(() => { setConversations([]); setActiveConvInstance(null) })
     setEditData({ name: data.lead.name || '', phone: data.lead.phone || '', email: data.lead.email || '', city: data.lead.city || '', empresa: data.lead.empresa || '', cpf_cnpj: data.lead.cpf_cnpj || '', instagram: data.lead.instagram || '', trabalha_anuncio: data.lead.trabalha_anuncio || 0, investimento_anuncios: data.lead.investimento_anuncios || '' })
     try {
       const lc = await fetchLeadCadence(selectedLeadId, accountId)
@@ -165,9 +175,8 @@ export default function Chat() {
     if (!msgText.trim() || !lead || !accountId) return
     setSending(true)
     try {
-      // Filtro de instancia ativo no header funciona como override implicito
-      const filterOverride = (typeof selectedInstance === 'number') ? selectedInstance : undefined
-      const override = sendInstanceOverride || filterOverride
+      // Tab ativa = instancia que vai enviar (override manual sobreescreve)
+      const override = sendInstanceOverride || activeConvInstance || undefined
       const result = await sendMessage(lead.id, accountId, msgText, override)
       setMessages(prev => [...prev, result.message])
       setMsgText('')
@@ -178,24 +187,18 @@ export default function Chat() {
     setSending(false)
   }
 
-  // Resolve which instance the next send will use (mirror do backend)
+  // Tab ativa define a instancia de envio
   const resolvedSendInstance = (() => {
     if (!lead || !instances.length) return null
-    // 1. Override manual
     if (sendInstanceOverride) return instances.find(i => i.id === sendInstanceOverride)
-    // 2. Filtro de instancia ativo
-    if (typeof selectedInstance === 'number') return instances.find(i => i.id === selectedInstance)
-    // 3. User e atendente principal → continuidade
-    if (user?.id && lead.attendant_id === user.id) {
-      return instances.find(i => i.id === lead.last_instance_id) || instances.find(i => i.id === lead.instance_id) || null
-    }
-    // 4. Primary do user (gerente/admin "por fora")
-    if (user?.primary_instance_id) return instances.find(i => i.id === user.primary_instance_id)
-    // 5. Fallbacks
-    if (lead.last_instance_id) return instances.find(i => i.id === lead.last_instance_id)
-    if (lead.instance_id) return instances.find(i => i.id === lead.instance_id)
-    return instances.find(i => i.status === 'connected') || instances[0]
+    if (activeConvInstance) return instances.find(i => i.id === activeConvInstance)
+    return null
   })()
+
+  // Filtrar mensagens pela tab ativa
+  const visibleMessages = activeConvInstance
+    ? messages.filter(m => (m as any).instance_id === activeConvInstance)
+    : messages
 
   const handleSaveEdit = async () => {
     if (!lead) return
@@ -351,9 +354,28 @@ export default function Chat() {
                   <Archive size={12} />
                 </button>
               </div>
+
+              {/* Tabs por instancia (uma conversa por numero) */}
+              {conversations.length > 0 && (
+                <div style={{ display: 'flex', gap: 0, padding: '0 12px', borderBottom: '1px solid rgba(255,255,255,0.06)', overflowX: 'auto' }}>
+                  {conversations.map(conv => {
+                    const isActive = conv.instance_id === activeConvInstance
+                    return (
+                      <button key={conv.instance_id} onClick={() => setActiveConvInstance(conv.instance_id)}
+                        style={{ padding: '10px 14px', background: 'transparent', border: 'none', borderBottom: `2px solid ${isActive ? '#FFB300' : 'transparent'}`, color: isActive ? '#FFB300' : '#9B96B0', fontSize: 12, fontWeight: isActive ? 700 : 500, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <Smartphone size={11} />
+                        {conv.instance_name}
+                        <span style={{ background: 'rgba(255,255,255,0.08)', padding: '1px 6px', borderRadius: 8, fontSize: 10 }}>{conv.msg_count}</span>
+                        {conv.attendant_name && <span style={{ fontSize: 9, color: '#6B6580' }}>· {conv.attendant_name}</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+
               <div className="chat-messages">
-                {messages.length === 0 && <div style={{ textAlign: 'center', color: '#6B6580', padding: 40, fontSize: 13 }}>Nenhuma mensagem</div>}
-                {messages.map(m => (
+                {visibleMessages.length === 0 && <div style={{ textAlign: 'center', color: '#6B6580', padding: 40, fontSize: 13 }}>Nenhuma mensagem nesta conversa</div>}
+                {visibleMessages.map(m => (
                   <div key={m.id} className={`chat-msg-row ${m.direction}`}>
                     <div className={`chat-bubble ${m.direction}`} style={m.direction === 'outbound' && !m.wa_msg_id ? { border: '1px solid #FF6B6B', opacity: 0.8 } : undefined}>
                       {m.media_type && m.media_type !== 'text'
