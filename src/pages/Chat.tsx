@@ -52,6 +52,7 @@ export default function Chat() {
   const [search, setSearch] = useState('')
   const [tagFilter, setTagFilter] = useState<number | ''>('')
   const [attendantFilter, setAttendantFilter] = useState<number | 'all' | 'unassigned'>('all')
+  const [showArchived, setShowArchived] = useState(false)
   const [msgText, setMsgText] = useState('')
   const [noteText, setNoteText] = useState('')
   const [sending, setSending] = useState(false)
@@ -86,11 +87,13 @@ export default function Chat() {
   // Load leads list (with optional instance filter)
   const loadLeadsList = useCallback(() => {
     if (!accountId) return
-    fetchLeads(accountId, { limit: 200 }).then(data => {
+    const filters: any = { limit: 200 }
+    if (showArchived) filters.show_archived = 'all'
+    fetchLeads(accountId, filters).then(data => {
       const filtered = selectedInstance === 'all' ? data.leads : data.leads.filter(l => l.instance_id === selectedInstance)
       setLeads(filtered)
     })
-  }, [accountId, selectedInstance])
+  }, [accountId, selectedInstance, showArchived])
   useEffect(() => { loadLeadsList() }, [loadLeadsList])
 
   // Load selected lead detail
@@ -244,6 +247,9 @@ export default function Chat() {
               ))}
             </select>
           )}
+          <button onClick={() => setShowArchived(s => !s)} className={`btn btn-sm ${showArchived ? 'btn-primary' : 'btn-secondary'}`} style={{ fontSize: 11 }} title="Mostrar leads arquivados">
+            <Archive size={12} /> {showArchived ? 'Ocultar arquivados' : 'Mostrar arquivados'}
+          </button>
         </div>
       </div>
 

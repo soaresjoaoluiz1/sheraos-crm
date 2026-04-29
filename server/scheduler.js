@@ -238,14 +238,21 @@ async function pollMissedMessages() {
 
         // Get or create lead
         const dedupJid = isLid ? `${phone}@lid` : `${phone}@s.whatsapp.net`
-        let lead = db.prepare('SELECT * FROM leads WHERE account_id = ? AND (wa_remote_jid = ? OR phone = ?)').get(inst.acc_id, dedupJid, phone)
+        let lead = db.prepare('SELECT * FROM leads WHERE account_id = ? AND (wa_remote_jid = ? OR phone = ?) ORDER BY is_archived ASC, created_at DESC LIMIT 1').get(inst.acc_id, dedupJid, phone)
 
         // For @lid: also try matching by pushName (same person, different ID)
         if (!lead && isLid && pushName) {
-          lead = db.prepare('SELECT * FROM leads WHERE account_id = ? AND name = ?').get(inst.acc_id, pushName)
+          lead = db.prepare('SELECT * FROM leads WHERE account_id = ? AND name = ? ORDER BY is_archived ASC, created_at DESC LIMIT 1').get(inst.acc_id, pushName)
           if (lead) {
             db.prepare("UPDATE leads SET wa_remote_jid = ?, updated_at = datetime('now') WHERE id = ?").run(dedupJid, lead.id)
           }
+        }
+
+        // If lead is archived, unarchive it (client sent a new message — relevant again)
+        if (lead && lead.is_archived) {
+          db.prepare("UPDATE leads SET is_archived = 0, archived_at = NULL, has_new_after_archive = 1, updated_at = datetime('now') WHERE id = ?").run(lead.id)
+          lead.is_archived = 0
+          console.log(`[Polling] Desarquivado lead ${lead.id} (${lead.name}) — recebeu mensagem nova`)
         }
 
         if (!lead) {

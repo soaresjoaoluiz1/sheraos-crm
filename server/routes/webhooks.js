@@ -34,15 +34,20 @@ function normalizePhone(p) {
 
 function getOrCreateLead(accountId, phone, name, source, waJid, instanceId) {
   phone = normalizePhone(phone)
-  // Find existing by phone or wa_remote_jid
+  // Find existing by phone or wa_remote_jid (prefer non-archived; if all archived, take most recent)
   let lead = null
-  if (waJid) lead = db.prepare('SELECT * FROM leads WHERE account_id = ? AND wa_remote_jid = ?').get(accountId, waJid)
-  if (!lead && phone) lead = db.prepare('SELECT * FROM leads WHERE account_id = ? AND phone = ?').get(accountId, phone)
+  if (waJid) lead = db.prepare('SELECT * FROM leads WHERE account_id = ? AND wa_remote_jid = ? ORDER BY is_archived ASC, created_at DESC LIMIT 1').get(accountId, waJid)
+  if (!lead && phone) lead = db.prepare('SELECT * FROM leads WHERE account_id = ? AND phone = ? ORDER BY is_archived ASC, created_at DESC LIMIT 1').get(accountId, phone)
 
   if (lead) {
     // Update instance_id if not set
     if (instanceId && !lead.instance_id) {
       db.prepare('UPDATE leads SET instance_id = ? WHERE id = ?').run(instanceId, lead.id)
+    }
+    // Unarchive if needed (client sent new message — relevant again)
+    if (lead.is_archived) {
+      db.prepare("UPDATE leads SET is_archived = 0, archived_at = NULL, has_new_after_archive = 1, updated_at = datetime('now') WHERE id = ?").run(lead.id)
+      lead.is_archived = 0
     }
     return { lead, isNew: false }
   }
