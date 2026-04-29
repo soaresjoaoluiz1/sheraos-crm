@@ -397,6 +397,14 @@ addColumnIfNotExists('leads', 'last_broadcast_at', 'TEXT')
 addColumnIfNotExists('broadcasts', 'message_variations', 'TEXT')
 addColumnIfNotExists('broadcasts', 'delay_seconds', 'INTEGER NOT NULL DEFAULT 3')
 
+// ─── Multi-instance routing (decide which WhatsApp number to use when sending)
+// leads.last_instance_id: ultima instancia que conversou com este lead (origem ou recepcao)
+addColumnIfNotExists('leads', 'last_instance_id', 'INTEGER REFERENCES whatsapp_instances(id) ON DELETE SET NULL')
+// users.primary_instance_id: instancia padrao do usuario para envios manuais quando lead nao tem instancia
+addColumnIfNotExists('users', 'primary_instance_id', 'INTEGER REFERENCES whatsapp_instances(id) ON DELETE SET NULL')
+// messages.instance_id: qual instancia enviou/recebeu cada mensagem (mostrado internamente no chat)
+addColumnIfNotExists('messages', 'instance_id', 'INTEGER REFERENCES whatsapp_instances(id) ON DELETE SET NULL')
+
 // Standalone tasks (not tied to cadences)
 db.exec(`
   CREATE TABLE IF NOT EXISTS standalone_tasks (

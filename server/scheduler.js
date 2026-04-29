@@ -287,10 +287,12 @@ async function pollMissedMessages() {
           broadcastSSE(inst.acc_id, 'lead:created', lead)
         }
 
-        // Store message
-        db.prepare('INSERT INTO messages (lead_id, account_id, direction, content, media_type, sender_name, wa_msg_id, wa_timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
-          lead.id, inst.acc_id, fromMe ? 'outbound' : 'inbound', content, mediaType, fromMe ? '' : pushName, key.id, timestamp
+        // Store message + track instance
+        db.prepare('INSERT INTO messages (lead_id, account_id, direction, content, media_type, sender_name, wa_msg_id, wa_timestamp, instance_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
+          lead.id, inst.acc_id, fromMe ? 'outbound' : 'inbound', content, mediaType, fromMe ? '' : pushName, key.id, timestamp, inst.id
         )
+        // Update lead's last_instance_id (so future sends remember this number)
+        db.prepare("UPDATE leads SET last_instance_id = ?, updated_at = datetime('now') WHERE id = ?").run(inst.id, lead.id)
         imported++
 
         // SSE notify

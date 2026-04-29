@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useAccount } from '../context/AccountContext'
-import { fetchUsers, createUser, updateUser, deleteUser, type User as UserType } from '../lib/api'
+import { fetchUsers, createUser, updateUser, deleteUser, fetchWhatsAppInstances, type User as UserType, type WhatsAppInstance } from '../lib/api'
 import { UserPlus, ToggleLeft, ToggleRight, Trash2, Edit3 } from 'lucide-react'
 
 export default function Team() {
@@ -12,11 +12,18 @@ export default function Team() {
   const [showNew, setShowNew] = useState(false)
   const [newUser, setNewUser] = useState({ name: '', email: '', password: '' })
   const [editingUser, setEditingUser] = useState<UserType | null>(null)
-  const [editForm, setEditForm] = useState({ name: '', email: '', password: '' })
+  const [editForm, setEditForm] = useState({ name: '', email: '', password: '', primary_instance_id: '' as string })
+  const [instances, setInstances] = useState<WhatsAppInstance[]>([])
 
   const isAdmin = user?.role === 'super_admin'
 
-  const load = () => { if (accountId) { setLoading(true); fetchUsers(accountId).then(setUsers).finally(() => setLoading(false)) } }
+  const load = () => {
+    if (accountId) {
+      setLoading(true)
+      fetchUsers(accountId).then(setUsers).finally(() => setLoading(false))
+      fetchWhatsAppInstances(accountId).then(setInstances).catch(() => {})
+    }
+  }
   useEffect(load, [accountId])
 
   const handleCreate = async () => {
@@ -25,10 +32,10 @@ export default function Team() {
     setShowNew(false); setNewUser({ name: '', email: '', password: '' }); load()
   }
 
-  const openEdit = (u: UserType) => { setEditingUser(u); setEditForm({ name: u.name, email: u.email, password: '' }) }
+  const openEdit = (u: UserType) => { setEditingUser(u); setEditForm({ name: u.name, email: u.email, password: '', primary_instance_id: u.primary_instance_id ? String(u.primary_instance_id) : '' }) }
   const handleSaveEdit = async () => {
     if (!editingUser) return
-    const data: any = { name: editForm.name, email: editForm.email }
+    const data: any = { name: editForm.name, email: editForm.email, primary_instance_id: editForm.primary_instance_id ? +editForm.primary_instance_id : null }
     if (editForm.password) data.password = editForm.password
     await updateUser(editingUser.id, data)
     setEditingUser(null); load()
@@ -113,6 +120,14 @@ export default function Team() {
             <div className="form-group"><label>Nome</label><input className="input" value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))} /></div>
             <div className="form-group"><label>Email</label><input className="input" type="email" value={editForm.email} onChange={e => setEditForm(p => ({ ...p, email: e.target.value }))} /></div>
             <div className="form-group"><label>Nova senha (deixe em branco para manter)</label><input className="input" type="password" value={editForm.password} onChange={e => setEditForm(p => ({ ...p, password: e.target.value }))} placeholder="••••••••" /></div>
+            <div className="form-group">
+              <label>Instancia primaria (numero padrao para envios)</label>
+              <select className="select" value={editForm.primary_instance_id} onChange={e => setEditForm(p => ({ ...p, primary_instance_id: e.target.value }))}>
+                <option value="">Nenhuma (usa instancia do lead)</option>
+                {instances.map(i => <option key={i.id} value={i.id}>{i.instance_name}{i.status === 'connected' ? ' ✓' : ' ✗'}</option>)}
+              </select>
+              <small style={{ color: '#9B96B0', fontSize: 11 }}>Usado quando lead nao tem conversa previa. Casos normais: lead manda primeiro, sistema usa o numero que recebeu.</small>
+            </div>
             <div className="modal-actions">
               <button className="btn btn-secondary" onClick={() => setEditingUser(null)}>Cancelar</button>
               <button className="btn btn-primary" onClick={handleSaveEdit}>Salvar</button>

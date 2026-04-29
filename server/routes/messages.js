@@ -4,6 +4,22 @@ import db from '../db.js'
 
 const router = Router()
 
+// Resolve which WhatsApp instance to use when sending a message.
+// Priority:
+//   1. Override (param) — user explicitly chose
+//   2. lead.last_instance_id — last instance that conversed
+//   3. lead.instance_id — original instance that created the lead
+//   4. user.primary_instance_id — user's default
+//   5. Most recently created connected instance on the account (fallback)
+function resolveInstanceForSend({ lead, user, override }) {
+  const tryGet = (id) => id ? db.prepare('SELECT * FROM whatsapp_instances WHERE id = ? AND status = ?').get(id, 'connected') : null
+  return tryGet(override)
+    || tryGet(lead.last_instance_id)
+    || tryGet(lead.instance_id)
+    || tryGet(user?.primary_instance_id)
+    || db.prepare('SELECT * FROM whatsapp_instances WHERE account_id = ? AND status = ? ORDER BY id DESC LIMIT 1').get(lead.account_id, 'connected')
+}
+
 // Get conversation messages for a lead
 router.get('/:leadId', (req, res) => {
   // Verify lead belongs to user's account
@@ -22,7 +38,7 @@ router.get('/:leadId', (req, res) => {
 // Send message via Evolution API
 router.post('/:leadId', async (req, res) => {
   try {
-    const { content } = req.body
+    const { content, instance_id: overrideInstanceId } = req.body
     if (!content) return res.status(400).json({ error: 'content required' })
 
     const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.leadId)
@@ -34,14 +50,8 @@ router.post('/:leadId', async (req, res) => {
     `).get(req.params.leadId, content)
     if (duplicate) return res.status(409).json({ error: 'Mensagem identica ja enviada nos ultimos 5 minutos' })
 
-    // Find WhatsApp instance — prefer the one tied to this lead, fallback to any connected on the account
-    let instance = lead.instance_id
-      ? db.prepare('SELECT * FROM whatsapp_instances WHERE id = ? AND status = ?').get(lead.instance_id, 'connected')
-      : null
-    if (!instance) {
-      // Prefer the most recently created connected instance (usually the active one for new leads)
-      instance = db.prepare('SELECT * FROM whatsapp_instances WHERE account_id = ? AND status = ? ORDER BY id DESC LIMIT 1').get(lead.account_id, 'connected')
-    }
+    // Resolve instance using priority chain (override → lead.last → lead.original → user.primary → fallback)
+    const instance = resolveInstanceForSend({ lead, user: req.user, override: overrideInstanceId })
     if (!instance) return res.status(400).json({ error: 'Nenhuma instancia WhatsApp conectada' })
 
     let jid = lead.wa_remote_jid || lead.phone
@@ -87,14 +97,19 @@ router.post('/:leadId', async (req, res) => {
 
     const delivered = !!sendData?.key?.id
 
-    // Store message with delivery status
+    // Store message with delivery status + instance used
     const result = db.prepare(`
-      INSERT INTO messages (lead_id, account_id, direction, content, sender_name, wa_msg_id)
-      VALUES (?, ?, 'outbound', ?, ?, ?)
-    `).run(lead.id, lead.account_id, content, req.user.name, sendData?.key?.id || null)
+      INSERT INTO messages (lead_id, account_id, direction, content, sender_name, wa_msg_id, instance_id)
+      VALUES (?, ?, 'outbound', ?, ?, ?, ?)
+    `).run(lead.id, lead.account_id, content, req.user.name, sendData?.key?.id || null, instance.id)
+
+    // Update lead's last_instance_id (so future messages remember which number to use)
+    if (delivered) {
+      db.prepare("UPDATE leads SET last_instance_id = ?, updated_at = datetime('now') WHERE id = ?").run(instance.id, lead.id)
+    }
 
     const message = db.prepare('SELECT * FROM messages WHERE id = ?').get(result.lastInsertRowid)
-    res.json({ message, delivered, error: delivered ? undefined : 'Falha ao enviar pelo WhatsApp. Verifique a conexao.' })
+    res.json({ message, delivered, instance: { id: instance.id, name: instance.instance_name }, error: delivered ? undefined : 'Falha ao enviar pelo WhatsApp. Verifique a conexao.' })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

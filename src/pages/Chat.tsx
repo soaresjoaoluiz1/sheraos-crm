@@ -60,6 +60,8 @@ export default function Chat() {
   const [infoCollapsed, setInfoCollapsed] = useState(() => localStorage.getItem('chat_info_collapsed') !== '0')
   const [leadTasks, setLeadTasks] = useState<any[]>([])
   const [editingTask, setEditingTask] = useState<any>(null)
+  const [sendInstanceOverride, setSendInstanceOverride] = useState<number | null>(null)
+  const [showSendInstance, setShowSendInstance] = useState(false)
   const [editData, setEditData] = useState<Record<string, any>>({ name: '', phone: '', email: '', city: '' })
   const [rightTab, setRightTab] = useState<'info' | 'notes' | 'history'>('info')
   const [showTagMenu, setShowTagMenu] = useState(false)
@@ -163,13 +165,27 @@ export default function Chat() {
     if (!msgText.trim() || !lead || !accountId) return
     setSending(true)
     try {
-      const result = await sendMessage(lead.id, accountId, msgText)
+      const result = await sendMessage(lead.id, accountId, msgText, sendInstanceOverride || undefined)
       setMessages(prev => [...prev, result.message])
       setMsgText('')
       if (!result.delivered) alert('Mensagem salva mas NAO enviada no WhatsApp. Verifique a conexao.')
+      // After sending, the lead's last_instance_id is updated server-side. Reset override.
+      setSendInstanceOverride(null)
+      // Reload lead to get updated last_instance_id
+      loadLead()
     } catch (e: any) { alert('Erro: ' + (e?.message || 'desconhecido')) }
     setSending(false)
   }
+
+  // Resolve which instance the next send will use (priority: override > last_instance_id > instance_id > user.primary)
+  const resolvedSendInstance = (() => {
+    if (!lead || !instances.length) return null
+    if (sendInstanceOverride) return instances.find(i => i.id === sendInstanceOverride)
+    if (lead.last_instance_id) return instances.find(i => i.id === lead.last_instance_id)
+    if (lead.instance_id) return instances.find(i => i.id === lead.instance_id)
+    if (user?.primary_instance_id) return instances.find(i => i.id === user.primary_instance_id)
+    return instances.find(i => i.status === 'connected') || instances[0]
+  })()
 
   const handleSaveEdit = async () => {
     if (!lead) return
@@ -337,6 +353,10 @@ export default function Chat() {
                     <div className="chat-bubble-time">
                       {m.sender_name && <span>{m.sender_name} · </span>}
                       <span>{new Date(m.created_at).toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                      {(m as any).instance_id && (() => {
+                        const inst = instances.find(i => i.id === (m as any).instance_id)
+                        return inst ? <span style={{ marginLeft: 4, padding: '0 5px', borderRadius: 3, background: 'rgba(255,179,0,0.12)', color: '#FFB300', fontSize: 9, fontWeight: 600 }}>via {inst.instance_name}</span> : null
+                      })()}
                       {m.direction === 'outbound' && (
                         m.wa_msg_id
                           ? <span style={{ color: '#53BDEB', marginLeft: 2 }}>✓✓</span>
@@ -347,6 +367,24 @@ export default function Chat() {
                 ))}
                 <div ref={chatEndRef} />
               </div>
+              {resolvedSendInstance && (
+                <div style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#9B96B0', borderTop: '1px solid rgba(255,255,255,0.04)', position: 'relative' }}>
+                  <Smartphone size={11} style={{ color: '#FFB300' }} />
+                  <span>Respondendo por:</span>
+                  <button onClick={() => setShowSendInstance(s => !s)} style={{ background: 'none', border: 'none', color: '#FFB300', fontWeight: 600, cursor: 'pointer', padding: 0, fontSize: 11 }}>
+                    {resolvedSendInstance.instance_name} ▾
+                  </button>
+                  {showSendInstance && (
+                    <div style={{ position: 'absolute', bottom: '100%', left: 12, marginBottom: 4, background: '#1a1625', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 6, padding: 4, minWidth: 220, zIndex: 10, boxShadow: '0 4px 14px rgba(0,0,0,0.4)' }}>
+                      {instances.filter(i => i.status === 'connected').map(i => (
+                        <button key={i.id} onClick={() => { setSendInstanceOverride(i.id); setShowSendInstance(false) }} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', background: i.id === resolvedSendInstance.id ? 'rgba(255,179,0,0.12)' : 'transparent', color: i.id === resolvedSendInstance.id ? '#FFB300' : '#fff', border: 'none', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>
+                          {i.instance_name}{i.id === resolvedSendInstance.id ? ' ✓' : ''}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="chat-input">
                 <input className="input" placeholder="Mensagem..." value={msgText} onChange={e => setMsgText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); handleSendMsg() } }} disabled={sending} />
                 <button className="btn btn-primary btn-icon" onClick={handleSendMsg} disabled={sending || !msgText.trim()}><Send size={16} /></button>

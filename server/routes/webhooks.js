@@ -240,13 +240,17 @@ router.post('/evolution/:accountSlug', (req, res) => {
       }
     }
 
-    // Store message (dedup by wa_msg_id)
+    // Store message (dedup by wa_msg_id) + track instance
     const existing = msgId ? db.prepare('SELECT id FROM messages WHERE wa_msg_id = ?').get(msgId) : null
     if (!existing) {
       db.prepare(`
-        INSERT INTO messages (lead_id, account_id, direction, content, media_type, media_url, sender_name, wa_msg_id, wa_timestamp)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(lead.id, account.id, fromMe ? 'outbound' : 'inbound', content, mediaType, mediaUrl, fromMe ? '' : pushName, msgId || null, timestamp)
+        INSERT INTO messages (lead_id, account_id, direction, content, media_type, media_url, sender_name, wa_msg_id, wa_timestamp, instance_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(lead.id, account.id, fromMe ? 'outbound' : 'inbound', content, mediaType, mediaUrl, fromMe ? '' : pushName, msgId || null, timestamp, waInstance?.id || null)
+      // Update lead's last_instance_id (next message from CRM will use this instance)
+      if (waInstance?.id) {
+        db.prepare("UPDATE leads SET last_instance_id = ?, updated_at = datetime('now') WHERE id = ?").run(waInstance.id, lead.id)
+      }
     }
 
     // Auto stage detection: keywords in outbound messages advance stages

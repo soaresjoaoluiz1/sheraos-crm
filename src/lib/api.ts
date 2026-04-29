@@ -21,7 +21,7 @@ export function pctChange(c: number, p: number) { if (p === 0) return c > 0 ? 10
 // =============================================
 
 export interface Account { id: number; name: string; slug: string; logo_url: string | null; is_active: number; created_at: string; lead_count?: number; user_count?: number; cnpj?: string | null; razao_social?: string | null; segmento?: string | null; website?: string | null; instagram?: string | null; whatsapp_comercial?: string | null; valor_mensal?: number | null; contrato_inicio?: string | null; cidade?: string | null; estado?: string | null; observacoes?: string | null; trabalha_anuncio?: number; investimento_anuncios?: number | null }
-export interface User { id: number; account_id: number | null; name: string; email: string; role: string; is_active: number; created_at: string }
+export interface User { id: number; account_id: number | null; name: string; email: string; role: string; is_active: number; primary_instance_id?: number | null; created_at: string }
 export interface FunnelStage { id: number; funnel_id: number; name: string; position: number; color: string; is_conversion: number; is_terminal: number; auto_keywords: string | null }
 export interface Funnel { id: number; account_id: number; name: string; is_default: number; is_active: number; stages: FunnelStage[] }
 export interface Tag { id: number; account_id: number; name: string; color: string }
@@ -29,14 +29,14 @@ export interface Lead {
   id: number; account_id: number; funnel_id: number; stage_id: number; attendant_id: number | null
   name: string | null; phone: string | null; email: string | null; city: string | null
   source: string | null; source_detail: string | null; notes: string | null
-  wa_remote_jid: string | null; instance_id: number | null; profile_pic_url: string | null; is_active: number; created_at: string; updated_at: string
+  wa_remote_jid: string | null; instance_id: number | null; last_instance_id?: number | null; profile_pic_url: string | null; is_active: number; created_at: string; updated_at: string
   is_archived?: number; archived_at?: string | null; has_new_after_archive?: number
   empresa?: string | null; cpf_cnpj?: string | null; instagram?: string | null; trabalha_anuncio?: number; investimento_anuncios?: number | null
   opted_in_at?: string | null; opted_out_at?: string | null; last_broadcast_at?: string | null
   stage_name?: string; stage_color?: string; attendant_name?: string; instance_name?: string
   last_message?: string; message_count?: number; tags?: Tag[]
 }
-export interface Message { id: number; lead_id: number; direction: 'inbound' | 'outbound'; content: string | null; media_type: string; media_url: string | null; sender_name: string | null; wa_msg_id: string | null; created_at: string }
+export interface Message { id: number; lead_id: number; direction: 'inbound' | 'outbound'; content: string | null; media_type: string; media_url: string | null; sender_name: string | null; wa_msg_id: string | null; instance_id?: number | null; created_at: string }
 export const fetchMessageMedia = (leadId: number, msgId: number) => apiFetch<{ dataUrl: string; mime: string; type: string }>(`/api/messages/${leadId}/media/${msgId}`)
 export interface StageHistoryEntry { id: number; lead_id: number; from_stage_name: string | null; to_stage_name: string; trigger_type: string; user_name: string | null; created_at: string }
 export interface LeadNote { id: number; lead_id: number; user_id: number; content: string; user_name: string; created_at: string }
@@ -98,7 +98,7 @@ export const fetchArchivedCount = (accountId: number) => apiFetch<{ count: numbe
 // Messages
 export const fetchMessages = (leadId: number, accountId: number) => apiFetch<{ messages: Message[] }>(`/api/messages/${leadId}?account_id=${accountId}`).then(d => d.messages)
 export interface SendResult { message: Message; delivered: boolean; error?: string }
-export const sendMessage = (leadId: number, accountId: number, content: string) => apiFetch<SendResult>(`/api/messages/${leadId}?account_id=${accountId}`, { method: 'POST', body: JSON.stringify({ content }) })
+export const sendMessage = (leadId: number, accountId: number, content: string, instance_id?: number) => apiFetch<SendResult>(`/api/messages/${leadId}?account_id=${accountId}`, { method: 'POST', body: JSON.stringify({ content, instance_id }) })
 
 // Dashboard
 export const fetchDashboardStats = (accountId: number, days = 7) => apiFetch<DashboardStats>(`/api/dashboard/stats?account_id=${accountId}&days=${days}`)
