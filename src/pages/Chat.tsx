@@ -54,7 +54,7 @@ export default function Chat() {
   const [noteText, setNoteText] = useState('')
   const [sending, setSending] = useState(false)
   const [editing, setEditing] = useState(false)
-  const [infoCollapsed, setInfoCollapsed] = useState(() => localStorage.getItem('chat_info_collapsed') === '1')
+  const [infoCollapsed, setInfoCollapsed] = useState(() => localStorage.getItem('chat_info_collapsed') !== '0')
   const [editData, setEditData] = useState<Record<string, any>>({ name: '', phone: '', email: '', city: '' })
   const [rightTab, setRightTab] = useState<'info' | 'notes' | 'history'>('info')
   const [showTagMenu, setShowTagMenu] = useState(false)
