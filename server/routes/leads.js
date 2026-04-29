@@ -84,12 +84,15 @@ router.get('/', (req, res) => {
   res.json({ leads, total, page: parseInt(page), totalPages: Math.ceil(total / parseInt(limit)) })
 })
 
-// Create lead manually
-router.post('/', requireRole('super_admin', 'gerente'), (req, res) => {
+// Create lead manually — atendente can create too, but lead is force-assigned to them
+router.post('/', (req, res) => {
   if (!req.accountId) return res.status(400).json({ error: 'account_id required' })
   let { name, phone, email, city, source, source_detail, notes, funnel_id, attendant_id, empresa, cpf_cnpj, instagram, trabalha_anuncio, investimento_anuncios } = req.body
 
   phone = normalizePhone(phone)
+
+  // Atendente only sees own leads, so creation always self-assigns
+  if (req.user.role === 'atendente') attendant_id = req.user.id
 
   // Get default funnel if not specified
   let fid = funnel_id

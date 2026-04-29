@@ -2,6 +2,7 @@ import { Router } from 'express'
 import fetch from 'node-fetch'
 import db from '../db.js'
 import { requireRole } from '../middleware/auth.js'
+import { runPollNow } from '../scheduler.js'
 
 const router = Router()
 
@@ -228,6 +229,33 @@ router.post('/whatsapp/:id/setup-webhook', requireRole('super_admin', 'gerente')
   try {
     await registerEvolutionWebhook(instance.api_url, instance.api_key, instance.instance_name, account.slug)
     res.json({ ok: true, webhookUrl })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ─── Restart Baileys session on Evolution (fixes "open but no msgs" zombie state) ───
+router.post('/whatsapp/:id/restart', requireRole('super_admin', 'gerente'), async (req, res) => {
+  const instance = getOwnedInstance(req, res)
+  if (!instance) return
+  try {
+    const r = await fetch(`${instance.api_url}/instance/restart/${encodeURIComponent(instance.instance_name)}`, {
+      method: 'POST',
+      headers: { apikey: instance.api_key },
+    })
+    const data = await r.json()
+    res.json({ ok: true, response: data })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ─── Force run polling now (catch missed inbound messages immediately) ──
+router.post('/whatsapp/sync-now', requireRole('super_admin', 'gerente'), async (req, res) => {
+  if (!req.accountId) return res.status(400).json({ error: 'account_id required' })
+  try {
+    await runPollNow()
+    res.json({ ok: true })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

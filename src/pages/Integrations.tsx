@@ -3,10 +3,10 @@ import { useAccount } from '../context/AccountContext'
 import {
   fetchWhatsAppInstances, createWhatsAppInstance, connectWhatsAppInstance,
   checkWhatsAppStatus, refreshWhatsAppQR, disconnectWhatsApp, deleteWhatsAppInstance,
-  fetchEvolutionConfig, saveEvolutionConfig, setupWhatsAppWebhook, apiFetch,
+  fetchEvolutionConfig, saveEvolutionConfig, setupWhatsAppWebhook, restartWhatsAppInstance, syncWhatsAppNow, apiFetch,
   type WhatsAppInstance,
 } from '../lib/api'
-import { Plug, Plus, Wifi, WifiOff, Loader, Trash2, QrCode, Power, PowerOff, RefreshCw, Smartphone, Save, Check, Settings, FileSpreadsheet, Copy, Webhook } from 'lucide-react'
+import { Plug, Plus, Wifi, WifiOff, Loader, Trash2, QrCode, Power, PowerOff, RefreshCw, Smartphone, Save, Check, Settings, FileSpreadsheet, Copy, Webhook, RotateCw, Download } from 'lucide-react'
 
 export default function Integrations() {
   const { accountId } = useAccount()
@@ -138,6 +138,34 @@ export default function Integrations() {
     setReconfiguring(null)
   }
 
+  const [restarting, setRestarting] = useState<number | null>(null)
+  const handleRestart = async (inst: WhatsAppInstance) => {
+    if (!accountId) return
+    if (!confirm(`Reiniciar a sessao do WhatsApp "${inst.instance_name}"? Use isso quando a instancia parecer conectada mas nao receber mensagens.`)) return
+    setRestarting(inst.id)
+    try {
+      await restartWhatsAppInstance(inst.id, accountId)
+      alert('Sessao reiniciada. Aguarde 10s e teste enviando uma mensagem.')
+      load()
+    } catch (e: any) {
+      alert('Erro ao reiniciar: ' + e.message)
+    }
+    setRestarting(null)
+  }
+
+  const [syncing, setSyncing] = useState(false)
+  const handleSyncNow = async () => {
+    if (!accountId) return
+    setSyncing(true)
+    try {
+      await syncWhatsAppNow(accountId)
+      alert('Sincronizacao executada. Verifique a aba Chat — leads novos devem aparecer.')
+    } catch (e: any) {
+      alert('Erro ao sincronizar: ' + e.message)
+    }
+    setSyncing(false)
+  }
+
   const getStatusIcon = (status: string) => {
     if (status === 'connected') return <Wifi size={14} />
     if (status === 'connecting') return <Loader size={14} className="spinning" />
@@ -154,9 +182,21 @@ export default function Integrations() {
     <div>
       <div className="page-header">
         <h1><Plug size={20} style={{ marginRight: 8 }} />Integracoes</h1>
-        {evoConfigured && (
-          <button className="btn btn-primary btn-sm" onClick={() => setShowNew(true)}><Plus size={14} /> Conectar WhatsApp</button>
-        )}
+        <div style={{ display: 'flex', gap: 8 }}>
+          {evoConfigured && instances.some(i => i.status === 'connected') && (
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={handleSyncNow}
+              disabled={syncing}
+              title="Forca uma busca imediata por mensagens perdidas em todas as instancias conectadas."
+            >
+              {syncing ? <Loader size={14} className="spinning" /> : <Download size={14} />} Sincronizar agora
+            </button>
+          )}
+          {evoConfigured && (
+            <button className="btn btn-primary btn-sm" onClick={() => setShowNew(true)}><Plus size={14} /> Conectar WhatsApp</button>
+          )}
+        </div>
       </div>
 
       {/* Evolution API Config */}
@@ -246,7 +286,15 @@ export default function Integrations() {
                           disabled={reconfiguring === inst.id}
                           title="Reenvia o webhook pra Evolution. Use se os leads pararem de entrar em tempo real."
                         >
-                          {reconfiguring === inst.id ? <Loader size={12} className="spinning" /> : <Webhook size={12} />} Reconfigurar webhook
+                          {reconfiguring === inst.id ? <Loader size={12} className="spinning" /> : <Webhook size={12} />} Webhook
+                        </button>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => handleRestart(inst)}
+                          disabled={restarting === inst.id}
+                          title="Reinicia a sessao Baileys da Evolution. Use quando a instancia mostra Conectada mas nao recebe nem envia mensagens."
+                        >
+                          {restarting === inst.id ? <Loader size={12} className="spinning" /> : <RotateCw size={12} />} Reiniciar sessao
                         </button>
                         <button className="btn btn-secondary btn-sm" onClick={() => handleDisconnect(inst)}><PowerOff size={12} /> Desconectar</button>
                       </>

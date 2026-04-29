@@ -180,11 +180,11 @@ async function pollMissedMessages() {
 
   for (const inst of instances) {
     try {
-      // Fetch recent messages from Evolution (last 5 min)
+      // Fetch recent messages from Evolution
       const r = await fetch(`${inst.api_url}/chat/findMessages/${encodeURIComponent(inst.instance_name)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', apikey: inst.api_key },
-        body: JSON.stringify({ where: {}, limit: 50 }),
+        body: JSON.stringify({ where: {}, limit: 200 }),
       })
       if (!r.ok) continue
       const data = await r.json()
@@ -331,11 +331,13 @@ async function pollTick() {
   }
 }
 
+export { pollTick as runPollNow }
+
 export function startScheduler() {
-  console.log('[Scheduler] Started — main every 5 min, polling every 3 min')
+  console.log('[Scheduler] Started — main every 5 min, polling every 30s')
   tick()
   setInterval(tick, INTERVAL_MS)
-  // Polling runs on separate interval (3 min)
-  setTimeout(() => pollTick(), 30000) // first poll after 30s
-  setInterval(pollTick, 3 * 60 * 1000)
+  // Polling runs aggressively (30s) so missed messages surface quickly when webhook misbehaves
+  setTimeout(() => pollTick(), 10000) // first poll after 10s
+  setInterval(pollTick, 30 * 1000)
 }
