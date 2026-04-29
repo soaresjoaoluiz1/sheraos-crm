@@ -51,6 +51,7 @@ export default function Chat() {
   const [showCadenceMenu, setShowCadenceMenu] = useState(false)
   const [search, setSearch] = useState('')
   const [tagFilter, setTagFilter] = useState<number | ''>('')
+  const [attendantFilter, setAttendantFilter] = useState<number | 'all' | 'unassigned'>('all')
   const [msgText, setMsgText] = useState('')
   const [noteText, setNoteText] = useState('')
   const [sending, setSending] = useState(false)
@@ -146,12 +147,14 @@ export default function Chat() {
   const filteredLeads = useMemo(() => {
     let result = leads
     if (tagFilter) result = result.filter(l => l.tags?.some(t => t.id === tagFilter))
+    if (attendantFilter === 'unassigned') result = result.filter(l => !l.attendant_id)
+    else if (typeof attendantFilter === 'number') result = result.filter(l => l.attendant_id === attendantFilter)
     if (search.trim()) {
       const s = search.toLowerCase()
       result = result.filter(l => (l.name || '').toLowerCase().includes(s) || (l.phone || '').includes(s))
     }
     return result
-  }, [leads, search, tagFilter])
+  }, [leads, search, tagFilter, attendantFilter])
 
   const handleSendMsg = async () => {
     if (!msgText.trim() || !lead || !accountId) return
@@ -232,6 +235,15 @@ export default function Chat() {
               <option key={t.id} value={t.id}>{t.name}</option>
             ))}
           </select>
+          {user?.role !== 'atendente' && (
+            <select className="select" style={{ width: 180 }} value={attendantFilter} onChange={e => setAttendantFilter(e.target.value === 'all' ? 'all' : e.target.value === 'unassigned' ? 'unassigned' : +e.target.value)}>
+              <option value="all">Todos atendentes</option>
+              <option value="unassigned">Sem atendente</option>
+              {attendants.map(a => (
+                <option key={a.id} value={a.id}>{a.name}</option>
+              ))}
+            </select>
+          )}
         </div>
       </div>
 
