@@ -7,8 +7,9 @@ import { fetchMyTasks, completeTask, skipTask, sendMessage, completeStandaloneTa
 import { applyMessageVars } from '../lib/messageVars'
 import {
   ListTodo, Phone, MessageCircle, Mail, Video, MapPin, Check, SkipForward,
-  ExternalLink, Clock, AlertCircle, User, Calendar, CheckCircle, Send,
+  ExternalLink, Clock, AlertCircle, User, Calendar, CheckCircle, Send, Edit3,
 } from 'lucide-react'
+import EditTaskModal from '../components/EditTaskModal'
 
 const ACTION_ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
   mensagem: MessageCircle, whatsapp: MessageCircle, ligacao: Phone,
@@ -35,6 +36,7 @@ export default function Tasks() {
   const [loading, setLoading] = useState(true)
   const [activeBucket, setActiveBucket] = useState<keyof TaskGroups>('today')
   const [actioning, setActioning] = useState<number | null>(null)
+  const [editingTask, setEditingTask] = useState<any>(null)
   const [confirmModal, setConfirmModal] = useState<{ leadName: string; nextStep: NextStep | null } | null>(null)
 
   const load = useCallback(() => {
@@ -153,9 +155,14 @@ export default function Tasks() {
             {/* Actions */}
             <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
               {isStandalone ? (
-                <button className="btn btn-primary btn-sm" onClick={() => handleCompleteStandalone(t.id)} disabled={actioning === t.id} style={{ fontSize: 11, background: '#34C759', borderColor: '#34C759' }}>
-                  <Check size={11} /> Concluir
-                </button>
+                <>
+                  <button className="btn btn-primary btn-sm" onClick={() => handleCompleteStandalone(t.id)} disabled={actioning === t.id} style={{ fontSize: 11, background: '#34C759', borderColor: '#34C759' }}>
+                    <Check size={11} /> Concluir
+                  </button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => setEditingTask(t)} style={{ fontSize: 11 }}>
+                    <Edit3 size={11} /> Editar
+                  </button>
+                </>
               ) : (
                 <>
                   {t.auto_message && (t.action_type === 'mensagem' || t.action_type === 'whatsapp') && (
@@ -277,6 +284,8 @@ export default function Tasks() {
           </div>
         </div>
       )}
+
+      {editingTask && <EditTaskModal task={editingTask} onClose={() => setEditingTask(null)} onSaved={() => load()} />}
     </div>
   )
 }

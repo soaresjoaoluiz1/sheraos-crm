@@ -6,13 +6,14 @@ import {
   fetchWhatsAppInstances, fetchLeads, fetchLead, fetchFunnels, fetchUsers, fetchTags,
   sendMessage, updateLead, moveLeadStage, assignLead, addLeadNote, addLeadTag, removeLeadTag,
   fetchLeadCadence, advanceLeadCadence, removeLeadCadence, fetchCadences, assignLeadCadence, createTag,
-  archiveLead, createStandaloneTask,
+  archiveLead, createStandaloneTask, fetchLeadTasks, completeStandaloneTask, deleteStandaloneTask,
   type WhatsAppInstance, type Lead, type Message, type StageHistoryEntry, type LeadNote,
   type Funnel, type User as UserType, type Tag, type LeadCadence, type Cadence,
 } from '../lib/api'
+import EditTaskModal from '../components/EditTaskModal'
 import {
   MessageCircle, Search, Send, Phone, User, Edit3, Save, X, Plus,
-  StickyNote, Tag as TagIcon, GitBranch, Smartphone, ListOrdered, ChevronRight, Check, Clock, Archive, ListTodo, ChevronDown, ChevronUp,
+  StickyNote, Tag as TagIcon, GitBranch, Smartphone, ListOrdered, ChevronRight, Check, Clock, Archive, ListTodo, ChevronDown, ChevronUp, Trash2,
 } from 'lucide-react'
 import MessageMedia from '../components/MessageMedia'
 import { applyMessageVars } from '../lib/messageVars'
@@ -55,6 +56,8 @@ export default function Chat() {
   const [sending, setSending] = useState(false)
   const [editing, setEditing] = useState(false)
   const [infoCollapsed, setInfoCollapsed] = useState(() => localStorage.getItem('chat_info_collapsed') !== '0')
+  const [leadTasks, setLeadTasks] = useState<any[]>([])
+  const [editingTask, setEditingTask] = useState<any>(null)
   const [editData, setEditData] = useState<Record<string, any>>({ name: '', phone: '', email: '', city: '' })
   const [rightTab, setRightTab] = useState<'info' | 'notes' | 'history'>('info')
   const [showTagMenu, setShowTagMenu] = useState(false)
@@ -91,12 +94,13 @@ export default function Chat() {
 
   // Load selected lead detail
   const loadLead = useCallback(async () => {
-    if (!selectedLeadId || !accountId) { setLead(null); setMessages([]); return }
+    if (!selectedLeadId || !accountId) { setLead(null); setMessages([]); setLeadTasks([]); return }
     const data = await fetchLead(selectedLeadId, accountId)
     setLead(data.lead)
     setMessages(data.messages)
     setHistory(data.stageHistory)
     setNotes(data.notes || [])
+    fetchLeadTasks(selectedLeadId, accountId).then(setLeadTasks).catch(() => setLeadTasks([]))
     setEditData({ name: data.lead.name || '', phone: data.lead.phone || '', email: data.lead.email || '', city: data.lead.city || '', empresa: data.lead.empresa || '', cpf_cnpj: data.lead.cpf_cnpj || '', instagram: data.lead.instagram || '', trabalha_anuncio: data.lead.trabalha_anuncio || 0, investimento_anuncios: data.lead.investimento_anuncios || '' })
     try {
       const lc = await fetchLeadCadence(selectedLeadId, accountId)
@@ -516,6 +520,42 @@ export default function Chat() {
                     )}
                   </div>
 
+                  {/* Lead pending tasks */}
+                  {leadTasks.length > 0 && (
+                    <div className="card" style={{ padding: 12, marginTop: 12 }}>
+                      <div style={{ fontSize: 10, color: '#9B96B0', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 3, marginBottom: 8 }}>
+                        <ListTodo size={10} /> Tarefas Pendentes ({leadTasks.length})
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {leadTasks.map(t => {
+                          const due = new Date(t.due_datetime)
+                          const overdue = due.getTime() < Date.now()
+                          return (
+                            <div key={t.id} style={{ padding: '8px 10px', background: overdue ? 'rgba(255,107,107,0.06)' : 'rgba(255,179,0,0.05)', border: `1px solid ${overdue ? 'rgba(255,107,107,0.2)' : 'rgba(255,179,0,0.15)'}`, borderRadius: 6 }}>
+                              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 2 }}>{t.title}</div>
+                              {t.description && <div style={{ fontSize: 11, color: '#9B96B0', marginBottom: 4 }}>{t.description}</div>}
+                              <div style={{ fontSize: 10, color: overdue ? '#FF6B6B' : '#9B96B0', display: 'flex', alignItems: 'center', gap: 3, marginBottom: 6 }}>
+                                <Clock size={9} /> {due.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                {t.assigned_name && <span> · {t.assigned_name}</span>}
+                              </div>
+                              <div style={{ display: 'flex', gap: 4 }}>
+                                <button className="btn btn-primary btn-sm" onClick={async () => { if (!accountId) return; await completeStandaloneTask(t.id, accountId); fetchLeadTasks(lead.id, accountId).then(setLeadTasks) }} style={{ fontSize: 10, padding: '3px 8px', background: '#34C759', borderColor: '#34C759', flex: 1 }}>
+                                  <Check size={10} /> Concluir
+                                </button>
+                                <button className="btn btn-secondary btn-sm" onClick={() => setEditingTask(t)} style={{ fontSize: 10, padding: '3px 8px' }}>
+                                  <Edit3 size={10} />
+                                </button>
+                                <button className="btn btn-secondary btn-sm" onClick={async () => { if (!accountId) return; if (!confirm('Excluir tarefa?')) return; await deleteStandaloneTask(t.id, accountId); fetchLeadTasks(lead.id, accountId).then(setLeadTasks) }} style={{ fontSize: 10, padding: '3px 8px', color: '#FF6B6B' }}>
+                                  <Trash2 size={10} />
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Standalone Task */}
                   <div className="card" style={{ padding: 12, marginTop: 12 }}>
                     <div style={{ fontSize: 10, color: '#9B96B0', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 3, marginBottom: 6 }}><ListTodo size={10} /> Nova Tarefa</div>
@@ -548,6 +588,7 @@ export default function Chat() {
                           due_time: taskTime,
                         })
                         setTaskTitle(''); setTaskMinutes('10'); setTaskDate(''); setTaskTime('')
+                        if (lead) fetchLeadTasks(lead.id, accountId).then(setLeadTasks)
                         alert('Tarefa criada!')
                       } catch (e: any) { alert('Erro: ' + (e?.message || 'desconhecido')) }
                       setCreatingTask(false)
@@ -604,6 +645,9 @@ export default function Chat() {
           </div>
         )}
       </div>
+      {editingTask && lead && accountId && (
+        <EditTaskModal task={editingTask} onClose={() => setEditingTask(null)} onSaved={() => { fetchLeadTasks(lead.id, accountId).then(setLeadTasks); setEditingTask(null) }} />
+      )}
     </div>
   )
 }

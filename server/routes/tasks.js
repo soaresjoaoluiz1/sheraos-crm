@@ -280,6 +280,54 @@ router.post('/standalone', (req, res) => {
   res.json({ task })
 })
 
+// List standalone tasks by lead
+router.get('/standalone/by-lead/:leadId', (req, res) => {
+  if (!req.accountId) return res.status(400).json({ error: 'account_id required' })
+  const tasks = db.prepare(`
+    SELECT st.*, u.name as assigned_name
+    FROM standalone_tasks st
+    LEFT JOIN users u ON u.id = st.assigned_to
+    WHERE st.lead_id = ? AND st.account_id = ? AND st.status = 'pending'
+    ORDER BY st.due_datetime ASC
+  `).all(req.params.leadId, req.accountId)
+  res.json({ tasks })
+})
+
+// Update standalone task (title, description, due, assigned_to)
+router.put('/standalone/:id', (req, res) => {
+  if (!req.accountId) return res.status(400).json({ error: 'account_id required' })
+  const task = db.prepare('SELECT * FROM standalone_tasks WHERE id = ? AND account_id = ?').get(req.params.id, req.accountId)
+  if (!task) return res.status(404).json({ error: 'Tarefa nao encontrada' })
+
+  const { title, description, due_mode, due_date, due_time, due_minutes, assigned_to } = req.body
+  const sets = []
+  const params = []
+  if (title !== undefined) { sets.push('title = ?'); params.push(title) }
+  if (description !== undefined) { sets.push('description = ?'); params.push(description) }
+  if (assigned_to !== undefined) { sets.push('assigned_to = ?'); params.push(assigned_to) }
+
+  // Recalcula due_datetime se foi enviado
+  if (due_mode || due_date || due_time || due_minutes !== undefined) {
+    let due
+    const now = new Date()
+    if (due_mode === 'duration') {
+      due = new Date(now.getTime() + (parseInt(due_minutes) || 10) * 60000)
+    } else if (due_date && due_time) {
+      due = new Date(`${due_date}T${due_time}:00`)
+    } else if (due_date) {
+      due = new Date(`${due_date}T00:00:00`)
+    }
+    if (due) { sets.push('due_datetime = ?'); params.push(due.toISOString()) }
+  }
+
+  if (!sets.length) return res.status(400).json({ error: 'Nada pra atualizar' })
+  params.push(req.params.id)
+  db.prepare(`UPDATE standalone_tasks SET ${sets.join(', ')} WHERE id = ?`).run(...params)
+  broadcastSSE(req.accountId, 'task:updated', { standalone_task_id: req.params.id })
+  const updated = db.prepare('SELECT * FROM standalone_tasks WHERE id = ?').get(req.params.id)
+  res.json({ task: updated })
+})
+
 // Complete standalone task
 router.post('/standalone/:id/complete', (req, res) => {
   db.prepare("UPDATE standalone_tasks SET status = 'completed', completed_at = datetime('now') WHERE id = ?").run(req.params.id)

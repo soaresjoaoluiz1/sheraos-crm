@@ -193,6 +193,8 @@ export const skipTask = (lcId: number, accountId: number) => apiFetch(`/api/task
 // Standalone tasks
 export interface StandaloneTaskInput { lead_id?: number; title: string; description?: string; due_mode: 'date' | 'duration'; due_date?: string; due_time?: string; due_minutes?: number; assigned_to?: number }
 export const createStandaloneTask = (accountId: number, data: StandaloneTaskInput) => apiFetch<{ task: any }>(`/api/tasks/standalone?account_id=${accountId}`, { method: 'POST', body: JSON.stringify(data) })
+export const updateStandaloneTask = (id: number, accountId: number, data: Partial<StandaloneTaskInput>) => apiFetch<{ task: any }>(`/api/tasks/standalone/${id}?account_id=${accountId}`, { method: 'PUT', body: JSON.stringify(data) })
+export const fetchLeadTasks = (leadId: number, accountId: number) => apiFetch<{ tasks: any[] }>(`/api/tasks/standalone/by-lead/${leadId}?account_id=${accountId}`).then(d => d.tasks)
 export const completeStandaloneTask = (id: number, accountId: number) => apiFetch(`/api/tasks/standalone/${id}/complete?account_id=${accountId}`, { method: 'POST' })
 export const deleteStandaloneTask = (id: number, accountId: number) => apiFetch(`/api/tasks/standalone/${id}?account_id=${accountId}`, { method: 'DELETE' })
 
