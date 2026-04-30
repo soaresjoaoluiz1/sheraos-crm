@@ -12,7 +12,7 @@ import {
   type Lead, type Message, type StageHistoryEntry, type LeadNote, type Funnel, type User as UserType, type Tag,
   type LeadCadence, type Cadence, type ReadyMessage, type LeadQualification,
 } from '../lib/api'
-import { ArrowLeft, Phone, Mail, MapPin, MessageCircle, Send, Clock, User, GitBranch, Edit3, Save, X, Plus, StickyNote, Tag as TagIcon, ListOrdered, Zap, ClipboardList, ChevronRight, Check, Archive, ArchiveRestore } from 'lucide-react'
+import { ArrowLeft, Phone, Mail, MapPin, MessageCircle, Send, Clock, User, GitBranch, Edit3, Save, X, Plus, StickyNote, Tag as TagIcon, ListOrdered, Zap, ClipboardList, ChevronRight, Check, Archive, ArchiveRestore, FileText } from 'lucide-react'
 import MessageMedia from '../components/MessageMedia'
 
 export default function LeadDetail() {
@@ -46,6 +46,9 @@ export default function LeadDetail() {
   const [qualifications, setQualifications] = useState<LeadQualification[]>([])
   const [qualAnswers, setQualAnswers] = useState<Record<number, string>>({})
   const [savingQual, setSavingQual] = useState<number | null>(null)
+  const [editingNotes, setEditingNotes] = useState(false)
+  const [notesDraft, setNotesDraft] = useState('')
+  const [savingNotes, setSavingNotes] = useState(false)
 
   const loadLead = useCallback(async () => {
     if (!id || !accountId) return
@@ -243,6 +246,35 @@ export default function LeadDetail() {
                 </>
               )}
             </div>
+          </div>
+
+          {/* Observacoes */}
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#9B96B0', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4 }}><FileText size={12} /> Observacoes</div>
+              {!editingNotes ? (
+                <button className="btn btn-secondary btn-sm" onClick={() => { setNotesDraft(lead.notes || ''); setEditingNotes(true) }}><Edit3 size={12} /> Editar</button>
+              ) : (
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <button className="btn btn-primary btn-sm" disabled={savingNotes} onClick={async () => {
+                    setSavingNotes(true)
+                    try { await updateLead(lead.id, { notes: notesDraft }); await loadLead(); setEditingNotes(false) }
+                    catch (e: any) { alert('Erro: ' + e.message) }
+                    setSavingNotes(false)
+                  }}><Save size={12} /> Salvar</button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => setEditingNotes(false)}><X size={12} /></button>
+                </div>
+              )}
+            </div>
+            {editingNotes ? (
+              <textarea className="input" value={notesDraft} onChange={e => setNotesDraft(e.target.value)} rows={5} style={{ width: '100%', resize: 'vertical', fontFamily: 'inherit', fontSize: 13, lineHeight: 1.5 }} placeholder="Anote qualquer informacao extra sobre o lead..." />
+            ) : (
+              lead.notes ? (
+                <div style={{ fontSize: 13, color: '#C8C4D4', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{lead.notes}</div>
+              ) : (
+                <div style={{ fontSize: 11, color: '#6B6580' }}>Sem observacoes</div>
+              )
+            )}
           </div>
 
           {/* Tags */}
