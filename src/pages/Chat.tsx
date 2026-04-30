@@ -13,7 +13,7 @@ import {
 import EditTaskModal from '../components/EditTaskModal'
 import {
   MessageCircle, Search, Send, Phone, User, Edit3, Save, X, Plus,
-  StickyNote, Tag as TagIcon, GitBranch, Smartphone, ListOrdered, ChevronRight, Check, Clock, Archive, ListTodo, ChevronDown, ChevronUp, Trash2, Paperclip,
+  StickyNote, Tag as TagIcon, GitBranch, Smartphone, ListOrdered, ChevronRight, Check, Clock, Archive, ListTodo, ChevronDown, ChevronUp, Trash2, Paperclip, FileText,
 } from 'lucide-react'
 import MessageMedia from '../components/MessageMedia'
 import { applyMessageVars } from '../lib/messageVars'
@@ -60,6 +60,9 @@ export default function Chat() {
   const [attachCaption, setAttachCaption] = useState('')
   const [attachPreview, setAttachPreview] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [editingNotes, setEditingNotes] = useState(false)
+  const [notesDraft, setNotesDraft] = useState('')
+  const [savingNotes, setSavingNotes] = useState(false)
   const [editing, setEditing] = useState(false)
   const [infoCollapsed, setInfoCollapsed] = useState(() => localStorage.getItem('chat_info_collapsed') !== '0')
   const [leadTasks, setLeadTasks] = useState<any[]>([])
@@ -621,6 +624,35 @@ export default function Chat() {
                         <div><span style={{ color: '#6B6580' }}>Criado:</span> {new Date(lead.created_at).toLocaleDateString('pt-BR')}</div>
                       </div>
                     ))}
+                  </div>
+
+                  {/* Observacoes */}
+                  <div className="card" style={{ padding: 12, marginBottom: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <div style={{ fontSize: 10, color: '#9B96B0', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 3 }}><FileText size={10} /> Observacoes</div>
+                      {!editingNotes ? (
+                        <button className="btn btn-secondary btn-sm" onClick={() => { setNotesDraft(lead.notes || ''); setEditingNotes(true) }} style={{ padding: '2px 6px' }}><Edit3 size={10} /></button>
+                      ) : (
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button className="btn btn-primary btn-sm" disabled={savingNotes} onClick={async () => {
+                            setSavingNotes(true)
+                            try { await updateLead(lead.id, { notes: notesDraft }); await loadLead(); setEditingNotes(false) }
+                            catch (e: any) { alert('Erro: ' + e.message) }
+                            setSavingNotes(false)
+                          }} style={{ padding: '2px 6px' }}><Save size={10} /></button>
+                          <button className="btn btn-secondary btn-sm" onClick={() => setEditingNotes(false)} style={{ padding: '2px 6px' }}><X size={10} /></button>
+                        </div>
+                      )}
+                    </div>
+                    {editingNotes ? (
+                      <textarea className="input" value={notesDraft} onChange={e => setNotesDraft(e.target.value)} rows={4} style={{ width: '100%', resize: 'vertical', fontSize: 11, lineHeight: 1.4 }} placeholder="Anotacoes sobre o lead..." />
+                    ) : (
+                      lead.notes ? (
+                        <div style={{ fontSize: 11, color: '#C8C4D4', whiteSpace: 'pre-wrap', lineHeight: 1.4 }}>{lead.notes}</div>
+                      ) : (
+                        <div style={{ fontSize: 10, color: '#6B6580' }}>Sem observacoes</div>
+                      )
+                    )}
                   </div>
 
                   {/* Tags */}
