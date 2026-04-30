@@ -1,8 +1,22 @@
-import { Router } from 'express'
+import { Router, json as jsonBodyParser } from 'express'
 import fetch from 'node-fetch'
 import db from '../db.js'
 
 const router = Router()
+
+const MEDIA_LIMITS = {
+  image:    5  * 1024 * 1024,
+  audio:    16 * 1024 * 1024,
+  video:    64 * 1024 * 1024,
+  document: 100 * 1024 * 1024,
+}
+
+function detectMediaType(mime = '') {
+  if (mime.startsWith('image/')) return 'image'
+  if (mime.startsWith('video/')) return 'video'
+  if (mime.startsWith('audio/')) return 'audio'
+  return 'document'
+}
 
 // Resolve which WhatsApp instance to use when sending a message.
 // Priority:
@@ -167,6 +181,83 @@ router.get('/:leadId/media/:msgId', async (req, res) => {
     const mime = data.mimetype || mimeMap[message.media_type] || 'application/octet-stream'
     res.json({ dataUrl: `data:${mime};base64,${data.base64}`, mime, type: message.media_type })
   } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Send media (image/audio/video/document) via Evolution API.
+// Body: { base64, mime, file_name, caption?, instance_id? }
+// Server doesn't store the binary — just streams to Evolution and saves metadata.
+router.post('/:leadId/media', jsonBodyParser({ limit: '150mb' }), async (req, res) => {
+  try {
+    const { base64, mime, file_name, caption, instance_id: overrideInstanceId } = req.body
+    if (!base64 || !mime) return res.status(400).json({ error: 'base64 e mime obrigatorios' })
+
+    const mediaType = detectMediaType(mime)
+    const approxBytes = Math.floor(base64.length * 0.75)
+    if (approxBytes > MEDIA_LIMITS[mediaType]) {
+      return res.status(413).json({ error: `Arquivo excede o limite de ${Math.floor(MEDIA_LIMITS[mediaType] / 1024 / 1024)}MB para ${mediaType}` })
+    }
+
+    const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.leadId)
+    if (!lead) return res.status(404).json({ error: 'Lead nao encontrado' })
+    if (req.accountId && lead.account_id !== req.accountId) return res.status(403).json({ error: 'Sem permissao' })
+
+    const instance = resolveInstanceForSend({ lead, user: req.user, override: overrideInstanceId })
+    if (!instance) return res.status(400).json({ error: 'Nenhuma instancia WhatsApp conectada' })
+
+    let jid = lead.wa_remote_jid || lead.phone
+    if (!jid) return res.status(400).json({ error: 'Lead sem telefone' })
+    if (jid.endsWith('@lid') && !lead.phone) return res.status(400).json({ error: 'Lead sem telefone real' })
+
+    let number = jid.replace('@s.whatsapp.net', '').replace('@c.us', '').replace('@lid', '').replace(/[^\d]/g, '')
+    if (number.startsWith('55') && number.length === 12) number = number.slice(0, 4) + '9' + number.slice(4)
+    else if (!number.startsWith('55') && number.length === 11) number = '55' + number
+    else if (!number.startsWith('55') && number.length === 10) number = '55' + number.slice(0, 2) + '9' + number.slice(2)
+
+    let endpoint, payload
+    if (mediaType === 'audio') {
+      endpoint = `${instance.api_url}/message/sendWhatsAppAudio/${encodeURIComponent(instance.instance_name)}`
+      payload = { number, audio: base64, encoding: true }
+    } else {
+      endpoint = `${instance.api_url}/message/sendMedia/${encodeURIComponent(instance.instance_name)}`
+      payload = {
+        number,
+        mediatype: mediaType,
+        media: base64,
+        mimetype: mime,
+        fileName: file_name || `arquivo.${mime.split('/')[1] || 'bin'}`,
+        caption: caption || undefined,
+      }
+    }
+
+    const sendRes = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: instance.api_key },
+      body: JSON.stringify(payload),
+    })
+    const sendData = await sendRes.json()
+    const delivered = !!sendData?.key?.id
+
+    if (!delivered) {
+      console.error(`[Messages/Media] Failed for ${jid} via ${instance.instance_name}:`, JSON.stringify(sendData)?.substring(0, 300))
+    }
+
+    const content = caption || file_name || `[${mediaType}]`
+    const result = db.prepare(`
+      INSERT INTO messages (lead_id, account_id, direction, content, sender_name, wa_msg_id, media_type, instance_id)
+      VALUES (?, ?, 'outbound', ?, ?, ?, ?, ?)
+    `).run(lead.id, lead.account_id, content, req.user.name, sendData?.key?.id || null, mediaType, instance.id)
+
+    if (delivered) {
+      db.prepare("UPDATE leads SET last_instance_id = ?, updated_at = datetime('now') WHERE id = ?").run(instance.id, lead.id)
+      db.prepare(`INSERT OR IGNORE INTO lead_instance_assignments (lead_id, instance_id, attendant_id) VALUES (?, ?, ?)`).run(lead.id, instance.id, req.user.id)
+    }
+
+    const message = db.prepare('SELECT * FROM messages WHERE id = ?').get(result.lastInsertRowid)
+    res.json({ message, delivered, instance: { id: instance.id, name: instance.instance_name }, error: delivered ? undefined : 'Falha ao enviar pelo WhatsApp.' })
+  } catch (err) {
+    console.error('[Messages/Media] Exception:', err.message)
     res.status(500).json({ error: err.message })
   }
 })

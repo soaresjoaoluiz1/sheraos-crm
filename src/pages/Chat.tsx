@@ -4,7 +4,7 @@ import { useAccount } from '../context/AccountContext'
 import { useSSE } from '../context/SSEContext'
 import {
   fetchWhatsAppInstances, fetchLeads, fetchLead, fetchFunnels, fetchUsers, fetchTags,
-  sendMessage, updateLead, moveLeadStage, assignLead, addLeadNote, addLeadTag, removeLeadTag,
+  sendMessage, sendMessageMedia, updateLead, moveLeadStage, assignLead, addLeadNote, addLeadTag, removeLeadTag,
   fetchLeadCadence, advanceLeadCadence, removeLeadCadence, fetchCadences, assignLeadCadence, createTag,
   archiveLead, createStandaloneTask, fetchLeadTasks, completeStandaloneTask, deleteStandaloneTask, completeTask, skipTask, fetchLeadConversations, type LeadConversation,
   type WhatsAppInstance, type Lead, type Message, type StageHistoryEntry, type LeadNote,
@@ -13,7 +13,7 @@ import {
 import EditTaskModal from '../components/EditTaskModal'
 import {
   MessageCircle, Search, Send, Phone, User, Edit3, Save, X, Plus,
-  StickyNote, Tag as TagIcon, GitBranch, Smartphone, ListOrdered, ChevronRight, Check, Clock, Archive, ListTodo, ChevronDown, ChevronUp, Trash2,
+  StickyNote, Tag as TagIcon, GitBranch, Smartphone, ListOrdered, ChevronRight, Check, Clock, Archive, ListTodo, ChevronDown, ChevronUp, Trash2, Paperclip,
 } from 'lucide-react'
 import MessageMedia from '../components/MessageMedia'
 import { applyMessageVars } from '../lib/messageVars'
@@ -56,6 +56,10 @@ export default function Chat() {
   const [msgText, setMsgText] = useState('')
   const [noteText, setNoteText] = useState('')
   const [sending, setSending] = useState(false)
+  const [attachFile, setAttachFile] = useState<File | null>(null)
+  const [attachCaption, setAttachCaption] = useState('')
+  const [attachPreview, setAttachPreview] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [editing, setEditing] = useState(false)
   const [infoCollapsed, setInfoCollapsed] = useState(() => localStorage.getItem('chat_info_collapsed') !== '0')
   const [leadTasks, setLeadTasks] = useState<any[]>([])
@@ -181,6 +185,70 @@ export default function Chat() {
       setMessages(prev => [...prev, result.message])
       setMsgText('')
       if (!result.delivered) alert('Mensagem salva mas NAO enviada no WhatsApp. Verifique a conexao.')
+      setSendInstanceOverride(null)
+      loadLead()
+    } catch (e: any) { alert('Erro: ' + (e?.message || 'desconhecido')) }
+    setSending(false)
+  }
+
+  const MEDIA_LIMITS_MB: Record<string, number> = { image: 5, audio: 16, video: 64, document: 100 }
+  const detectMediaType = (mime: string): 'image' | 'video' | 'audio' | 'document' => {
+    if (mime.startsWith('image/')) return 'image'
+    if (mime.startsWith('video/')) return 'video'
+    if (mime.startsWith('audio/')) return 'audio'
+    return 'document'
+  }
+
+  const handlePickFile = (file: File | null) => {
+    if (!file) return
+    const type = detectMediaType(file.type || '')
+    const maxMb = MEDIA_LIMITS_MB[type]
+    if (file.size > maxMb * 1024 * 1024) {
+      alert(`Arquivo muito grande. Limite para ${type}: ${maxMb}MB.`)
+      return
+    }
+    setAttachFile(file)
+    setAttachCaption('')
+    if (type === 'image') {
+      const reader = new FileReader()
+      reader.onload = () => setAttachPreview(reader.result as string)
+      reader.readAsDataURL(file)
+    } else {
+      setAttachPreview(null)
+    }
+  }
+
+  const handleCancelAttach = () => {
+    setAttachFile(null)
+    setAttachCaption('')
+    setAttachPreview(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const handleSendAttach = async () => {
+    if (!attachFile || !lead || !accountId) return
+    setSending(true)
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => {
+          const result = reader.result as string
+          resolve(result.split(',')[1] || '')
+        }
+        reader.onerror = () => reject(new Error('Falha ao ler arquivo'))
+        reader.readAsDataURL(attachFile)
+      })
+      const override = sendInstanceOverride || activeConvInstance || undefined
+      const result = await sendMessageMedia(lead.id, accountId, {
+        base64,
+        mime: attachFile.type || 'application/octet-stream',
+        file_name: attachFile.name,
+        caption: attachCaption || undefined,
+        instance_id: override,
+      })
+      setMessages(prev => [...prev, result.message])
+      if (!result.delivered) alert('Anexo salvo mas NAO enviado no WhatsApp. Verifique a conexao.')
+      handleCancelAttach()
       setSendInstanceOverride(null)
       loadLead()
     } catch (e: any) { alert('Erro: ' + (e?.message || 'desconhecido')) }
@@ -418,9 +486,48 @@ export default function Chat() {
                 </div>
               )}
               <div className="chat-input">
+                <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={e => handlePickFile(e.target.files?.[0] || null)} accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.txt,.csv" />
+                <button
+                  className="btn btn-secondary btn-icon"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={sending}
+                  title="Anexar arquivo (imagem, audio, video ou documento)"
+                >
+                  <Paperclip size={16} />
+                </button>
                 <input className="input" placeholder="Mensagem..." value={msgText} onChange={e => setMsgText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); handleSendMsg() } }} disabled={sending} />
                 <button className="btn btn-primary btn-icon" onClick={handleSendMsg} disabled={sending || !msgText.trim()}><Send size={16} /></button>
               </div>
+              {attachFile && (
+                <div className="modal-overlay" onClick={handleCancelAttach}>
+                  <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
+                    <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Paperclip size={16} /> Enviar anexo</h2>
+                    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-subtle)', borderRadius: 8, padding: 12, marginBottom: 12 }}>
+                      {attachPreview ? (
+                        <img src={attachPreview} alt={attachFile.name} style={{ maxWidth: '100%', maxHeight: 240, display: 'block', borderRadius: 6, margin: '0 auto' }} />
+                      ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 4px' }}>
+                          <Paperclip size={20} style={{ color: '#FFB300' }} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{attachFile.name}</div>
+                            <div style={{ fontSize: 11, color: '#9B96B0' }}>{detectMediaType(attachFile.type || '')} • {(attachFile.size / 1024 / 1024).toFixed(2)} MB</div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    {detectMediaType(attachFile.type || '') !== 'audio' && (
+                      <div className="form-group">
+                        <label>Legenda (opcional)</label>
+                        <textarea className="input" value={attachCaption} onChange={e => setAttachCaption(e.target.value)} rows={2} placeholder="Texto que vai junto com o arquivo..." />
+                      </div>
+                    )}
+                    <div className="modal-actions">
+                      <button className="btn btn-secondary" onClick={handleCancelAttach} disabled={sending}>Cancelar</button>
+                      <button className="btn btn-primary" onClick={handleSendAttach} disabled={sending}>{sending ? 'Enviando...' : 'Enviar'}</button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
