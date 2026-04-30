@@ -49,7 +49,10 @@ router.post('/', requireRole('super_admin'), (req, res) => {
 })
 
 // Get account detail
-router.get('/:id', requireRole('super_admin'), (req, res) => {
+router.get('/:id', (req, res) => {
+  if (req.user.role !== 'super_admin' && req.user.account_id !== Number(req.params.id)) {
+    return res.status(403).json({ error: 'Sem permissao' })
+  }
   const account = db.prepare('SELECT * FROM accounts WHERE id = ?').get(req.params.id)
   if (!account) return res.status(404).json({ error: 'Conta nao encontrada' })
   const users = db.prepare('SELECT id, name, email, role, is_active FROM users WHERE account_id = ?').all(account.id)
