@@ -459,6 +459,28 @@ db.exec(`
   )
 `)
 
+// Proposals (proposta comercial gerada pelo super_admin)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS proposals (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    slug              TEXT NOT NULL UNIQUE,
+    client_name       TEXT NOT NULL,
+    phone             TEXT,
+    segmento          TEXT,
+    has_production    INTEGER NOT NULL DEFAULT 1,
+    num_videos        INTEGER NOT NULL DEFAULT 0,
+    num_images        INTEGER NOT NULL DEFAULT 0,
+    valor             REAL NOT NULL DEFAULT 0,
+    contrato_meses    INTEGER NOT NULL DEFAULT 3,
+    observacoes       TEXT,
+    created_by        INTEGER,
+    created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at        TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_proposals_slug ON proposals(slug);
+`)
+
 // Seed super_admin if not exists
 const adminExists = db.prepare('SELECT id FROM users WHERE email = ?').get('admin@drosagencia.com.br')
 if (!adminExists) {

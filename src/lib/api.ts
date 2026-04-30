@@ -103,6 +103,29 @@ export interface SendResult { message: Message; delivered: boolean; error?: stri
 export const sendMessage = (leadId: number, accountId: number, content: string, instance_id?: number) => apiFetch<SendResult>(`/api/messages/${leadId}?account_id=${accountId}`, { method: 'POST', body: JSON.stringify({ content, instance_id }) })
 export const sendMessageMedia = (leadId: number, accountId: number, payload: { base64: string; mime: string; file_name: string; caption?: string; instance_id?: number }) => apiFetch<SendResult>(`/api/messages/${leadId}/media?account_id=${accountId}`, { method: 'POST', body: JSON.stringify(payload) })
 
+// Proposals
+export interface Proposal {
+  id: number; slug: string; client_name: string;
+  phone: string | null; segmento: string | null;
+  has_production: number;
+  num_videos: number; num_images: number;
+  valor: number; contrato_meses: number;
+  observacoes: string | null;
+  created_by: number | null; created_by_name?: string;
+  created_at: string; updated_at: string;
+}
+export interface ProposalInput {
+  client_name: string; phone?: string; segmento?: string;
+  has_production: boolean;
+  num_videos?: number; num_images?: number;
+  valor: number; contrato_meses: number;
+  observacoes?: string;
+}
+export const fetchProposals = () => apiFetch<{ proposals: Proposal[] }>('/api/proposals').then(d => d.proposals)
+export const createProposal = (data: ProposalInput) => apiFetch<{ proposal: Proposal }>('/api/proposals', { method: 'POST', body: JSON.stringify(data) }).then(d => d.proposal)
+export const updateProposal = (id: number, data: Partial<ProposalInput>) => apiFetch<{ proposal: Proposal }>(`/api/proposals/${id}`, { method: 'PUT', body: JSON.stringify(data) }).then(d => d.proposal)
+export const deleteProposal = (id: number) => apiFetch(`/api/proposals/${id}`, { method: 'DELETE' })
+
 // Dashboard
 export const fetchDashboardStats = (accountId: number, days = 7) => apiFetch<DashboardStats>(`/api/dashboard/stats?account_id=${accountId}&days=${days}`)
 export const fetchAgentStats = (accountId: number, days = 7) => apiFetch<{ agents: AgentStat[] }>(`/api/dashboard/agents?account_id=${accountId}&days=${days}`).then(d => d.agents)

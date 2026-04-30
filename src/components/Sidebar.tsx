@@ -7,7 +7,7 @@ import { apiFetch, fetchTaskCounts } from '../lib/api'
 import {
   LayoutDashboard, Kanban, Users, MessageCircle, UserCog, GitBranch,
   Plug, Settings, Building2, LogOut, UsersRound, Menu, X,
-  ListOrdered, MessageSquarePlus, ClipboardList, Rocket, ListTodo, ExternalLink, Tag as TagIcon,
+  ListOrdered, MessageSquarePlus, ClipboardList, Rocket, ListTodo, ExternalLink, Tag as TagIcon, FileText,
 } from 'lucide-react'
 
 export default function Sidebar() {
@@ -75,6 +75,9 @@ export default function Sidebar() {
               </NavLink>
               <NavLink to="/admin/users" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={closeMobile}>
                 <UsersRound size={16} /> Usuarios
+              </NavLink>
+              <NavLink to="/admin/propostas" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={closeMobile}>
+                <FileText size={16} /> Propostas
               </NavLink>
             </>
           )}

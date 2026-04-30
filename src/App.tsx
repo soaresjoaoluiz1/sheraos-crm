@@ -24,6 +24,7 @@ import AdminClients from './pages/admin/Clients'
 import AdminClientDetail from './pages/admin/ClientDetail'
 import AdminGlobalDashboard from './pages/admin/GlobalDashboard'
 import AdminUsers from './pages/admin/Users'
+import Propostas from './pages/Propostas'
 
 function AppRoutes() {
   const { user, loading } = useAuth()
@@ -51,6 +52,7 @@ function AppRoutes() {
             <Route path="/admin/clients" element={<AdminClients />} />
             <Route path="/admin/clients/:id" element={<AdminClientDetail />} />
             <Route path="/admin/users" element={<AdminUsers />} />
+            <Route path="/admin/propostas" element={<Propostas />} />
           </>}
 
           {/* Gerente + Admin routes */}
