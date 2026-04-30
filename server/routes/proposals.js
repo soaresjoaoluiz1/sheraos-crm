@@ -46,28 +46,13 @@ function renderTemplate(p) {
     html = html.replace(/<!--\s*BEGIN:NO_PRODUCTION\s*-->/g, '').replace(/<!--\s*END:NO_PRODUCTION\s*-->/g, '')
   }
 
-  const totalConteudos = (p.num_videos || 0) + (p.num_images || 0)
-  const freqSemana = totalConteudos > 0 ? Math.round((totalConteudos / 4) * 10) / 10 : 0
-  const coverSub = p.has_production
-    ? 'Pacote mensal de produção de conteúdo digital'
-    : 'Pacote mensal de serviços customizados'
-  const pricingPeriod = p.has_production
-    ? `por mês · <strong>${p.num_videos} vídeos + ${p.num_images} imagens</strong> · todas as entregas inclusas`
-    : 'por mês · todas as entregas inclusas'
-
   const replacements = {
     CLIENT_NAME: p.client_name || '',
     CLIENT_NAME_URL: encodeURIComponent(p.client_name || ''),
     NUM_VIDEOS: String(p.num_videos || 0),
     NUM_IMAGES: String(p.num_images || 0),
-    TOTAL_CONTEUDOS: String(totalConteudos),
-    FREQ_SEMANA: String(freqSemana),
     VALOR: formatBRL(p.valor),
     CONTRATO_MESES: String(p.contrato_meses || 3),
-    OBSERVACOES: p.observacoes || 'Detalhes do escopo a serem alinhados.',
-    SEGMENTO: p.segmento || '',
-    COVER_SUB: coverSub,
-    PRICING_PERIOD: pricingPeriod,
   }
 
   for (const [k, v] of Object.entries(replacements)) {

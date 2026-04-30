@@ -9,7 +9,7 @@ const BLANK: ProposalInput & { has_production: boolean } = {
   has_production: true,
   num_videos: 4,
   num_images: 8,
-  valor: 2500,
+  valor: 3500,
   contrato_meses: 3,
   observacoes: '',
 }
@@ -171,25 +171,16 @@ export default function Propostas() {
               </div>
             )}
 
-            {!form.has_production && (
-              <div className="form-group">
-                <label>Descrição dos serviços (escopo customizado)</label>
-                <textarea className="input" value={form.observacoes} onChange={e => setForm(p => ({ ...p, observacoes: e.target.value }))} rows={6} style={{ resize: 'vertical', fontFamily: 'inherit' }} placeholder="Liste o que está incluso na proposta:&#10;&#10;• Tráfego pago (Meta + Google Ads)&#10;• Acompanhamento comercial semanal&#10;• Treinamento de equipe&#10;• Relatório mensal de performance&#10;• etc." />
-              </div>
-            )}
-
             <div style={{ fontSize: 11, color: '#9B96B0', textTransform: 'uppercase', fontWeight: 600, margin: '16px 0 6px' }}>Comercial</div>
             <div className="form-row">
               <div className="form-group"><label>Mensalidade (R$) *</label><input className="input" type="number" step="0.01" min="0" value={form.valor} onChange={e => setForm(p => ({ ...p, valor: parseFloat(e.target.value) || 0 }))} /></div>
               <div className="form-group"><label>Contrato (meses) *</label><input className="input" type="number" min="1" max="60" value={form.contrato_meses} onChange={e => setForm(p => ({ ...p, contrato_meses: parseInt(e.target.value) || 3 }))} /></div>
             </div>
 
-            {form.has_production && (
-              <div className="form-group">
-                <label>Observações (opcional)</label>
-                <textarea className="input" value={form.observacoes} onChange={e => setForm(p => ({ ...p, observacoes: e.target.value }))} rows={3} style={{ resize: 'vertical', fontFamily: 'inherit' }} placeholder="Notas internas (não aparecem na proposta gerada)" />
-              </div>
-            )}
+            <div className="form-group">
+              <label>Observações (nota interna, opcional)</label>
+              <textarea className="input" value={form.observacoes} onChange={e => setForm(p => ({ ...p, observacoes: e.target.value }))} rows={3} style={{ resize: 'vertical', fontFamily: 'inherit' }} placeholder="Anotações internas — não aparecem na proposta gerada" />
+            </div>
 
             {isEditing && (
               <div style={{ padding: '10px 12px', background: 'rgba(52, 199, 89, 0.06)', borderRadius: 8, fontSize: 12, color: '#34C759', marginTop: 4 }}>
