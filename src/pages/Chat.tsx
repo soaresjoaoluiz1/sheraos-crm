@@ -52,6 +52,7 @@ export default function Chat() {
   const [search, setSearch] = useState('')
   const [tagFilter, setTagFilter] = useState<number | ''>('')
   const [attendantFilter, setAttendantFilter] = useState<number | 'all' | 'unassigned'>('all')
+  const [stageFilter, setStageFilter] = useState<number | ''>('')
   const [showArchived, setShowArchived] = useState(false)
   const [msgText, setMsgText] = useState('')
   const [noteText, setNoteText] = useState('')
@@ -171,12 +172,13 @@ export default function Chat() {
     if (tagFilter) result = result.filter(l => l.tags?.some(t => t.id === tagFilter))
     if (attendantFilter === 'unassigned') result = result.filter(l => !l.attendant_id)
     else if (typeof attendantFilter === 'number') result = result.filter(l => l.attendant_id === attendantFilter)
+    if (stageFilter) result = result.filter(l => l.stage_id === stageFilter)
     if (search.trim()) {
       const s = search.toLowerCase()
       result = result.filter(l => (l.name || '').toLowerCase().includes(s) || (l.phone || '').includes(s))
     }
     return result
-  }, [leads, search, tagFilter, attendantFilter])
+  }, [leads, search, tagFilter, attendantFilter, stageFilter])
 
   const handleSendMsg = async () => {
     if (!msgText.trim() || !lead || !accountId) return
@@ -336,6 +338,12 @@ export default function Chat() {
             <option value="">Todas as tags</option>
             {tags.map(t => (
               <option key={t.id} value={t.id}>{t.name}</option>
+            ))}
+          </select>
+          <select className="select" style={{ width: 180 }} value={stageFilter} onChange={e => setStageFilter(e.target.value ? +e.target.value : '')}>
+            <option value="">Todas etapas</option>
+            {allStages.map(s => (
+              <option key={s.id} value={s.id}>{s.name}</option>
             ))}
           </select>
           {user?.role !== 'atendente' && (
