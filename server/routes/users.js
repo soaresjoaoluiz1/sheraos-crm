@@ -80,7 +80,7 @@ router.put('/:id', (req, res) => {
   res.json({ user: updated })
 })
 
-// Delete user — super_admin does hard delete, gerente does soft delete on own atendentes
+// Delete user (hard delete) — super_admin pode tudo, gerente so atendentes da propria conta
 router.delete('/:id', requireRole('super_admin', 'gerente'), (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id)
   if (!user) return res.status(404).json({ error: 'Usuario nao encontrado' })
@@ -88,11 +88,11 @@ router.delete('/:id', requireRole('super_admin', 'gerente'), (req, res) => {
   if (req.user.role === 'gerente') {
     if (user.account_id !== req.user.account_id) return res.status(403).json({ error: 'Sem permissao' })
     if (user.role !== 'atendente') return res.status(403).json({ error: 'Gerente so pode excluir atendentes' })
-    db.prepare('UPDATE users SET is_active = 0 WHERE id = ?').run(req.params.id)
-  } else {
-    // super_admin: hard delete (cascades via FK)
-    db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id)
   }
+  // Limpa refs em standalone_tasks (FK sem ON DELETE SET NULL)
+  db.prepare('UPDATE standalone_tasks SET assigned_to = NULL WHERE assigned_to = ?').run(req.params.id)
+  db.prepare('UPDATE standalone_tasks SET created_by = NULL WHERE created_by = ?').run(req.params.id)
+  db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id)
   res.json({ ok: true })
 })
 

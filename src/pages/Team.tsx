@@ -59,7 +59,7 @@ export default function Team() {
             <button className="btn btn-secondary btn-sm btn-icon" onClick={() => toggleActive(u)} title={u.is_active ? 'Desativar' : 'Ativar'}>
               {u.is_active ? <ToggleRight size={14} style={{ color: '#34C759' }} /> : <ToggleLeft size={14} />}
             </button>
-            {isAdmin && <button className="btn btn-danger btn-sm btn-icon" onClick={() => handleDelete(u)} title="Excluir"><Trash2 size={12} /></button>}
+            <button className="btn btn-danger btn-sm btn-icon" onClick={() => handleDelete(u)} title="Excluir"><Trash2 size={12} /></button>
           </div>
         )}
       </td>
