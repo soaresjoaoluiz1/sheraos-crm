@@ -11,11 +11,18 @@ interface AccountCtx {
 
 const AccountContext = createContext<AccountCtx>({} as AccountCtx)
 
+const STORAGE_KEY = 'dros_crm_active_account'
+
 export function AccountProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
   const [accounts, setAccounts] = useState<Account[]>([])
-  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [selectedId, setSelectedIdState] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
+
+  const setSelectedId = (id: number) => {
+    setSelectedIdState(id)
+    try { localStorage.setItem(STORAGE_KEY, String(id)) } catch {}
+  }
 
   useEffect(() => {
     if (!user) return
@@ -24,12 +31,18 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       fetchAccounts()
         .then(accs => {
           setAccounts(accs)
-          if (accs.length > 0 && !selectedId) setSelectedId(accs[0].id)
+          if (accs.length > 0 && !selectedId) {
+            // Prioridade: 1) ultima conta usada (localStorage)  2) conta propria do admin  3) primeira da lista
+            const stored = Number(localStorage.getItem(STORAGE_KEY))
+            const fromStorage = stored && accs.find(a => a.id === stored) ? stored : null
+            const own = user.account_id ? accs.find(a => a.id === user.account_id)?.id : null
+            setSelectedIdState(fromStorage || own || accs[0].id)
+          }
         })
         .catch(() => {})
         .finally(() => setLoading(false))
     } else {
-      setSelectedId(user.account_id)
+      setSelectedIdState(user.account_id)
     }
   }, [user])
 

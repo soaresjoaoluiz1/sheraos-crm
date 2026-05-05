@@ -12,7 +12,7 @@ import {
 
 export default function Sidebar() {
   const { user, logout } = useAuth()
-  const { accountId } = useAccount()
+  const { accountId, accounts, setAccountId } = useAccount()
   const [newLeadsCount, setNewLeadsCount] = useState(0)
   const [taskCount, setTaskCount] = useState(0)
 
@@ -62,6 +62,15 @@ export default function Sidebar() {
             <button className="sidebar-close-btn" onClick={closeMobile}><X size={18} /></button>
           </div>
         </div>
+
+        {isAdmin && accounts.length > 0 && (
+          <div style={{ padding: '8px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+            <label style={{ fontSize: 10, color: '#6B6580', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 4 }}>Visualizando conta</label>
+            <select className="select" value={accountId || ''} onChange={e => setAccountId(Number(e.target.value))} style={{ width: '100%', fontSize: 12, padding: '6px 8px' }}>
+              {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </div>
+        )}
 
         <nav className="sidebar-nav">
           {isAdmin && (
