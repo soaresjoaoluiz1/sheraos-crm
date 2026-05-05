@@ -6,7 +6,7 @@ import {
   fetchEvolutionConfig, saveEvolutionConfig, setupWhatsAppWebhook, restartWhatsAppInstance, syncWhatsAppNow, setInstanceAttendant, fetchUsers, apiFetch,
   type WhatsAppInstance, type User as UserType,
 } from '../lib/api'
-import { Plug, Plus, Wifi, WifiOff, Loader, Trash2, QrCode, Power, PowerOff, RefreshCw, Smartphone, Save, Check, Settings, FileSpreadsheet, Copy, Webhook, RotateCw, Download, User, Eye, EyeOff } from 'lucide-react'
+import { Plug, Plus, Wifi, WifiOff, Loader, Trash2, QrCode, Power, PowerOff, RefreshCw, Smartphone, Save, Check, Settings, FileSpreadsheet, Copy, Webhook, RotateCw, Download, User } from 'lucide-react'
 
 export default function Integrations() {
   const { accountId } = useAccount()
@@ -21,7 +21,6 @@ export default function Integrations() {
   // Evolution config
   const [evoUrl, setEvoUrl] = useState('')
   const [evoKey, setEvoKey] = useState('')
-  const [showEvoKey, setShowEvoKey] = useState(false)
   const [evoSaved, setEvoSaved] = useState(false)
   const [evoConfigured, setEvoConfigured] = useState(false)
   const [savingConfig, setSavingConfig] = useState(false)
@@ -228,12 +227,7 @@ export default function Integrations() {
             </div>
             <div style={{ flex: 1, minWidth: 200 }}>
               <label style={{ fontSize: 11, color: '#9B96B0', display: 'block', marginBottom: 4 }}>API Key</label>
-              <div style={{ position: 'relative' }}>
-                <input className="input" type={showEvoKey ? 'text' : 'password'} value={evoKey} onChange={e => setEvoKey(e.target.value)} placeholder="sua-api-key" style={{ paddingRight: 36 }} />
-                <button type="button" onClick={() => setShowEvoKey(s => !s)} title={showEvoKey ? 'Ocultar' : 'Mostrar'} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#9B96B0', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center' }}>
-                  {showEvoKey ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
-              </div>
+              <input className="input" type="password" value={evoKey} onChange={e => setEvoKey(e.target.value)} placeholder="sua-api-key" />
             </div>
             <div style={{ display: 'flex', alignItems: 'flex-end' }}>
               <button className="btn btn-primary btn-sm" onClick={handleSaveConfig} disabled={savingConfig || !evoUrl || !evoKey} style={{ height: 38 }}>
