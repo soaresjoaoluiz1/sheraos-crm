@@ -32,11 +32,12 @@ export function AccountProvider({ children }: { children: ReactNode }) {
         .then(accs => {
           setAccounts(accs)
           if (accs.length > 0 && !selectedId) {
-            // Prioridade: 1) ultima conta usada (localStorage)  2) conta propria do admin  3) primeira da lista
+            // Prioridade: 1) ultima conta usada na sessao (localStorage)  2) conta propria do admin  3) Dros | Deivid (fallback nome)  4) primeira da lista
             const stored = Number(localStorage.getItem(STORAGE_KEY))
             const fromStorage = stored && accs.find(a => a.id === stored) ? stored : null
-            const own = user.account_id ? accs.find(a => a.id === user.account_id)?.id : null
-            setSelectedIdState(fromStorage || own || accs[0].id)
+            const ownById = user.account_id ? accs.find(a => a.id === user.account_id)?.id : null
+            const drosDeivid = accs.find(a => a.name === 'Dros | Deivid')?.id
+            setSelectedIdState(fromStorage || ownById || drosDeivid || accs[0].id)
           }
         })
         .catch(() => {})

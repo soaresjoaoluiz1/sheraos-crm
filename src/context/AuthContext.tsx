@@ -42,6 +42,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
     if (!res.ok) { const err = await res.json(); throw new Error(err.error || 'Erro') }
     const data = await res.json()
+    localStorage.removeItem('dros_crm_active_account')
     localStorage.setItem('dros_crm_token', data.token)
     setToken(data.token)
     setUser(data.user)
@@ -49,6 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = () => {
     localStorage.removeItem('dros_crm_token')
+    localStorage.removeItem('dros_crm_active_account')
     setToken(null)
     setUser(null)
   }
