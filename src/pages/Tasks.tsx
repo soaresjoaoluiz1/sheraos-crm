@@ -7,7 +7,7 @@ import { fetchMyTasks, completeTask, skipTask, sendMessage, completeStandaloneTa
 import { applyMessageVars } from '../lib/messageVars'
 import {
   ListTodo, Phone, MessageCircle, Mail, Video, MapPin, Check, SkipForward,
-  ExternalLink, Clock, AlertCircle, User, Calendar, CheckCircle, Send, Edit3,
+  ExternalLink, Clock, AlertCircle, User, Calendar, CheckCircle, Send, Edit3, FileText,
 } from 'lucide-react'
 import EditTaskModal from '../components/EditTaskModal'
 
@@ -37,6 +37,7 @@ export default function Tasks() {
   const [activeBucket, setActiveBucket] = useState<keyof TaskGroups>('today')
   const [actioning, setActioning] = useState<number | null>(null)
   const [editingTask, setEditingTask] = useState<any>(null)
+  const [scriptModal, setScriptModal] = useState<{ text: string } | null>(null)
   const [confirmModal, setConfirmModal] = useState<{ leadName: string; nextStep: NextStep | null } | null>(null)
 
   const load = useCallback(() => {
@@ -172,6 +173,11 @@ export default function Tasks() {
                   )}
                 </>
               )}
+              {t.action_type === 'ligacao' && t.call_script && (
+                <button className="btn btn-secondary btn-sm" onClick={() => setScriptModal({ text: t.call_script! })} style={{ fontSize: 11 }}>
+                  <FileText size={11} /> Ver script
+                </button>
+              )}
               <button className="btn btn-secondary btn-sm" onClick={() => navigate(`/chat?lead=${t.lead_id}`)} style={{ fontSize: 11 }}>
                 <MessageCircle size={11} /> Abrir Chat
               </button>
@@ -286,6 +292,20 @@ export default function Tasks() {
       )}
 
       {editingTask && <EditTaskModal task={editingTask} onClose={() => setEditingTask(null)} onSaved={() => load()} />}
+
+      {scriptModal && (
+        <div className="modal-overlay" onClick={() => setScriptModal(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 600 }}>
+            <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Phone size={16} style={{ color: '#FFB300' }} /> Script de Ligacao</h2>
+            <div style={{ background: 'rgba(255,179,0,0.05)', border: '1px solid rgba(255,179,0,0.2)', borderRadius: 8, padding: 16, marginTop: 12, maxHeight: 400, overflowY: 'auto', whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.6, color: '#F0EDF5' }}>
+              {scriptModal.text}
+            </div>
+            <div className="modal-actions">
+              <button className="btn btn-primary" onClick={() => setScriptModal(null)}>Fechar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

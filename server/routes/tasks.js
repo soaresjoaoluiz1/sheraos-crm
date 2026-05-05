@@ -73,6 +73,7 @@ function getMyTasks({ accountId, userId, role }) {
       ca.schedule_mode,
       ca.delay_minutes,
       ca.auto_message,
+      ca.call_script,
       (SELECT COUNT(*) FROM cadence_attempts WHERE cadence_id = lc.cadence_id) as total_attempts
     FROM lead_cadences lc
     JOIN cadence_attempts ca ON ca.id = lc.current_attempt_id
@@ -311,6 +312,7 @@ router.get('/standalone/by-lead/:leadId', (req, res) => {
       ca.schedule_mode,
       ca.delay_minutes,
       ca.auto_message,
+      ca.call_script,
       (SELECT COUNT(*) FROM cadence_attempts WHERE cadence_id = lc.cadence_id) as total_attempts
     FROM lead_cadences lc
     JOIN cadence_attempts ca ON ca.id = lc.current_attempt_id

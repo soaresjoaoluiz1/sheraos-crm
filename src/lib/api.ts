@@ -204,7 +204,7 @@ export interface Task {
   stage_name: string | null; stage_color: string | null
   cadence_name: string; attempt_position: number; total_attempts: number
   action_type: string; attempt_description: string | null; attempt_instructions: string | null
-  delay_days: number; scheduled_time: string | null; schedule_mode: 'date' | 'duration'; delay_minutes: number; auto_message: string | null
+  delay_days: number; scheduled_time: string | null; schedule_mode: 'date' | 'duration'; delay_minutes: number; auto_message: string | null; call_script: string | null
   due_datetime: string; bucket: 'overdue' | 'today' | 'tomorrow' | 'week' | 'later'
 }
 export interface TaskCounts { overdue: number; today: number; tomorrow: number; week: number; total: number }
