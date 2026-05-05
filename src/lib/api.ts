@@ -176,11 +176,11 @@ export const fetchPipelineMetrics = (accountId: number, funnelId: number) => api
 // Cadences (sequential contact workflows)
 // =============================================
 
-export interface CadenceAttempt { id: number; cadence_id: number; position: number; action_type: string; description: string | null; instructions: string | null; delay_days: number; scheduled_time: string | null; auto_message: string | null; schedule_mode: 'date' | 'duration'; delay_minutes: number }
+export interface CadenceAttempt { id: number; cadence_id: number; position: number; action_type: string; description: string | null; instructions: string | null; delay_days: number; scheduled_time: string | null; auto_message: string | null; schedule_mode: 'date' | 'duration'; delay_minutes: number; call_script?: string | null }
 export interface Cadence { id: number; account_id: number; name: string; description: string | null; is_active: number; created_at: string; attempts: CadenceAttempt[] }
 export interface LeadCadence {
   id: number; lead_id: number; cadence_id: number; current_attempt_id: number | null; status: string; started_at: string
-  cadence_name?: string; action_type?: string; attempt_description?: string; attempt_instructions?: string; attempt_message?: string | null; attempt_position?: number; total_attempts?: number
+  cadence_name?: string; action_type?: string; attempt_description?: string; attempt_instructions?: string; attempt_message?: string | null; attempt_script?: string | null; attempt_position?: number; total_attempts?: number
 }
 
 export const fetchCadences = (accountId: number) => apiFetch<{ cadences: Cadence[] }>(`/api/cadences?account_id=${accountId}`).then(d => d.cadences)

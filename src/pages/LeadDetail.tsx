@@ -41,6 +41,7 @@ export default function LeadDetail() {
   const [leadCadence, setLeadCadence] = useState<LeadCadence | null>(null)
   const [cadences, setCadences] = useState<Cadence[]>([])
   const [showCadenceMenu, setShowCadenceMenu] = useState(false)
+  const [scriptModal, setScriptModal] = useState<{ text: string } | null>(null)
   const [readyMsgs, setReadyMsgs] = useState<ReadyMessage[]>([])
   const [showReadyMsgs, setShowReadyMsgs] = useState(false)
   const [qualifications, setQualifications] = useState<LeadQualification[]>([])
@@ -126,7 +127,15 @@ export default function LeadDetail() {
   }
   const handleAdvanceCadence = async () => {
     if (!leadCadence || !accountId) return
+    if (leadCadence.action_type === 'ligacao' && leadCadence.attempt_script) {
+      setScriptModal({ text: leadCadence.attempt_script })
+      return
+    }
     await advanceLeadCadence(leadCadence.id, accountId); loadCadence()
+  }
+  const handleCloseScriptModal = async () => {
+    if (leadCadence && accountId) await advanceLeadCadence(leadCadence.id, accountId)
+    setScriptModal(null); loadCadence()
   }
   const handleSelectReadyMsg = (content: string) => { setMsgText(content); setShowReadyMsgs(false) }
   const handleToggleArchive = async () => {
@@ -456,6 +465,19 @@ export default function LeadDetail() {
           )}
         </div>
       </div>
+      {scriptModal && (
+        <div className="modal-overlay" onClick={handleCloseScriptModal}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 600 }}>
+            <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Phone size={16} style={{ color: '#FFB300' }} /> Script de Ligacao</h2>
+            <div style={{ background: 'rgba(255,179,0,0.05)', border: '1px solid rgba(255,179,0,0.2)', borderRadius: 8, padding: 16, marginTop: 12, maxHeight: 400, overflowY: 'auto', whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.6, color: '#F0EDF5' }}>
+              {scriptModal.text}
+            </div>
+            <div className="modal-actions">
+              <button className="btn btn-primary" onClick={handleCloseScriptModal}>Fechar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

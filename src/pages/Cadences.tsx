@@ -47,7 +47,7 @@ export default function Cadences() {
   const startEdit = (c: Cadence) => { setEditing(c); setEditAttempts(c.attempts.map(a => ({ ...a }))) }
   const addAttempt = () => setEditAttempts(prev => [...prev, { action_type: 'mensagem', description: '', instructions: '', schedule_mode: 'date', delay_days: 0, delay_minutes: 0 }])
   const removeAttempt = (i: number) => setEditAttempts(prev => prev.filter((_, idx) => idx !== i))
-  const updateAttempt = (i: number, field: string, value: string) => setEditAttempts(prev => prev.map((a, idx) => idx === i ? { ...a, [field]: (field === 'delay_days' || field === 'delay_minutes') ? (parseInt(value) || 0) : value } : a))
+  const updateAttempt = (i: number, field: string, value: any) => setEditAttempts(prev => prev.map((a, idx) => idx === i ? { ...a, [field]: (field === 'delay_days' || field === 'delay_minutes') ? (parseInt(value) || 0) : value } : a))
 
   const saveAttempts = async () => {
     if (!editing || !accountId) return
@@ -196,6 +196,17 @@ export default function Cadences() {
                     <input className="input" value={a.instructions || ''} onChange={e => updateAttempt(i, 'instructions', e.target.value)} placeholder="Instrucoes (opcional)" style={{ fontSize: 12 }} />
                     {(a.action_type === 'whatsapp' || a.action_type === 'mensagem') && (
                       <textarea className="input" value={a.auto_message || ''} onChange={e => updateAttempt(i, 'auto_message', e.target.value)} placeholder="Mensagem (opcional). Clique em 'Variaveis' no topo da tela para ver as tags disponiveis." rows={2} style={{ fontSize: 12, resize: 'vertical' }} />
+                    )}
+                    {a.action_type === 'ligacao' && (
+                      <>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#FFB300', cursor: 'pointer', marginTop: 2 }}>
+                          <input type="checkbox" checked={!!a.call_script || a.call_script === ''} onChange={e => updateAttempt(i, 'call_script', e.target.checked ? (a.call_script || '') : null)} />
+                          Incluir script de ligacao
+                        </label>
+                        {(a.call_script !== null && a.call_script !== undefined) && (
+                          <textarea className="input" value={a.call_script || ''} onChange={e => updateAttempt(i, 'call_script', e.target.value)} placeholder="Cole aqui o script de vendas. Ele vai abrir num modal quando o atendente clicar em 'Avancar' nesta etapa." rows={4} style={{ fontSize: 12, resize: 'vertical' }} />
+                        )}
+                      </>
                     )}
                   </div>
                   <button className="btn btn-danger btn-sm btn-icon" onClick={() => removeAttempt(i)} style={{ marginTop: 6 }}><Trash2 size={12} /></button>
