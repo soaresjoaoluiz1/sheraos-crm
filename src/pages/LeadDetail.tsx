@@ -127,16 +127,9 @@ export default function LeadDetail() {
   }
   const handleAdvanceCadence = async () => {
     if (!leadCadence || !accountId) return
-    if (leadCadence.action_type === 'ligacao' && leadCadence.attempt_script) {
-      setScriptModal({ text: leadCadence.attempt_script })
-      return
-    }
     await advanceLeadCadence(leadCadence.id, accountId); loadCadence()
   }
-  const handleCloseScriptModal = async () => {
-    if (leadCadence && accountId) await advanceLeadCadence(leadCadence.id, accountId)
-    setScriptModal(null); loadCadence()
-  }
+  const handleViewScript = () => { if (leadCadence?.attempt_script) setScriptModal({ text: leadCadence.attempt_script }) }
   const handleSelectReadyMsg = (content: string) => { setMsgText(content); setShowReadyMsgs(false) }
   const handleToggleArchive = async () => {
     if (!lead) return
@@ -353,7 +346,14 @@ export default function LeadDetail() {
                     </div>
                     {leadCadence.attempt_description && <div style={{ fontSize: 11, color: '#C8C4D4', marginTop: 2 }}>{leadCadence.attempt_description}</div>}
                     {leadCadence.attempt_instructions && <div style={{ fontSize: 11, color: '#9B96B0', marginTop: 2, fontStyle: 'italic' }}>{leadCadence.attempt_instructions}</div>}
-                    <button className="btn btn-primary btn-sm" style={{ marginTop: 8 }} onClick={handleAdvanceCadence}><ChevronRight size={12} /> Avancar</button>
+                    {leadCadence.attempt_script ? (
+                      <>
+                        <button className="btn btn-primary btn-sm" style={{ marginTop: 8 }} onClick={handleViewScript}><FileText size={12} /> Ver script</button>
+                        <button className="btn btn-secondary btn-sm" style={{ marginTop: 6 }} onClick={handleAdvanceCadence}><ChevronRight size={12} /> Avancar</button>
+                      </>
+                    ) : (
+                      <button className="btn btn-primary btn-sm" style={{ marginTop: 8 }} onClick={handleAdvanceCadence}><ChevronRight size={12} /> Avancar</button>
+                    )}
                   </>
                 )}
               </div>
@@ -466,14 +466,14 @@ export default function LeadDetail() {
         </div>
       </div>
       {scriptModal && (
-        <div className="modal-overlay" onClick={handleCloseScriptModal}>
+        <div className="modal-overlay" onClick={() => setScriptModal(null)}>
           <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 600 }}>
             <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Phone size={16} style={{ color: '#FFB300' }} /> Script de Ligacao</h2>
             <div style={{ background: 'rgba(255,179,0,0.05)', border: '1px solid rgba(255,179,0,0.2)', borderRadius: 8, padding: 16, marginTop: 12, maxHeight: 400, overflowY: 'auto', whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.6, color: '#F0EDF5' }}>
               {scriptModal.text}
             </div>
             <div className="modal-actions">
-              <button className="btn btn-primary" onClick={handleCloseScriptModal}>Fechar</button>
+              <button className="btn btn-primary" onClick={() => setScriptModal(null)}>Fechar</button>
             </div>
           </div>
         </div>

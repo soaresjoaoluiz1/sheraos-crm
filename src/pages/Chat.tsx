@@ -290,18 +290,8 @@ export default function Chat() {
   const handleAssign = async (attId: number | null) => { if (lead) { await assignLead(lead.id, attId); loadLead() } }
   const handleAddTag = async (tagId: number) => { if (lead) { await addLeadTag(lead.id, tagId); loadLead(); setShowTagMenu(false) } }
   const handleRemoveTag = async (tagId: number) => { if (lead) { await removeLeadTag(lead.id, tagId); loadLead() } }
-  const handleAdvanceCadence = async () => {
-    if (!leadCadence || !accountId) return
-    if (leadCadence.action_type === 'ligacao' && leadCadence.attempt_script) {
-      setScriptModal({ text: leadCadence.attempt_script })
-      return
-    }
-    await advanceLeadCadence(leadCadence.id, accountId); loadLead()
-  }
-  const handleCloseScriptModal = async () => {
-    if (leadCadence && accountId) await advanceLeadCadence(leadCadence.id, accountId)
-    setScriptModal(null); loadLead()
-  }
+  const handleAdvanceCadence = async () => { if (leadCadence && accountId) { await advanceLeadCadence(leadCadence.id, accountId); loadLead() } }
+  const handleViewScript = () => { if (leadCadence?.attempt_script) setScriptModal({ text: leadCadence.attempt_script }) }
   const handleSendCadenceMessage = async () => {
     if (!cadenceMsgText.trim() || !lead || !accountId || !leadCadence) return
     setSending(true)
@@ -756,6 +746,11 @@ export default function Chat() {
                                 <button className="btn btn-primary btn-sm" style={{ marginTop: 8, width: '100%', fontSize: 11 }} onClick={handleSendCadenceMessage} disabled={sending || !cadenceMsgText.trim()}><Send size={10} /> Enviar e avancar</button>
                                 <button className="btn btn-secondary btn-sm" style={{ marginTop: 6, width: '100%', fontSize: 10 }} onClick={handleAdvanceCadence}><ChevronRight size={10} /> So avancar (sem enviar)</button>
                               </>
+                            ) : leadCadence.attempt_script ? (
+                              <>
+                                <button className="btn btn-primary btn-sm" style={{ marginTop: 8, width: '100%', fontSize: 11 }} onClick={handleViewScript}><FileText size={10} /> Ver script</button>
+                                <button className="btn btn-secondary btn-sm" style={{ marginTop: 6, width: '100%', fontSize: 10 }} onClick={handleAdvanceCadence}><ChevronRight size={10} /> Avancar</button>
+                              </>
                             ) : (
                               <button className="btn btn-primary btn-sm" style={{ marginTop: 8, width: '100%', fontSize: 11 }} onClick={handleAdvanceCadence}><ChevronRight size={10} /> Avancar</button>
                             )}
@@ -928,14 +923,14 @@ export default function Chat() {
         <EditTaskModal task={editingTask} onClose={() => setEditingTask(null)} onSaved={() => { fetchLeadTasks(lead.id, accountId).then(setLeadTasks); setEditingTask(null) }} />
       )}
       {scriptModal && (
-        <div className="modal-overlay" onClick={handleCloseScriptModal}>
+        <div className="modal-overlay" onClick={() => setScriptModal(null)}>
           <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 600 }}>
             <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Phone size={16} style={{ color: '#FFB300' }} /> Script de Ligacao</h2>
             <div style={{ background: 'rgba(255,179,0,0.05)', border: '1px solid rgba(255,179,0,0.2)', borderRadius: 8, padding: 16, marginTop: 12, maxHeight: 400, overflowY: 'auto', whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.6, color: '#F0EDF5' }}>
               {scriptModal.text}
             </div>
             <div className="modal-actions">
-              <button className="btn btn-primary" onClick={handleCloseScriptModal}>Fechar</button>
+              <button className="btn btn-primary" onClick={() => setScriptModal(null)}>Fechar</button>
             </div>
           </div>
         </div>
