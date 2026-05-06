@@ -397,6 +397,10 @@ addColumnIfNotExists('leads', 'last_broadcast_at', 'TEXT')
 // Broadcasts: message variations (JSON array) + delay between sends
 addColumnIfNotExists('broadcasts', 'message_variations', 'TEXT')
 addColumnIfNotExists('broadcasts', 'delay_seconds', 'INTEGER NOT NULL DEFAULT 3')
+addColumnIfNotExists('broadcasts', 'instance_id', 'INTEGER REFERENCES whatsapp_instances(id) ON DELETE SET NULL')
+addColumnIfNotExists('broadcasts', 'paused_at', 'TEXT')
+addColumnIfNotExists('broadcasts', 'paused_reason', 'TEXT')
+addColumnIfNotExists('broadcasts', 'started_at', 'TEXT')
 
 // ─── Multi-instance routing (decide which WhatsApp number to use when sending)
 // leads.last_instance_id: ultima instancia que conversou com este lead (origem ou recepcao)

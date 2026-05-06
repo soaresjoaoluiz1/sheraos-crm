@@ -49,7 +49,19 @@ export interface DashboardStats {
 }
 export interface AgentStat { id: number; name: string; is_active: number; leads_period: number; leads_total: number; conversions: number }
 export interface WhatsAppInstance { id: number; account_id: number; instance_name: string; api_url: string; api_key: string; status: string; phone_number: string | null; qr_code: string | null; default_attendant_id: number | null }
-export interface Broadcast { id: number; name: string; message_template: string; status: string; sent_count: number; failed_count: number; total_count: number; created_at: string }
+export interface Broadcast {
+  id: number; account_id?: number; name: string; message_template: string; message_variations?: string | null
+  status: string; sent_count: number; failed_count: number; total_count: number
+  delay_seconds?: number; instance_id?: number | null; instance_name?: string | null; instance_status?: string | null
+  paused_at?: string | null; paused_reason?: string | null
+  started_at?: string | null; completed_at?: string | null; created_at: string; created_by_name?: string | null
+}
+export interface BroadcastRecipient {
+  id: number; broadcast_id: number; lead_id: number; phone: string
+  status: 'pending' | 'sent' | 'delivered' | 'read' | 'failed'
+  wa_msg_id?: string | null; sent_at?: string | null; error?: string | null
+  lead_name?: string | null
+}
 
 // =============================================
 // API Functions
@@ -151,8 +163,10 @@ export const testWhatsAppConnection = (id: number, accountId: number) => apiFetc
 
 // Broadcasts
 export const fetchBroadcasts = (accountId: number) => apiFetch<{ broadcasts: Broadcast[] }>(`/api/broadcasts?account_id=${accountId}`).then(d => d.broadcasts)
-export const createBroadcast = (accountId: number, data: { name: string; message_template: string; message_variations?: string[]; delay_seconds?: number; lead_ids: number[] }) => apiFetch(`/api/broadcasts?account_id=${accountId}`, { method: 'POST', body: JSON.stringify(data) })
+export const fetchBroadcast = (id: number, accountId: number) => apiFetch<{ broadcast: Broadcast; recipients: BroadcastRecipient[] }>(`/api/broadcasts/${id}?account_id=${accountId}`)
+export const createBroadcast = (accountId: number, data: { name: string; message_template: string; message_variations?: string[]; delay_seconds?: number; lead_ids: number[]; instance_id: number }) => apiFetch(`/api/broadcasts?account_id=${accountId}`, { method: 'POST', body: JSON.stringify(data) })
 export const sendBroadcast = (id: number, accountId: number) => apiFetch(`/api/broadcasts/${id}/send?account_id=${accountId}`, { method: 'POST' })
+export const deleteBroadcast = (id: number, accountId: number) => apiFetch(`/api/broadcasts/${id}?account_id=${accountId}`, { method: 'DELETE' })
 
 // Notes
 export const addLeadNote = (leadId: number, content: string) => apiFetch<{ note: LeadNote }>(`/api/leads/${leadId}/notes`, { method: 'POST', body: JSON.stringify({ content }) }).then(d => d.note)

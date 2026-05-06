@@ -11,6 +11,7 @@ import LeadDetail from './pages/LeadDetail'
 import Chat from './pages/Chat'
 import Tasks from './pages/Tasks'
 import Messages from './pages/Messages'
+import BroadcastDetail from './pages/BroadcastDetail'
 import Team from './pages/Team'
 import Funnels from './pages/Funnels'
 import Integrations from './pages/Integrations'
@@ -59,6 +60,7 @@ function AppRoutes() {
           {(isGerente || isAdmin) && <>
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/messages" element={<Messages />} />
+            <Route path="/messages/:id" element={<BroadcastDetail />} />
             <Route path="/team" element={<Team />} />
             <Route path="/funnels" element={<Funnels />} />
             <Route path="/integrations" element={<Integrations />} />

@@ -1,6 +1,7 @@
 import fetch from 'node-fetch'
 import db from './db.js'
 import { broadcastSSE } from './sse.js'
+import { resumeBroadcastIfPaused } from './routes/broadcasts.js'
 
 // Runs every 5 minutes
 const INTERVAL_MS = 5 * 60 * 1000
@@ -33,6 +34,10 @@ async function checkWhatsAppInstances() {
       if (newStatus !== inst.status) {
         db.prepare("UPDATE whatsapp_instances SET status = ?, updated_at = datetime('now') WHERE id = ?").run(newStatus, inst.id)
         console.log(`[Health] ${inst.instance_name}: ${inst.status} → ${newStatus}`)
+        // Se reconectou, retoma broadcasts pausados desta instancia
+        if (newStatus === 'connected' && inst.status !== 'connected') {
+          try { resumeBroadcastIfPaused(inst.id) } catch (e) { console.error('[Health] Resume broadcast error:', e.message) }
+        }
       }
 
       // AUTO-RECONNECT: if was connected but now disconnected/closed, try to reconnect
