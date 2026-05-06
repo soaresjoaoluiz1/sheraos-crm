@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useAccount } from '../context/AccountContext'
-import { fetchBroadcasts, fetchLeads, createBroadcast, sendBroadcast, formatNumber, type Broadcast, type Lead } from '../lib/api'
-import { MessageCircle, Plus, Send, CheckCircle, XCircle, Clock, Trash2 } from 'lucide-react'
+import { fetchBroadcasts, fetchLeads, createBroadcast, sendBroadcast, formatNumber, fetchTags, fetchFunnels, type Broadcast, type Lead, type Tag, type Funnel } from '../lib/api'
+import { MessageCircle, Plus, Send, CheckCircle, XCircle, Clock, Trash2, Filter, Tag as TagIcon, GitBranch } from 'lucide-react'
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
   draft: { label: 'Rascunho', color: '#9B96B0' },
@@ -26,17 +26,38 @@ export default function Messages() {
   const [leadSearch, setLeadSearch] = useState('')
   const [searchResults, setSearchResults] = useState<Lead[]>([])
   const [step, setStep] = useState(1)
+  const [tags, setTags] = useState<Tag[]>([])
+  const [funnels, setFunnels] = useState<Funnel[]>([])
+  const [filterTag, setFilterTag] = useState<number | ''>('')
+  const [filterStage, setFilterStage] = useState<number | ''>('')
 
   const load = () => { if (accountId) { setLoading(true); fetchBroadcasts(accountId).then(setBroadcasts).finally(() => setLoading(false)) } }
   useEffect(load, [accountId])
 
+  // Carrega tags e funis ao abrir modal
+  useEffect(() => {
+    if (showNew && accountId) {
+      fetchTags(accountId).then(setTags).catch(() => {})
+      fetchFunnels(accountId).then(setFunnels).catch(() => {})
+    }
+  }, [showNew, accountId])
+
   const searchLeads = async () => {
     if (!accountId) return
-    const data = await fetchLeads(accountId, { search: leadSearch, limit: 50 })
+    const filters: any = { limit: 500 }
+    if (leadSearch.length > 1) filters.search = leadSearch
+    if (filterTag) filters.tag = filterTag
+    if (filterStage) filters.stage_id = filterStage
+    const data = await fetchLeads(accountId, filters)
     setSearchResults(data.leads.filter(l => l.phone))
   }
 
-  useEffect(() => { if (leadSearch.length > 1 && accountId) searchLeads() }, [leadSearch])
+  // Busca quando search OU filtros mudam
+  useEffect(() => {
+    if (!accountId) return
+    if (leadSearch.length > 1 || filterTag || filterStage) searchLeads()
+    else setSearchResults([])
+  }, [leadSearch, filterTag, filterStage, accountId])
 
   const toggleLead = (lead: Lead) => {
     setSelectedLeads(prev => prev.some(l => l.id === lead.id) ? prev.filter(l => l.id !== lead.id) : [...prev, lead])
@@ -145,13 +166,40 @@ export default function Messages() {
 
             {step === 2 && (
               <>
+                {/* Filtros por tag e etapa */}
+                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: 11, color: '#9B96B0', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}><TagIcon size={11} /> Filtrar por tag</label>
+                    <select className="select" value={filterTag} onChange={e => setFilterTag(e.target.value ? Number(e.target.value) : '')} style={{ width: '100%' }}>
+                      <option value="">Todas as tags</option>
+                      {tags.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: 11, color: '#9B96B0', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}><GitBranch size={11} /> Filtrar por etapa</label>
+                    <select className="select" value={filterStage} onChange={e => setFilterStage(e.target.value ? Number(e.target.value) : '')} style={{ width: '100%' }}>
+                      <option value="">Todas as etapas</option>
+                      {funnels.map(f => (
+                        <optgroup key={f.id} label={f.name}>
+                          {(f.stages || []).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        </optgroup>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                {(filterTag || filterStage) && (
+                  <button className="btn btn-secondary btn-sm" onClick={() => { setFilterTag(''); setFilterStage('') }} style={{ fontSize: 10, marginBottom: 8 }}>
+                    <Filter size={10} /> Limpar filtros
+                  </button>
+                )}
+
                 <div className="form-group">
                   <label>Buscar leads (apenas com telefone)</label>
-                  <input className="input" value={leadSearch} onChange={e => setLeadSearch(e.target.value)} placeholder="Buscar por nome, telefone..." />
+                  <input className="input" value={leadSearch} onChange={e => setLeadSearch(e.target.value)} placeholder="Buscar por nome, telefone... (ou use os filtros acima)" />
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '8px 0' }}>
-                  <span style={{ fontSize: 12, color: '#9B96B0' }}>{selectedLeads.length} selecionados</span>
-                  {searchResults.length > 0 && <button className="btn btn-secondary btn-sm" onClick={selectAll}>Selecionar todos ({searchResults.length})</button>}
+                  <span style={{ fontSize: 12, color: '#9B96B0' }}>{selectedLeads.length} selecionados {searchResults.length > 0 && `· ${searchResults.length} encontrados`}</span>
+                  {searchResults.length > 0 && <button className="btn btn-primary btn-sm" onClick={selectAll}>Selecionar todos ({searchResults.length})</button>}
                 </div>
                 <div style={{ maxHeight: 300, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {searchResults.map(l => (
@@ -159,10 +207,11 @@ export default function Messages() {
                       <input type="checkbox" checked={selectedLeads.some(s => s.id === l.id)} onChange={() => toggleLead(l)} />
                       <span style={{ fontWeight: 500 }}>{l.name || 'Sem nome'}</span>
                       <span style={{ color: '#9B96B0' }}>{l.phone}</span>
+                      {l.stage_name && <span style={{ fontSize: 10, color: l.stage_color || '#FFB300', marginLeft: 'auto' }}>{l.stage_name}</span>}
                     </label>
                   ))}
-                  {searchResults.length === 0 && leadSearch.length > 1 && <div style={{ padding: 20, textAlign: 'center', color: '#6B6580' }}>Nenhum lead encontrado</div>}
-                  {leadSearch.length <= 1 && <div style={{ padding: 20, textAlign: 'center', color: '#6B6580' }}>Digite pra buscar leads...</div>}
+                  {searchResults.length === 0 && (leadSearch.length > 1 || filterTag || filterStage) && <div style={{ padding: 20, textAlign: 'center', color: '#6B6580' }}>Nenhum lead encontrado</div>}
+                  {searchResults.length === 0 && leadSearch.length <= 1 && !filterTag && !filterStage && <div style={{ padding: 20, textAlign: 'center', color: '#6B6580' }}>Selecione uma tag, etapa, ou digite pra buscar...</div>}
                 </div>
                 <div className="modal-actions">
                   <button className="btn btn-secondary" onClick={() => setStep(1)}>Voltar</button>
