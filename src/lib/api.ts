@@ -166,6 +166,7 @@ export const fetchBroadcasts = (accountId: number) => apiFetch<{ broadcasts: Bro
 export const fetchBroadcast = (id: number, accountId: number) => apiFetch<{ broadcast: Broadcast; recipients: BroadcastRecipient[] }>(`/api/broadcasts/${id}?account_id=${accountId}`)
 export const createBroadcast = (accountId: number, data: { name: string; message_template: string; message_variations?: string[]; delay_seconds?: number; lead_ids: number[]; instance_id: number }) => apiFetch(`/api/broadcasts?account_id=${accountId}`, { method: 'POST', body: JSON.stringify(data) })
 export const sendBroadcast = (id: number, accountId: number) => apiFetch(`/api/broadcasts/${id}/send?account_id=${accountId}`, { method: 'POST' })
+export const resumeBroadcast = (id: number, accountId: number) => apiFetch(`/api/broadcasts/${id}/resume?account_id=${accountId}`, { method: 'POST' })
 export const deleteBroadcast = (id: number, accountId: number) => apiFetch(`/api/broadcasts/${id}?account_id=${accountId}`, { method: 'DELETE' })
 
 // Notes

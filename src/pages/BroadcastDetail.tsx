@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAccount } from '../context/AccountContext'
-import { fetchBroadcast, sendBroadcast, type Broadcast, type BroadcastRecipient } from '../lib/api'
+import { fetchBroadcast, sendBroadcast, resumeBroadcast, type Broadcast, type BroadcastRecipient } from '../lib/api'
 import { ArrowLeft, Send, Smartphone, Clock, CheckCircle, XCircle, AlertTriangle, PauseCircle, RefreshCw, Calendar } from 'lucide-react'
 
 const STATUS_COLOR: Record<string, string> = {
@@ -66,6 +66,13 @@ export default function BroadcastDetail() {
     if (!accountId || !confirm('Enviar disparo agora?')) return
     setSending(true)
     try { await sendBroadcast(broadcast.id, accountId); load() }
+    catch (e: any) { alert('Erro: ' + e.message) }
+    setSending(false)
+  }
+  const handleResume = async () => {
+    if (!accountId || !broadcast) return
+    setSending(true)
+    try { await resumeBroadcast(broadcast.id, accountId); setTimeout(load, 1000) }
     catch (e: any) { alert('Erro: ' + e.message) }
     setSending(false)
   }
@@ -191,6 +198,11 @@ export default function BroadcastDetail() {
               <Clock size={11} /> Tempo restante estimado: ~{formatDuration(estRemainingSec)}
               {broadcast.started_at && <span style={{ color: '#9B96B0', marginLeft: 8 }}>· decorrido: {formatDuration(elapsedSec)}</span>}
             </div>
+          )}
+          {broadcast.status === 'sending' && remaining > 0 && (
+            <button className="btn btn-secondary btn-sm" onClick={handleResume} disabled={sending} style={{ marginTop: 8, fontSize: 11 }}>
+              <RefreshCw size={11} /> {sending ? 'Retomando...' : 'Retomar (caso esteja travado)'}
+            </button>
           )}
           {broadcast.status === 'completed' && broadcast.completed_at && (
             <div style={{ fontSize: 11, color: '#34C759', marginTop: 8 }}>

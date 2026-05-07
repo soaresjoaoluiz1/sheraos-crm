@@ -28,6 +28,7 @@ import proposalRoutes, { publicProposalHandler } from './routes/proposals.js'
 import { authenticate, scopeToAccount } from './middleware/auth.js'
 import { addSSEClient, removeSSEClient } from './sse.js'
 import { startScheduler } from './scheduler.js'
+import { recoverPendingBroadcasts } from './routes/broadcasts.js'
 
 const app = express()
 app.use(cors())
@@ -132,4 +133,6 @@ if (fs.existsSync(distPath)) {
 app.listen(PORT, () => {
   console.log(`[Dros CRM API] Running on http://localhost:${PORT}`)
   startScheduler()
+  // Retoma disparos que estavam enviando quando o servidor caiu
+  setTimeout(() => recoverPendingBroadcasts(), 2000)
 })

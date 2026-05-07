@@ -91,8 +91,24 @@ router.get('/:id', requireRole('super_admin', 'gerente'), (req, res) => {
   res.json({ broadcast, recipients })
 })
 
+// Lock em memoria pra evitar loops duplicados
+const runningLoops = new Set()
+
 // ─── Loop interno de envio (chamado por send + retomada automatica) ──
 async function runBroadcastLoop(broadcastId) {
+  if (runningLoops.has(broadcastId)) {
+    console.log(`[Broadcast] Loop ${broadcastId} ja em execucao, ignorando duplicata`)
+    return
+  }
+  runningLoops.add(broadcastId)
+  try {
+    await runBroadcastLoopInner(broadcastId)
+  } finally {
+    runningLoops.delete(broadcastId)
+  }
+}
+
+async function runBroadcastLoopInner(broadcastId) {
   const broadcast = db.prepare('SELECT * FROM broadcasts WHERE id = ?').get(broadcastId)
   if (!broadcast) return
   if (broadcast.status !== 'sending') return // apenas se esta marcado como enviando
@@ -209,11 +225,26 @@ export function resumeBroadcastIfPaused(instanceId) {
   }
 }
 
+// Recovery no boot: pega disparos zumbis (status=sending mas ninguem processando)
+// Acontece quando o servidor reinicia durante envio
+export function recoverPendingBroadcasts() {
+  const zombies = db.prepare("SELECT * FROM broadcasts WHERE status = 'sending'").all()
+  if (zombies.length === 0) return
+  console.log(`[Broadcast] Recovery no boot: encontrados ${zombies.length} disparo(s) em andamento. Retomando...`)
+  for (const b of zombies) {
+    // Limpa pause anterior (servidor caiu) e relanca
+    db.prepare("UPDATE broadcasts SET paused_at = NULL, paused_reason = NULL WHERE id = ?").run(b.id)
+    runBroadcastLoop(b.id).catch(err => console.error('[Broadcast] Boot recovery error:', err))
+  }
+}
+
 // Endpoint manual de retomar (caso queira forcar)
 router.post('/:id/resume', requireRole('super_admin', 'gerente'), async (req, res) => {
   const broadcast = db.prepare('SELECT * FROM broadcasts WHERE id = ?').get(req.params.id)
   if (!broadcast) return res.status(404).json({ error: 'Disparo nao encontrado' })
   if (broadcast.status !== 'sending') return res.status(400).json({ error: 'Disparo nao esta em andamento' })
+  // Limpa pause se houver
+  db.prepare("UPDATE broadcasts SET paused_at = NULL, paused_reason = NULL WHERE id = ?").run(broadcast.id)
   res.json({ ok: true })
   runBroadcastLoop(broadcast.id).catch(err => console.error('[Broadcast] Resume error:', err))
 })
