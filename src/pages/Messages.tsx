@@ -44,8 +44,8 @@ export default function Messages() {
   const [tags, setTags] = useState<Tag[]>([])
   const [funnels, setFunnels] = useState<Funnel[]>([])
   const [instances, setInstances] = useState<WhatsAppInstance[]>([])
-  const [filterTag, setFilterTag] = useState<number | ''>('')
-  const [filterStage, setFilterStage] = useState<number | ''>('')
+  const [filterTags, setFilterTags] = useState<number[]>([])
+  const [filterStages, setFilterStages] = useState<number[]>([])
   const [creating, setCreating] = useState(false)
 
   const load = () => { if (accountId) { setLoading(true); fetchBroadcasts(accountId).then(setBroadcasts).finally(() => setLoading(false)) } }
@@ -75,24 +75,57 @@ export default function Messages() {
 
   const searchLeads = async () => {
     if (!accountId) return
-    const filters: any = { limit: 500 }
-    if (leadSearch.length > 1) filters.search = leadSearch
-    if (filterTag) filters.tag = filterTag
-    if (filterStage) filters.stage_id = filterStage
-    const data = await fetchLeads(accountId, filters)
-    setSearchResults(data.leads.filter(l => l.phone))
+    const queries: Promise<{ leads: Lead[] }>[] = []
+
+    // Combina resultados: para cada tag selecionada faz uma query, para cada etapa idem
+    if (filterTags.length > 0) {
+      queries.push(...filterTags.map(tagId => fetchLeads(accountId, { tag: tagId, limit: 500 })))
+    }
+    if (filterStages.length > 0) {
+      queries.push(...filterStages.map(stageId => fetchLeads(accountId, { stage_id: stageId, limit: 500 })))
+    }
+    if (queries.length === 0 && leadSearch.length > 1) {
+      queries.push(fetchLeads(accountId, { search: leadSearch, limit: 500 }))
+    } else if (queries.length > 0 && leadSearch.length > 1) {
+      // Filtra texto sobre o resultado depois (busca client-side)
+    }
+
+    if (queries.length === 0) { setSearchResults([]); return }
+
+    try {
+      const all = await Promise.all(queries)
+      // Dedup por id
+      const map = new Map<number, Lead>()
+      all.forEach(r => r.leads.forEach(l => map.set(l.id, l)))
+      let merged = Array.from(map.values()).filter(l => l.phone)
+      // Aplica busca de texto sobre o set unificado quando ha filtros
+      if (leadSearch.length > 1 && (filterTags.length > 0 || filterStages.length > 0)) {
+        const q = leadSearch.toLowerCase()
+        merged = merged.filter(l => (l.name || '').toLowerCase().includes(q) || (l.phone || '').includes(q))
+      }
+      setSearchResults(merged)
+    } catch { setSearchResults([]) }
   }
 
   useEffect(() => {
     if (!accountId) return
-    if (leadSearch.length > 1 || filterTag || filterStage) searchLeads()
+    if (leadSearch.length > 1 || filterTags.length > 0 || filterStages.length > 0) searchLeads()
     else setSearchResults([])
-  }, [leadSearch, filterTag, filterStage, accountId])
+  }, [leadSearch, filterTags.join(','), filterStages.join(','), accountId])
 
   const toggleLead = (lead: Lead) => {
     setSelectedLeads(prev => prev.some(l => l.id === lead.id) ? prev.filter(l => l.id !== lead.id) : [...prev, lead])
   }
-  const selectAll = () => setSelectedLeads(searchResults.filter(l => l.phone))
+  // Adiciona ao ja selecionado, nao substitui
+  const selectAll = () => {
+    setSelectedLeads(prev => {
+      const existing = new Set(prev.map(l => l.id))
+      const additions = searchResults.filter(l => l.phone && !existing.has(l.id))
+      return [...prev, ...additions]
+    })
+  }
+  const toggleTag = (id: number) => setFilterTags(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  const toggleStage = (id: number) => setFilterStages(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
 
   const totalMessagesCount = 1 + newVariations.filter(v => v.trim()).length
   const enoughVariations = totalMessagesCount >= MIN_VARIATIONS
@@ -105,7 +138,7 @@ export default function Messages() {
   const resetForm = () => {
     setShowNew(false); setStep(1); setNewName(''); setNewTemplate('')
     setNewVariations(['', '']); setNewDelay(DEFAULT_DELAY); setNewInstanceId('')
-    setSelectedLeads([]); setLeadSearch(''); setFilterTag(''); setFilterStage('')
+    setSelectedLeads([]); setLeadSearch(''); setFilterTags([]); setFilterStages([])
   }
 
   const handleCreate = async () => {
@@ -283,28 +316,65 @@ export default function Messages() {
 
             {step === 2 && (
               <>
-                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: 11, color: '#9B96B0', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}><TagIcon size={11} /> Filtrar por tag</label>
-                    <select className="select" value={filterTag} onChange={e => setFilterTag(e.target.value ? Number(e.target.value) : '')} style={{ width: '100%' }}>
-                      <option value="">Todas as tags</option>
-                      {tags.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                    </select>
+                {/* Tags como chips multi-select */}
+                {tags.length > 0 && (
+                  <div style={{ marginBottom: 10 }}>
+                    <label style={{ fontSize: 11, color: '#9B96B0', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                      <TagIcon size={11} /> Filtrar por tag {filterTags.length > 0 && <span style={{ color: '#FFB300' }}>({filterTags.length} ativa{filterTags.length > 1 ? 's' : ''})</span>}
+                    </label>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                      {tags.map(t => {
+                        const active = filterTags.includes(t.id)
+                        return (
+                          <button key={t.id} type="button" onClick={() => toggleTag(t.id)}
+                            style={{
+                              padding: '4px 10px', borderRadius: 12, fontSize: 11, cursor: 'pointer',
+                              border: `1px solid ${active ? (t.color || '#FFB300') : 'rgba(255,255,255,0.1)'}`,
+                              background: active ? `${t.color || '#FFB300'}25` : 'rgba(255,255,255,0.03)',
+                              color: active ? (t.color || '#FFB300') : '#9B96B0',
+                              fontWeight: active ? 600 : 400,
+                            }}>
+                            {active ? '✓ ' : ''}{t.name}
+                          </button>
+                        )
+                      })}
+                    </div>
                   </div>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: 11, color: '#9B96B0', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}><GitBranch size={11} /> Filtrar por etapa</label>
-                    <select className="select" value={filterStage} onChange={e => setFilterStage(e.target.value ? Number(e.target.value) : '')} style={{ width: '100%' }}>
-                      <option value="">Todas as etapas</option>
-                      {funnels.map(f => (
-                        <optgroup key={f.id} label={f.name}>
-                          {(f.stages || []).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                        </optgroup>
-                      ))}
-                    </select>
+                )}
+
+                {/* Etapas como chips multi-select, agrupadas por funil */}
+                {funnels.length > 0 && (
+                  <div style={{ marginBottom: 10 }}>
+                    <label style={{ fontSize: 11, color: '#9B96B0', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                      <GitBranch size={11} /> Filtrar por etapa {filterStages.length > 0 && <span style={{ color: '#FFB300' }}>({filterStages.length} ativa{filterStages.length > 1 ? 's' : ''})</span>}
+                    </label>
+                    {funnels.map(f => (
+                      <div key={f.id} style={{ marginBottom: 6 }}>
+                        {funnels.length > 1 && <div style={{ fontSize: 10, color: '#6B6580', marginBottom: 3 }}>{f.name}</div>}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                          {(f.stages || []).map(s => {
+                            const active = filterStages.includes(s.id)
+                            return (
+                              <button key={s.id} type="button" onClick={() => toggleStage(s.id)}
+                                style={{
+                                  padding: '4px 10px', borderRadius: 12, fontSize: 11, cursor: 'pointer',
+                                  border: `1px solid ${active ? (s.color || '#FFB300') : 'rgba(255,255,255,0.1)'}`,
+                                  background: active ? `${s.color || '#FFB300'}25` : 'rgba(255,255,255,0.03)',
+                                  color: active ? (s.color || '#FFB300') : '#9B96B0',
+                                  fontWeight: active ? 600 : 400,
+                                }}>
+                                {active ? '✓ ' : ''}{s.name}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                </div>
-                {(filterTag || filterStage) && (
-                  <button className="btn btn-secondary btn-sm" onClick={() => { setFilterTag(''); setFilterStage('') }} style={{ fontSize: 10, marginBottom: 8 }}>
+                )}
+
+                {(filterTags.length > 0 || filterStages.length > 0) && (
+                  <button className="btn btn-secondary btn-sm" onClick={() => { setFilterTags([]); setFilterStages([]) }} style={{ fontSize: 10, marginBottom: 8 }}>
                     <Filter size={10} /> Limpar filtros
                   </button>
                 )}
@@ -314,10 +384,13 @@ export default function Messages() {
                   <input className="input" value={leadSearch} onChange={e => setLeadSearch(e.target.value)} placeholder="Buscar por nome, telefone... (ou use os filtros acima)" />
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '8px 0' }}>
-                  <span style={{ fontSize: 12, color: '#9B96B0' }}>{selectedLeads.length} selecionados {searchResults.length > 0 && `· ${searchResults.length} encontrados`}</span>
-                  {searchResults.length > 0 && <button className="btn btn-primary btn-sm" onClick={selectAll}>Selecionar todos ({searchResults.length})</button>}
+                  <span style={{ fontSize: 12, color: '#9B96B0' }}>
+                    <strong style={{ color: '#FFB300' }}>{selectedLeads.length} selecionados</strong>
+                    {searchResults.length > 0 && ` · ${searchResults.length} no filtro atual`}
+                  </span>
+                  {searchResults.length > 0 && <button className="btn btn-primary btn-sm" onClick={selectAll}>Adicionar todos do filtro ({searchResults.filter(l => !selectedLeads.some(s => s.id === l.id)).length})</button>}
                 </div>
-                <div style={{ maxHeight: 300, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ maxHeight: 280, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {searchResults.map(l => (
                     <label key={l.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 6, background: selectedLeads.some(s => s.id === l.id) ? 'rgba(255,179,0,0.08)' : 'transparent', cursor: 'pointer', fontSize: 12 }}>
                       <input type="checkbox" checked={selectedLeads.some(s => s.id === l.id)} onChange={() => toggleLead(l)} />
@@ -326,9 +399,15 @@ export default function Messages() {
                       {l.stage_name && <span style={{ fontSize: 10, color: l.stage_color || '#FFB300', marginLeft: 'auto' }}>{l.stage_name}</span>}
                     </label>
                   ))}
-                  {searchResults.length === 0 && (leadSearch.length > 1 || filterTag || filterStage) && <div style={{ padding: 20, textAlign: 'center', color: '#6B6580' }}>Nenhum lead encontrado</div>}
-                  {searchResults.length === 0 && leadSearch.length <= 1 && !filterTag && !filterStage && <div style={{ padding: 20, textAlign: 'center', color: '#6B6580' }}>Selecione uma tag, etapa, ou digite pra buscar...</div>}
+                  {searchResults.length === 0 && (leadSearch.length > 1 || filterTags.length > 0 || filterStages.length > 0) && <div style={{ padding: 20, textAlign: 'center', color: '#6B6580' }}>Nenhum lead encontrado neste filtro</div>}
+                  {searchResults.length === 0 && leadSearch.length <= 1 && filterTags.length === 0 && filterStages.length === 0 && <div style={{ padding: 20, textAlign: 'center', color: '#6B6580' }}>Selecione tags, etapas, ou digite pra buscar...</div>}
                 </div>
+                {selectedLeads.length > 0 && (
+                  <div style={{ marginTop: 6, padding: '6px 10px', background: 'rgba(255,179,0,0.05)', borderRadius: 6, fontSize: 11, color: '#9B96B0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>Total acumulado: <strong style={{ color: '#FFB300' }}>{selectedLeads.length} leads</strong></span>
+                    <button className="btn btn-secondary btn-sm" onClick={() => setSelectedLeads([])} style={{ fontSize: 10, padding: '2px 8px' }}>Limpar selecao</button>
+                  </div>
+                )}
                 <div className="modal-actions">
                   <button className="btn btn-secondary" onClick={() => setStep(1)}>Voltar</button>
                   <button className="btn btn-primary" onClick={() => setStep(3)} disabled={selectedLeads.length === 0}>Proximo ({selectedLeads.length} leads)</button>
