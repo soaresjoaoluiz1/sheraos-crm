@@ -14,6 +14,7 @@ import {
 } from '../lib/api'
 import { ArrowLeft, Phone, Mail, MapPin, MessageCircle, Send, Clock, User, GitBranch, Edit3, Save, X, Plus, StickyNote, Tag as TagIcon, ListOrdered, Zap, ClipboardList, ChevronRight, Check, Archive, ArchiveRestore, FileText } from 'lucide-react'
 import MessageMedia from '../components/MessageMedia'
+import { parseSqlDate } from '../lib/dates'
 
 export default function LeadDetail() {
   const { id } = useParams()
@@ -243,7 +244,7 @@ export default function LeadDetail() {
                   <div className="lead-info-row"><span className="lead-info-label">Fonte</span><span className="lead-info-value">{lead.source || '-'}</span></div>
                   <div className="lead-info-row"><span className="lead-info-label">Etapa</span><span className="stage-badge" style={{ background: `${currentStage?.color}20`, color: currentStage?.color }}>{currentStage?.name}</span></div>
                   <div className="lead-info-row"><span className="lead-info-label"><User size={12} /> Atendente</span><span className="lead-info-value">{lead.attendant_name || 'Nao atribuido'}</span></div>
-                  <div className="lead-info-row"><span className="lead-info-label"><Clock size={12} /> Criado</span><span className="lead-info-value">{new Date(lead.created_at).toLocaleString('pt-BR')}</span></div>
+                  <div className="lead-info-row"><span className="lead-info-label"><Clock size={12} /> Criado</span><span className="lead-info-value">{parseSqlDate(lead.created_at).toLocaleString('pt-BR')}</span></div>
                   {lead.instance_name && <div className="lead-info-row"><span className="lead-info-label" style={{ color: '#34C759' }}>WhatsApp</span><span className="lead-info-value" style={{ color: '#34C759' }}>{lead.instance_name}</span></div>}
                 </>
               )}
@@ -371,7 +372,7 @@ export default function LeadDetail() {
                   <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#FFB300', marginTop: 4, flexShrink: 0 }} />
                   <div>
                     <div style={{ color: '#fff' }}>{h.from_stage_name ? `${h.from_stage_name} → ${h.to_stage_name}` : `Entrada: ${h.to_stage_name}`}</div>
-                    <div style={{ color: '#6B6580', fontSize: 10 }}>{h.trigger_type === 'manual' ? 'Manual' : h.trigger_type}{h.user_name ? ` por ${h.user_name}` : ''} · {new Date(h.created_at).toLocaleString('pt-BR')}</div>
+                    <div style={{ color: '#6B6580', fontSize: 10 }}>{h.trigger_type === 'manual' ? 'Manual' : h.trigger_type}{h.user_name ? ` por ${h.user_name}` : ''} · {parseSqlDate(h.created_at).toLocaleString('pt-BR')}</div>
                   </div>
                 </div>
               ))}
@@ -406,7 +407,7 @@ export default function LeadDetail() {
                 {notes.map(n => (
                   <div key={n.id} style={{ padding: '10px 12px', background: 'rgba(255,179,0,0.05)', borderRadius: 8, border: '1px solid rgba(255,179,0,0.1)' }}>
                     <div style={{ fontSize: 13 }}>{n.content}</div>
-                    <div style={{ fontSize: 10, color: '#6B6580', marginTop: 4 }}>{n.user_name} · {new Date(n.created_at).toLocaleString('pt-BR')}</div>
+                    <div style={{ fontSize: 10, color: '#6B6580', marginTop: 4 }}>{n.user_name} · {parseSqlDate(n.created_at).toLocaleString('pt-BR')}</div>
                   </div>
                 ))}
                 {notes.length === 0 && <div style={{ textAlign: 'center', color: '#6B6580', padding: 30 }}>Nenhuma nota ainda</div>}
@@ -456,7 +457,7 @@ export default function LeadDetail() {
                   <div>
                     <div style={{ fontSize: 13 }}>{h.from_stage_name ? `${h.from_stage_name} → ${h.to_stage_name}` : `Entrada: ${h.to_stage_name}`}</div>
                     <div style={{ fontSize: 11, color: '#6B6580' }}>{h.trigger_type}{h.user_name ? ` por ${h.user_name}` : ''}</div>
-                    <div style={{ fontSize: 10, color: '#6B6580' }}>{new Date(h.created_at).toLocaleString('pt-BR')}</div>
+                    <div style={{ fontSize: 10, color: '#6B6580' }}>{parseSqlDate(h.created_at).toLocaleString('pt-BR')}</div>
                   </div>
                 </div>
               ))}

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { updateStandaloneTask, fetchUsers, type User as UserType } from '../lib/api'
 import { useAccount } from '../context/AccountContext'
 import { Save, X } from 'lucide-react'
+import { parseSqlDate } from '../lib/dates'
 
 interface Props {
   task: any
@@ -15,11 +16,11 @@ export default function EditTaskModal({ task, onClose, onSaved }: Props) {
   const [description, setDescription] = useState(task.description || '')
   const [dueMode, setDueMode] = useState<'date' | 'duration'>('date')
   const [dueDate, setDueDate] = useState(() => {
-    const d = task.due_datetime ? new Date(task.due_datetime) : new Date()
+    const d = task.due_datetime ? parseSqlDate(task.due_datetime) : new Date()
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   })
   const [dueTime, setDueTime] = useState(() => {
-    const d = task.due_datetime ? new Date(task.due_datetime) : new Date()
+    const d = task.due_datetime ? parseSqlDate(task.due_datetime) : new Date()
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
   })
   const [dueMinutes, setDueMinutes] = useState('10')

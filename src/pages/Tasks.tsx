@@ -10,6 +10,7 @@ import {
   ExternalLink, Clock, AlertCircle, User, Calendar, CheckCircle, Send, Edit3, FileText,
 } from 'lucide-react'
 import EditTaskModal from '../components/EditTaskModal'
+import { parseSqlDate } from '../lib/dates'
 
 const ACTION_ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
   mensagem: MessageCircle, whatsapp: MessageCircle, ligacao: Phone,
@@ -90,7 +91,7 @@ export default function Tasks() {
   }
 
   const formatDueTime = (iso: string) => {
-    const d = new Date(iso)
+    const d = parseSqlDate(iso)
     return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
   }
 
@@ -272,7 +273,7 @@ export default function Tasks() {
                   </div>
                   <div style={{ fontSize: 12, color: '#C8C4D4', marginTop: 4 }}>
                     <Clock size={11} style={{ verticalAlign: -1, marginRight: 4 }} />
-                    {new Date(confirmModal.nextStep.due_datetime).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                    {parseSqlDate(confirmModal.nextStep.due_datetime).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                     <span style={{ color: '#6B6580', marginLeft: 6 }}>
                       (D+{confirmModal.nextStep.delay_days}{confirmModal.nextStep.scheduled_time ? ` ${confirmModal.nextStep.scheduled_time}` : ''})
                     </span>

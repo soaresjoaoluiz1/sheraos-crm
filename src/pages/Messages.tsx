@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAccount } from '../context/AccountContext'
 import { fetchBroadcasts, fetchLeads, createBroadcast, sendBroadcast, fetchTags, fetchFunnels, fetchWhatsAppInstances, type Broadcast, type Lead, type Tag, type Funnel, type WhatsAppInstance } from '../lib/api'
 import { MessageCircle, Plus, Send, CheckCircle, Clock, Trash2, Filter, Tag as TagIcon, GitBranch, Smartphone, AlertTriangle, Eye, PauseCircle } from 'lucide-react'
+import { parseSqlDate } from '../lib/dates'
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
   draft: { label: 'Rascunho', color: '#9B96B0' },
@@ -199,7 +200,7 @@ export default function Messages() {
                         : <span>{b.sent_count + b.failed_count}/{b.total_count} ({pct}%)</span>}
                     </td>
                     <td className="right" style={{ color: b.failed_count > 0 ? '#FF6B6B' : undefined }}>{b.failed_count}</td>
-                    <td className="right" style={{ fontSize: 11 }}>{new Date(b.created_at).toLocaleDateString('pt-BR')}</td>
+                    <td className="right" style={{ fontSize: 11 }}>{parseSqlDate(b.created_at).toLocaleDateString('pt-BR')}</td>
                     <td className="right">
                       <div style={{ display: 'inline-flex', gap: 4 }}>
                         <button className="btn btn-secondary btn-sm btn-icon" onClick={() => navigate(`/messages/${b.id}`)} title="Ver detalhes"><Eye size={12} /></button>

@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import MessageMedia from '../components/MessageMedia'
 import { applyMessageVars } from '../lib/messageVars'
+import { parseSqlDate, formatTime } from '../lib/dates'
 
 function timeAgo(dateStr: string) {
   const diff = Date.now() - new Date(dateStr).getTime()
@@ -465,7 +466,7 @@ export default function Chat() {
                     </div>
                     <div className="chat-bubble-time">
                       {m.sender_name && <span>{m.sender_name} · </span>}
-                      <span>{new Date(m.created_at).toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                      <span>{formatTime(m.created_at)}</span>
                       {(m as any).instance_id && (() => {
                         const inst = instances.find(i => i.id === (m as any).instance_id)
                         return inst ? <span style={{ marginLeft: 4, padding: '0 5px', borderRadius: 3, background: 'rgba(255,179,0,0.12)', color: '#FFB300', fontSize: 9, fontWeight: 600 }}>via {inst.instance_name}</span> : null
@@ -631,7 +632,7 @@ export default function Chat() {
                         </div>
                         {lead.investimento_anuncios && <div><span style={{ color: '#6B6580' }}>Investimento:</span> R$ {Number(lead.investimento_anuncios).toLocaleString('pt-BR')}</div>}
                         <div><span style={{ color: '#6B6580' }}>Fonte:</span> {lead.source || '-'}</div>
-                        <div><span style={{ color: '#6B6580' }}>Criado:</span> {new Date(lead.created_at).toLocaleDateString('pt-BR')}</div>
+                        <div><span style={{ color: '#6B6580' }}>Criado:</span> {parseSqlDate(lead.created_at).toLocaleDateString('pt-BR')}</div>
                       </div>
                     ))}
                   </div>
@@ -770,7 +771,7 @@ export default function Chat() {
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                         {leadTasks.map((t: any) => {
-                          const due = new Date(t.due_datetime)
+                          const due = parseSqlDate(t.due_datetime)
                           const overdue = due.getTime() < Date.now()
                           const isCadence = t.type === 'cadence'
                           const accent = isCadence ? '#FFB300' : '#9B59B6'
@@ -892,7 +893,7 @@ export default function Chat() {
                     {notes.map(n => (
                       <div key={n.id} style={{ padding: '8px 10px', background: 'rgba(255,179,0,0.05)', borderRadius: 6, border: '1px solid rgba(255,179,0,0.1)' }}>
                         <div style={{ fontSize: 12 }}>{n.content}</div>
-                        <div style={{ fontSize: 9, color: '#6B6580', marginTop: 2 }}>{n.user_name} · {new Date(n.created_at).toLocaleString('pt-BR')}</div>
+                        <div style={{ fontSize: 9, color: '#6B6580', marginTop: 2 }}>{n.user_name} · {parseSqlDate(n.created_at).toLocaleString('pt-BR')}</div>
                       </div>
                     ))}
                     {notes.length === 0 && <div style={{ textAlign: 'center', color: '#6B6580', padding: 20, fontSize: 11 }}>Sem notas</div>}
@@ -908,7 +909,7 @@ export default function Chat() {
                       <div>
                         <div style={{ fontSize: 11 }}>{h.from_stage_name ? `${h.from_stage_name} → ${h.to_stage_name}` : `Entrada: ${h.to_stage_name}`}</div>
                         <div style={{ fontSize: 9, color: '#6B6580' }}>{h.trigger_type}{h.user_name ? ` · ${h.user_name}` : ''}</div>
-                        <div style={{ fontSize: 9, color: '#6B6580' }}>{new Date(h.created_at).toLocaleString('pt-BR')}</div>
+                        <div style={{ fontSize: 9, color: '#6B6580' }}>{parseSqlDate(h.created_at).toLocaleString('pt-BR')}</div>
                       </div>
                     </div>
                   ))}

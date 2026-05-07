@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useAccount } from '../context/AccountContext'
 import { fetchBroadcast, sendBroadcast, resumeBroadcast, type Broadcast, type BroadcastRecipient } from '../lib/api'
 import { ArrowLeft, Send, Smartphone, Clock, CheckCircle, XCircle, AlertTriangle, PauseCircle, RefreshCw, Calendar } from 'lucide-react'
+import { parseSqlDate, formatDateTime as formatDateTimeUtc } from '../lib/dates'
 
 const STATUS_COLOR: Record<string, string> = {
   pending: '#9B96B0',
@@ -17,7 +18,7 @@ const STATUS_LABEL: Record<string, string> = {
 
 function formatDateTime(s: string | null | undefined) {
   if (!s) return '—'
-  return new Date(s).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return formatDateTimeUtc(s)
 }
 
 function formatDuration(seconds: number): string {
@@ -91,7 +92,7 @@ export default function BroadcastDetail() {
   // Tempo decorrido (se started_at existe)
   let elapsedSec = 0
   if (broadcast.started_at) {
-    elapsedSec = Math.floor((Date.now() - new Date(broadcast.started_at).getTime()) / 1000)
+    elapsedSec = Math.floor((Date.now() - parseSqlDate(broadcast.started_at).getTime()) / 1000)
     if (elapsedSec < 0) elapsedSec = 0
   }
 
