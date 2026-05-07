@@ -348,6 +348,14 @@ addColumnIfNotExists('leads', 'instance_id', 'INTEGER REFERENCES whatsapp_instan
 // accounts: Evolution API credentials (shared across all instances)
 addColumnIfNotExists('accounts', 'evolution_api_url', 'TEXT')
 addColumnIfNotExists('accounts', 'evolution_api_key', 'TEXT')
+
+// Defaults centralizados da Evolution API (ja preenche em todas contas)
+export const DEFAULT_EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://127.0.0.1:8080'
+export const DEFAULT_EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || 'dros-evo-key-2026'
+
+// Backfill: aplica defaults em contas que ainda nao tem credenciais salvas
+db.prepare("UPDATE accounts SET evolution_api_url = ? WHERE evolution_api_url IS NULL OR evolution_api_url = ''").run(DEFAULT_EVOLUTION_API_URL)
+db.prepare("UPDATE accounts SET evolution_api_key = ? WHERE evolution_api_key IS NULL OR evolution_api_key = ''").run(DEFAULT_EVOLUTION_API_KEY)
 // cadence_attempts: D+N days from lead creation + scheduled time
 addColumnIfNotExists('cadence_attempts', 'delay_days', 'INTEGER NOT NULL DEFAULT 0')
 addColumnIfNotExists('cadence_attempts', 'scheduled_time', 'TEXT')

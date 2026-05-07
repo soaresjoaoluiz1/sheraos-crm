@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import db from '../db.js'
+import db, { DEFAULT_EVOLUTION_API_URL, DEFAULT_EVOLUTION_API_KEY } from '../db.js'
 import { requireRole } from '../middleware/auth.js'
 
 const router = Router()
@@ -25,9 +25,9 @@ router.post('/', requireRole('super_admin'), (req, res) => {
   if (existing) return res.status(400).json({ error: 'Conta com esse nome ja existe' })
 
   const result = db.prepare(`
-    INSERT INTO accounts (name, slug, logo_url, cnpj, razao_social, segmento, website, instagram, whatsapp_comercial, valor_mensal, contrato_inicio, cidade, estado, observacoes, trabalha_anuncio, investimento_anuncios)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(name, slug, logo_url || null, cnpj || null, razao_social || null, segmento || null, website || null, instagram || null, whatsapp_comercial || null, valor_mensal || null, contrato_inicio || null, cidade || null, estado || null, observacoes || null, trabalha_anuncio ? 1 : 0, investimento_anuncios || null)
+    INSERT INTO accounts (name, slug, logo_url, cnpj, razao_social, segmento, website, instagram, whatsapp_comercial, valor_mensal, contrato_inicio, cidade, estado, observacoes, trabalha_anuncio, investimento_anuncios, evolution_api_url, evolution_api_key)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(name, slug, logo_url || null, cnpj || null, razao_social || null, segmento || null, website || null, instagram || null, whatsapp_comercial || null, valor_mensal || null, contrato_inicio || null, cidade || null, estado || null, observacoes || null, trabalha_anuncio ? 1 : 0, investimento_anuncios || null, DEFAULT_EVOLUTION_API_URL, DEFAULT_EVOLUTION_API_KEY)
 
   // Create default funnel with standard stages
   const funnelResult = db.prepare('INSERT INTO funnels (account_id, name, is_default) VALUES (?, ?, 1)').run(result.lastInsertRowid, 'Funil Principal')

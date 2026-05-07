@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import fetch from 'node-fetch'
-import db from '../db.js'
+import db, { DEFAULT_EVOLUTION_API_URL, DEFAULT_EVOLUTION_API_KEY } from '../db.js'
 import { requireRole } from '../middleware/auth.js'
 import { runPollNow } from '../scheduler.js'
 
@@ -20,7 +20,11 @@ function getOwnedInstance(req, res) {
 router.get('/evolution-config', requireRole('super_admin', 'gerente'), (req, res) => {
   if (!req.accountId) return res.status(400).json({ error: 'account_id required' })
   const account = db.prepare('SELECT evolution_api_url, evolution_api_key FROM accounts WHERE id = ?').get(req.accountId)
-  res.json({ api_url: account?.evolution_api_url || '', api_key: account?.evolution_api_key || '' })
+  // Fallback pros defaults se a conta nao tiver config propria salva
+  res.json({
+    api_url: account?.evolution_api_url || DEFAULT_EVOLUTION_API_URL,
+    api_key: account?.evolution_api_key || DEFAULT_EVOLUTION_API_KEY,
+  })
 })
 
 // ─── Save Evolution API config for account ───────────────────────
