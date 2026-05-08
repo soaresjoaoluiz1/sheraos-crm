@@ -433,29 +433,19 @@ function onChange(e) {
 
   var headers = sheet.getRange(HEADER_ROW, 1, 1, sheet.getLastColumn()).getValues()[0];
 
-  // Primeira execucao: cria coluna "crm_enviado" e marca leads existentes como IGNORADO_INICIAL
-  // (so processa leads que entrarem DEPOIS de ativar a integracao)
+  // Encontrar ou criar coluna "crm_enviado"
   var sentIdx = headers.indexOf('crm_enviado');
   if (sentIdx === -1) {
     sentIdx = headers.length;
     sheet.getRange(HEADER_ROW, sentIdx + 1).setValue('crm_enviado');
     headers.push('crm_enviado');
-    // Marca todas as linhas atuais como ignoradas
-    var rowsToSkip = lastRow - HEADER_ROW;
-    if (rowsToSkip > 0) {
-      var skipMarks = [];
-      for (var i = 0; i < rowsToSkip; i++) skipMarks.push(['IGNORADO_INICIAL']);
-      sheet.getRange(HEADER_ROW + 1, sentIdx + 1, rowsToSkip, 1).setValues(skipMarks);
-      Logger.log('Primeira execucao: ' + rowsToSkip + ' leads existentes marcados como IGNORADO_INICIAL. Apenas leads novos serao enviados ao CRM.');
-    }
-    return; // sai sem processar — proxima execucao captura novos leads
   }
   SENT_COL = sentIdx + 1;
 
   // Processar todas as linhas nao enviadas
   for (var row = HEADER_ROW + 1; row <= lastRow; row++) {
     var sent = sheet.getRange(row, SENT_COL).getValue();
-    if (sent) continue; // ja enviado ou marcado como IGNORADO_INICIAL
+    if (sent) continue; // ja enviado
 
     var data = sheet.getRange(row, 1, 1, headers.length).getValues()[0];
     var payload = {};
