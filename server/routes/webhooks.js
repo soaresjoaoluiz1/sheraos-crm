@@ -198,27 +198,35 @@ router.post('/evolution/:accountSlug', (req, res) => {
     }
     if (!phone) return res.json({ ok: true })
 
+    // Quando fromMe=true, o pushName e o nome de quem ENVIOU (atendente/operador da conta WhatsApp),
+    // nao do lead. Nao podemos usar como nome do lead — fallback pra telefone.
+    const leadName = fromMe ? '' : pushName
+
     // Get or create lead
     let lead, isNew
     if (isLid) {
-      // @lid: first try by LID jid, then by pushName in same account
+      // @lid: first try by LID jid, then by pushName in same account (so quando NAO e fromMe)
       lead = db.prepare('SELECT * FROM leads WHERE account_id = ? AND wa_remote_jid = ?').get(account.id, dedupJid)
-      if (!lead && pushName) {
-        lead = db.prepare('SELECT * FROM leads WHERE account_id = ? AND name = ?').get(account.id, pushName)
+      if (!lead && leadName) {
+        lead = db.prepare('SELECT * FROM leads WHERE account_id = ? AND name = ?').get(account.id, leadName)
         if (lead) {
           // Link LID to existing lead for future lookups
           db.prepare("UPDATE leads SET wa_remote_jid = ?, updated_at = datetime('now') WHERE id = ?").run(dedupJid, lead.id)
         }
       }
+      if (!lead && fromMe) {
+        // fromMe pra @lid sem lead existente: nao temos info real, ignora
+        return res.json({ ok: true })
+      }
       if (!lead) {
         // Create new lead with LID (no real phone)
-        const r = getOrCreateLead(account.id, null, pushName, 'whatsapp', dedupJid, waInstance?.id || null)
+        const r = getOrCreateLead(account.id, null, leadName, 'whatsapp', dedupJid, waInstance?.id || null)
         lead = r.lead; isNew = r.isNew
       } else {
         isNew = false
       }
     } else {
-      const r = getOrCreateLead(account.id, phone, pushName, 'whatsapp', dedupJid, waInstance?.id || null)
+      const r = getOrCreateLead(account.id, phone, leadName, 'whatsapp', dedupJid, waInstance?.id || null)
       lead = r.lead; isNew = r.isNew
     }
     if (!lead) return res.json({ ok: true })
@@ -262,9 +270,10 @@ router.post('/evolution/:accountSlug', (req, res) => {
     // Inbound messages from client don't auto-advance (attendant controls flow)
     if (fromMe && content) autoDetectStage(lead, content)
 
-    // Update lead name if we have pushName and lead has no name
-    if (!lead.name && pushName) {
-      db.prepare('UPDATE leads SET name = ? WHERE id = ? AND name IS NULL').run(pushName, lead.id)
+    // Update lead name if we have pushName REAL (nao fromMe) e lead nao tem nome
+    // OU lead tem nome igual ao telefone (placeholder), trocar pelo pushName real
+    if (leadName && (!lead.name || lead.name === lead.phone || lead.name === 'Sem nome')) {
+      db.prepare('UPDATE leads SET name = ? WHERE id = ?').run(leadName, lead.id)
     }
 
     // Broadcast SSE — archived leads mark activity silently, don't show up in pipeline/chat
