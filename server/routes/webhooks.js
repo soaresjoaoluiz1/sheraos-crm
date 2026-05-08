@@ -383,7 +383,17 @@ router.post('/sheets/:accountSlug', (req, res) => {
     const empresa = body.empresa || ''
     const cpf_cnpj = body.cpf_cnpj || body.cpf || body.cnpj || ''
     const instagram = body.instagram || ''
-    const source = body.source || body.fonte || body.form_name || 'google_sheets'
+    // Detecta se eh campanha do Meta/FB (tem campaign_name, ad_name, etc) — auto-classifica fonte
+    const platform = String(body.platform || '').toLowerCase()
+    const isOrganic = String(body.is_organic || '').toLowerCase() === 'true'
+    const hasCampaignData = body.campaign_name || body.ad_name || body.adset_name || body.campaign_id || body.ad_id
+    let autoSource = 'google_sheets'
+    if (hasCampaignData && !isOrganic) {
+      autoSource = platform === 'ig' ? 'instagram_ads' : platform === 'fb' ? 'facebook_ads' : 'meta_ads'
+    } else if (platform === 'ig' || platform === 'fb') {
+      autoSource = platform === 'ig' ? 'instagram_organico' : 'facebook_organico'
+    }
+    const source = body.source || body.fonte || body.form_name || autoSource
     const source_detail = body.source_detail || [body.campaign_name, body.adset_name, body.ad_name].filter(Boolean).join(' > ') || ''
 
     if (!name && !phone) return res.status(400).json({ error: 'name ou phone obrigatorio' })
@@ -414,15 +424,37 @@ router.post('/sheets/:accountSlug', (req, res) => {
     }
 
     // Collect custom/dynamic fields (Facebook form questions, etc)
-    const knownKeys = new Set(['name','first_name','last_name','full_name','nome','phone','phone_number','telefone','whatsapp','celular','email','city','cidade','empresa','cpf_cnpj','cpf','cnpj','instagram','source','fonte','form_name','source_detail','campaign_name','campaign_id','adset_name','adset_id','ad_name','ad_id','form_id','id','created_time','is_organic','platform','lead_status','crm_enviado'])
+    const knownKeys = new Set(['name','first_name','last_name','full_name','nome','phone','phone_number','telefone','whatsapp','celular','email','city','cidade','empresa','cpf_cnpj','cpf','cnpj','instagram','source','fonte','form_name','source_detail','campaign_name','campaign_id','adset_name','adset_id','ad_name','ad_id','form_id','id','created_time','is_organic','platform','lead_status','crm_enviado','stage_name','stage','etapa'])
     const customFields = Object.entries(body)
       .filter(([k, v]) => !knownKeys.has(k) && v && String(v).trim())
       .map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`)
       .join('\n')
 
-    if (customFields) {
+    // Bloco de identificacao de origem Meta/FB Ads — vai pro topo das observacoes
+    const adsBlock = []
+    if (hasCampaignData) {
+      const platformLabel = platform === 'ig' ? 'Instagram Ads' : platform === 'fb' ? 'Facebook Ads' : 'Meta Ads'
+      const tag = isOrganic ? 'Organico' : platformLabel
+      adsBlock.push(`📢 ${tag}`)
+      if (body.campaign_name) adsBlock.push(`Campanha: ${body.campaign_name}`)
+      if (body.adset_name) adsBlock.push(`Conjunto: ${body.adset_name}`)
+      if (body.ad_name) adsBlock.push(`Anuncio: ${body.ad_name}`)
+      if (body.form_name) adsBlock.push(`Formulario: ${body.form_name}`)
+    } else if (platform === 'ig' || platform === 'fb') {
+      // Tem platform mas sem campaign data — provavelmente organico
+      adsBlock.push(`📢 ${platform === 'ig' ? 'Instagram (Organico)' : 'Facebook (Organico)'}`)
+    }
+
+    const adsHeader = adsBlock.length > 0 ? adsBlock.join('\n') : ''
+    const newContent = [adsHeader, customFields].filter(Boolean).join('\n\n')
+
+    if (newContent) {
       const existing = db.prepare('SELECT notes FROM leads WHERE id = ?').get(lead.id)
-      const newNotes = existing?.notes ? existing.notes + '\n' + customFields : customFields
+      // Se ja tem ads header igual, nao duplica (lead reimportado)
+      const alreadyHas = existing?.notes && adsHeader && existing.notes.includes(adsHeader)
+      const newNotes = existing?.notes
+        ? (alreadyHas ? existing.notes : existing.notes + '\n\n' + newContent)
+        : newContent
       db.prepare('UPDATE leads SET notes = ? WHERE id = ?').run(newNotes, lead.id)
     }
 
