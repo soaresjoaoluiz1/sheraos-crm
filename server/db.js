@@ -415,6 +415,8 @@ addColumnIfNotExists('broadcasts', 'started_at', 'TEXT')
 addColumnIfNotExists('leads', 'last_instance_id', 'INTEGER REFERENCES whatsapp_instances(id) ON DELETE SET NULL')
 // users.primary_instance_id: instancia padrao do usuario para envios manuais quando lead nao tem instancia
 addColumnIfNotExists('users', 'primary_instance_id', 'INTEGER REFERENCES whatsapp_instances(id) ON DELETE SET NULL')
+// users.can_manage_proposals: permissao granular pra acessar a area de Propostas (super_admin sempre tem)
+addColumnIfNotExists('users', 'can_manage_proposals', 'INTEGER NOT NULL DEFAULT 0')
 // messages.instance_id: qual instancia enviou/recebeu cada mensagem (mostrado internamente no chat)
 addColumnIfNotExists('messages', 'instance_id', 'INTEGER REFERENCES whatsapp_instances(id) ON DELETE SET NULL')
 

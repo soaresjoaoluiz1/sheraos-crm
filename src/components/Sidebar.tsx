@@ -91,6 +91,15 @@ export default function Sidebar() {
             </>
           )}
 
+          {!isAdmin && (user as any).can_manage_proposals === 1 && (
+            <>
+              <div className="nav-section">Comercial</div>
+              <NavLink to="/admin/propostas" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={closeMobile}>
+                <FileText size={16} /> Propostas
+              </NavLink>
+            </>
+          )}
+
           {(isGerente || isAdmin) && <div className="nav-section">Gestao</div>}
           {(isGerente || isAdmin) && (
             <NavLink to="/dashboard" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={closeMobile}>

@@ -36,12 +36,12 @@ router.post('/login', rateLimit, (req, res) => {
 
   res.json({
     token,
-    user: { id: user.id, email: user.email, name: user.name, role: user.role, account_id: user.account_id },
+    user: { id: user.id, email: user.email, name: user.name, role: user.role, account_id: user.account_id, can_manage_proposals: user.can_manage_proposals || 0 },
   })
 })
 
 router.get('/me', authenticate, (req, res) => {
-  const user = db.prepare('SELECT id, email, name, role, account_id, avatar_url FROM users WHERE id = ?').get(req.user.id)
+  const user = db.prepare('SELECT id, email, name, role, account_id, avatar_url, can_manage_proposals FROM users WHERE id = ?').get(req.user.id)
   if (!user) return res.status(401).json({ error: 'User not found' })
   res.json({ user })
 })

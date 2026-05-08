@@ -35,6 +35,7 @@ function AppRoutes() {
 
   const isAdmin = user.role === 'super_admin'
   const isGerente = user.role === 'gerente'
+  const canManageProposals = isAdmin || (user as any).can_manage_proposals === 1
   const homeRoute = isAdmin ? '/admin/dashboard' : isGerente ? '/dashboard' : '/pipeline'
 
   return (
@@ -53,8 +54,8 @@ function AppRoutes() {
             <Route path="/admin/clients" element={<AdminClients />} />
             <Route path="/admin/clients/:id" element={<AdminClientDetail />} />
             <Route path="/admin/users" element={<AdminUsers />} />
-            <Route path="/admin/propostas" element={<Propostas />} />
           </>}
+          {canManageProposals && <Route path="/admin/propostas" element={<Propostas />} />}
 
           {/* Gerente + Admin routes */}
           {(isGerente || isAdmin) && <>

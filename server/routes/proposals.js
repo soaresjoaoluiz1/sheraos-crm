@@ -75,9 +75,16 @@ export function publicProposalHandler(req, res) {
   }
 }
 
-// Authenticated router (super_admin only) — montado em /api/proposals
+// Authenticated router — super_admin OU quem tem permissao can_manage_proposals
 const router = Router()
-router.use(requireRole('super_admin'))
+router.use((req, res, next) => {
+  if (!req.user) return res.status(401).json({ error: 'Nao autenticado' })
+  if (req.user.role === 'super_admin') return next()
+  // Consulta o banco pra pegar a flag atual (permite revogar sem precisar relogar)
+  const u = db.prepare('SELECT can_manage_proposals FROM users WHERE id = ?').get(req.user.id)
+  if (u?.can_manage_proposals === 1) return next()
+  return res.status(403).json({ error: 'Sem permissao para gerenciar propostas' })
+})
 
 router.get('/', (req, res) => {
   const proposals = db.prepare(`
