@@ -390,6 +390,20 @@ router.post('/sheets/:accountSlug', (req, res) => {
     if (instagram) db.prepare('UPDATE leads SET instagram = COALESCE(instagram, ?) WHERE id = ?').run(instagram, lead.id)
     if (source_detail) db.prepare('UPDATE leads SET source_detail = COALESCE(source_detail, ?) WHERE id = ?').run(source_detail, lead.id)
 
+    // Movimentacao opcional pra etapa especifica do funil (case-insensitive, ignora acentos)
+    const stageName = body.stage_name || body.stage || body.etapa || ''
+    if (stageName && lead.funnel_id) {
+      const norm = (s) => String(s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+      const target = norm(stageName)
+      const stages = db.prepare('SELECT id, name FROM funnel_stages WHERE funnel_id = ?').all(lead.funnel_id)
+      const match = stages.find(s => norm(s.name) === target)
+      if (match && match.id !== lead.stage_id) {
+        const prevStage = lead.stage_id
+        db.prepare("UPDATE leads SET stage_id = ?, updated_at = datetime('now') WHERE id = ?").run(match.id, lead.id)
+        db.prepare('INSERT INTO stage_history (lead_id, from_stage_id, to_stage_id, trigger_type) VALUES (?, ?, ?, ?)').run(lead.id, prevStage, match.id, 'webhook')
+      }
+    }
+
     // Collect custom/dynamic fields (Facebook form questions, etc)
     const knownKeys = new Set(['name','first_name','last_name','full_name','nome','phone','phone_number','telefone','whatsapp','celular','email','city','cidade','empresa','cpf_cnpj','cpf','cnpj','instagram','source','fonte','form_name','source_detail','campaign_name','campaign_id','adset_name','adset_id','ad_name','ad_id','form_id','id','created_time','is_organic','platform','lead_status','crm_enviado'])
     const customFields = Object.entries(body)
