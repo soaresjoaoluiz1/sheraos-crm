@@ -365,8 +365,10 @@ router.post('/sheets/:accountSlug', (req, res) => {
 
     const body = req.body
     // Extract known fields (supports both PT-BR and Facebook format)
-    const name = body.name || body.first_name || body.nome || ''
-    const phone = body.phone || body.phone_number || body.telefone || body.whatsapp || body.celular || ''
+    const name = body.name || body.first_name || body.nome || body.full_name || ''
+    // Phone: remove prefixos comuns dos forms Meta (p:, p:+, +) — deixa so digitos com 55 prefix se for BR
+    const phoneRaw = body.phone || body.phone_number || body.telefone || body.whatsapp || body.celular || ''
+    let phone = String(phoneRaw).replace(/^\s*p\s*:\s*/i, '').replace(/[^\d+]/g, '').replace(/^\+/, '')
     const email = body.email || ''
     const city = body.city || body.cidade || ''
     const empresa = body.empresa || ''
@@ -389,7 +391,7 @@ router.post('/sheets/:accountSlug', (req, res) => {
     if (source_detail) db.prepare('UPDATE leads SET source_detail = COALESCE(source_detail, ?) WHERE id = ?').run(source_detail, lead.id)
 
     // Collect custom/dynamic fields (Facebook form questions, etc)
-    const knownKeys = new Set(['name','first_name','nome','phone','phone_number','telefone','whatsapp','celular','email','city','cidade','empresa','cpf_cnpj','cpf','cnpj','instagram','source','fonte','form_name','source_detail','campaign_name','campaign_id','adset_name','adset_id','ad_name','ad_id','form_id','id','created_time','is_organic','platform','lead_status'])
+    const knownKeys = new Set(['name','first_name','last_name','full_name','nome','phone','phone_number','telefone','whatsapp','celular','email','city','cidade','empresa','cpf_cnpj','cpf','cnpj','instagram','source','fonte','form_name','source_detail','campaign_name','campaign_id','adset_name','adset_id','ad_name','ad_id','form_id','id','created_time','is_organic','platform','lead_status','crm_enviado'])
     const customFields = Object.entries(body)
       .filter(([k, v]) => !knownKeys.has(k) && v && String(v).trim())
       .map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`)

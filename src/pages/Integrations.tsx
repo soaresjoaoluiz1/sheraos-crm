@@ -420,6 +420,14 @@ const SHEET_NAME = ${trimmedTab ? `'${trimmedTab.replace(/'/g, "\\'")}'` : `''`}
 const HEADER_ROW = 1;
 var SENT_COL = null; // coluna "enviado" (criada automaticamente)
 
+// Normaliza nome de coluna: "First Name" → "first_name", "Cidade?" → "cidade"
+function normalizeKey(s) {
+  return String(s || '').trim().toLowerCase()
+    .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '') // remove acentos
+    .replace(/\\s+/g, '_')
+    .replace(/[^a-z0-9_]/g, '');
+}
+
 function onChange(e) {
   var sheet = SHEET_NAME
     ? SpreadsheetApp.getActive().getSheetByName(SHEET_NAME)
@@ -450,16 +458,17 @@ function onChange(e) {
     var data = sheet.getRange(row, 1, 1, headers.length).getValues()[0];
     var payload = {};
 
-    // Envia TODOS os campos — o CRM separa automaticamente
+    // Envia TODOS os campos com chave normalizada (mantem original se nao normaliza)
     headers.forEach(function(h, i) {
-      if (h && h !== 'crm_enviado' && data[i] !== '' && data[i] != null) {
-        payload[String(h).trim()] = String(data[i]).trim();
+      if (h && data[i] !== '' && data[i] != null) {
+        var key = normalizeKey(h);
+        if (key && key !== 'crm_enviado') payload[key] = String(data[i]).trim();
       }
     });
 
     // Precisa ter pelo menos nome ou telefone
-    var hasName = payload.first_name || payload.nome || payload.name;
-    var hasPhone = payload.phone_number || payload.telefone || payload.phone;
+    var hasName = payload.first_name || payload.nome || payload.name || payload.full_name;
+    var hasPhone = payload.phone_number || payload.telefone || payload.phone || payload.whatsapp || payload.celular;
     if (!hasName && !hasPhone) continue;
 
     try {
