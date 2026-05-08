@@ -173,6 +173,41 @@ router.post('/evolution/:accountSlug', (req, res) => {
       mediaType = 'sticker'; mediaUrl = msg.stickerMessage.url || null; content = '[Sticker]'
     }
 
+    // ─── Detecta click-to-WhatsApp Ad (CTWA) — lead veio de campanha de mensagem
+    // Baileys/Evolution coloca contextInfo.externalAdReply em qualquer tipo de msg
+    function getCtwaInfo(message) {
+      const ctxs = [
+        message.extendedTextMessage?.contextInfo,
+        message.imageMessage?.contextInfo,
+        message.videoMessage?.contextInfo,
+        message.audioMessage?.contextInfo,
+        message.documentMessage?.contextInfo,
+        message.stickerMessage?.contextInfo,
+        message.contextInfo,
+      ].filter(Boolean)
+      for (const ctx of ctxs) {
+        const ad = ctx.externalAdReply
+        if (ad) return ad
+      }
+      return null
+    }
+    function detectAdSource(ad) {
+      if (!ad) return null
+      const src = String(ad.sourceType || '').toLowerCase()
+      const url = String(ad.sourceUrl || '').toLowerCase()
+      const isPaid = src === 'ad' || src === 'cta_url' || !!ad.ctwaClid
+      // Plataforma pelo URL ou outras dicas
+      let platform = ''
+      if (url.includes('instagram')) platform = 'Instagram'
+      else if (url.includes('facebook') || url.includes('fb.') || url.includes('fb.me')) platform = 'Facebook'
+      // Se nao deu pra detectar e tem ctwaClid (vem de Meta sempre), deixa generico
+      if (!platform && ad.ctwaClid) platform = 'Meta'
+      if (!platform) return null
+      return isPaid ? `${platform} Pago` : platform
+    }
+    const adInfo = getCtwaInfo(msg)
+    const adSourceLabel = detectAdSource(adInfo) // ex: "Facebook Pago", "Instagram", null
+
     // Skip groups, status, broadcasts
     if (!remoteJid || remoteJid.includes('@g.us') || remoteJid.includes('@broadcast') || remoteJid.includes('status@')) {
       return res.json({ ok: true })
@@ -220,16 +255,28 @@ router.post('/evolution/:accountSlug', (req, res) => {
       }
       if (!lead) {
         // Create new lead with LID (no real phone)
-        const r = getOrCreateLead(account.id, null, leadName, 'whatsapp', dedupJid, waInstance?.id || null)
+        const sourceForNew = adSourceLabel || 'whatsapp'
+        const r = getOrCreateLead(account.id, null, leadName, sourceForNew, dedupJid, waInstance?.id || null)
         lead = r.lead; isNew = r.isNew
       } else {
         isNew = false
       }
     } else {
-      const r = getOrCreateLead(account.id, phone, leadName, 'whatsapp', dedupJid, waInstance?.id || null)
+      const sourceForNew = adSourceLabel || 'whatsapp'
+      const r = getOrCreateLead(account.id, phone, leadName, sourceForNew, dedupJid, waInstance?.id || null)
       lead = r.lead; isNew = r.isNew
     }
     if (!lead) return res.json({ ok: true })
+
+    // Se identificamos uma fonte de Ad e o lead ainda esta com source=whatsapp, atualiza pra fonte real
+    if (adSourceLabel && lead.source === 'whatsapp') {
+      db.prepare("UPDATE leads SET source = ? WHERE id = ?").run(adSourceLabel, lead.id)
+      // Tambem grava source_detail com info da campanha (titulo do anuncio)
+      if (adInfo?.title || adInfo?.body) {
+        const detail = [adInfo.title, adInfo.body].filter(Boolean).join(' — ').substring(0, 250)
+        db.prepare("UPDATE leads SET source_detail = COALESCE(source_detail, ?) WHERE id = ?").run(detail, lead.id)
+      }
+    }
 
     // Fetch profile picture in background (no await)
     if (waInstance && (isNew || !lead.profile_pic_url)) {
