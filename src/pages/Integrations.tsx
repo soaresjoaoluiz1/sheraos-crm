@@ -26,6 +26,8 @@ export default function Integrations() {
   const [savingConfig, setSavingConfig] = useState(false)
   const [accountSlug, setAccountSlug] = useState('')
   const [sheetsCopied, setSheetsCopied] = useState(false)
+  const [sheetsTabName, setSheetsTabName] = useState('')
+  const [scriptCopied, setScriptCopied] = useState(false)
   const [users, setUsers] = useState<UserType[]>([])
 
   useEffect(() => {
@@ -372,6 +374,23 @@ export default function Integrations() {
               </div>
             </div>
 
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 11, color: '#9B96B0', display: 'block', marginBottom: 4 }}>
+                Nome da aba especifica <span style={{ color: '#6B6580' }}>(opcional)</span>
+              </label>
+              <input
+                className="input"
+                value={sheetsTabName}
+                onChange={e => setSheetsTabName(e.target.value)}
+                placeholder="Ex: Leads Formulario (deixe em branco se a planilha tem so 1 aba)"
+                style={{ fontSize: 12 }}
+              />
+              <div style={{ fontSize: 10, color: '#6B6580', marginTop: 4 }}>
+                Use isso quando a planilha tem <strong>varias abas</strong> e voce quer que so uma seja monitorada.
+                Se deixar em branco, o script usa a aba ativa no momento da edicao (comportamento padrao).
+              </div>
+            </div>
+
             <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-subtle)', borderRadius: 8, padding: 14 }}>
               <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Como configurar:</div>
               <ol style={{ fontSize: 11, color: '#9B96B0', lineHeight: 1.8, paddingLeft: 16, margin: 0 }}>
@@ -380,6 +399,7 @@ export default function Integrations() {
                 <li>Colunas reconhecidas automaticamente: <strong style={{ color: '#FFB300' }}>first_name, phone_number, email, cidade, empresa, instagram</strong></li>
                 <li>Perguntas personalizadas do formulario Meta sao salvas nas <strong>observacoes</strong> do lead</li>
                 <li>Dados de campanha (campaign_name, ad_name) sao salvos como fonte</li>
+                {sheetsTabName.trim() && <li>Script vai monitorar <strong style={{ color: '#FFB300' }}>so a aba "{sheetsTabName.trim()}"</strong> — confira que o nome ta exato (acentos, maiusculas)</li>}
                 <li>Menu: <strong>Extensoes → Apps Script</strong> → cole o script abaixo</li>
                 <li>Configure o trigger: <strong>relogio → adicionar gatilho → onChange → Da planilha</strong></li>
                 <li>Pronto! Cada nova linha cria um lead no CRM automaticamente</li>
@@ -388,14 +408,26 @@ export default function Integrations() {
 
             <details style={{ marginTop: 12 }}>
               <summary style={{ fontSize: 12, color: '#FFB300', cursor: 'pointer', fontWeight: 600 }}>Ver script do Apps Script (clique pra expandir)</summary>
-              <pre style={{ marginTop: 8, padding: 12, background: '#0A0118', borderRadius: 8, fontSize: 10, color: '#C8C4D4', overflow: 'auto', maxHeight: 400, whiteSpace: 'pre-wrap' }}>{`// Cole este script no Apps Script da sua planilha
+              {(() => {
+                const trimmedTab = sheetsTabName.trim()
+                const sheetSelector = trimmedTab
+                  ? `SpreadsheetApp.getActive().getSheetByName(SHEET_NAME)`
+                  : `SpreadsheetApp.getActiveSheet()`
+                const script = `// Cole este script no Apps Script da sua planilha
 // Funciona com planilhas do Facebook Ads e qualquer formato
 const WEBHOOK_URL = 'https://drosagencia.com.br/crm/api/webhooks/sheets/${accountSlug}';
+const SHEET_NAME = ${trimmedTab ? `'${trimmedTab.replace(/'/g, "\\'")}'` : `''`}; // deixe vazio pra usar a aba ativa
 const HEADER_ROW = 1;
 var SENT_COL = null; // coluna "enviado" (criada automaticamente)
 
 function onChange(e) {
-  var sheet = SpreadsheetApp.getActiveSheet();
+  var sheet = SHEET_NAME
+    ? SpreadsheetApp.getActive().getSheetByName(SHEET_NAME)
+    : SpreadsheetApp.getActiveSheet();
+  if (!sheet) {
+    Logger.log('Aba "' + SHEET_NAME + '" nao encontrada — verifique o nome no script');
+    return;
+  }
   var lastRow = sheet.getLastRow();
   if (lastRow <= HEADER_ROW) return;
 
@@ -447,7 +479,20 @@ function onChange(e) {
       sheet.getRange(row, SENT_COL).setValue('ERRO: ' + err.message);
     }
   }
-}`}</pre>
+}`
+                return (
+                  <>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      style={{ marginTop: 8, marginBottom: 6 }}
+                      onClick={() => { navigator.clipboard.writeText(script); setScriptCopied(true); setTimeout(() => setScriptCopied(false), 2000) }}
+                    >
+                      {scriptCopied ? <><Check size={12} /> Script copiado</> : <><Copy size={12} /> Copiar script</>}
+                    </button>
+                    <pre style={{ padding: 12, background: '#0A0118', borderRadius: 8, fontSize: 10, color: '#C8C4D4', overflow: 'auto', maxHeight: 400, whiteSpace: 'pre-wrap' }}>{script}</pre>
+                  </>
+                )
+              })()}
             </details>
           </div>
         </section>
