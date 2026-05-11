@@ -102,7 +102,7 @@ export default function Chat() {
   const loadLeadsList = useCallback(() => {
     if (!accountId) return
     const filters: any = { limit: 200 }
-    if (showArchived) filters.show_archived = 'all'
+    if (showArchived) filters.show_archived = '1'
     fetchLeads(accountId, filters).then(data => {
       const filtered = selectedInstance === 'all' ? data.leads : data.leads.filter(l => l.instance_id === selectedInstance)
       setLeads(filtered)

@@ -34,7 +34,7 @@ function normalizePhone(p) {
 
 function getOrCreateLead(accountId, phone, name, source, waJid, instanceId) {
   phone = normalizePhone(phone)
-  // Find existing by phone or wa_remote_jid (prefer non-archived; if all archived, take most recent)
+  // Procura lead existente (priorizando NAO arquivado; se so achar arquivado, retorna mesmo assim mas SEM desarquivar)
   let lead = null
   if (waJid) lead = db.prepare('SELECT * FROM leads WHERE account_id = ? AND wa_remote_jid = ? ORDER BY is_archived ASC, created_at DESC LIMIT 1').get(accountId, waJid)
   if (!lead && phone) lead = db.prepare('SELECT * FROM leads WHERE account_id = ? AND phone = ? ORDER BY is_archived ASC, created_at DESC LIMIT 1').get(accountId, phone)
@@ -44,10 +44,10 @@ function getOrCreateLead(accountId, phone, name, source, waJid, instanceId) {
     if (instanceId && !lead.instance_id) {
       db.prepare('UPDATE leads SET instance_id = ? WHERE id = ?').run(instanceId, lead.id)
     }
-    // Unarchive if needed (client sent new message — relevant again)
+    // Se esta arquivado: NAO desarquiva (so manual). Apenas marca has_new_after_archive
+    // pra atendente saber que tem msg nova no lead arquivado (badge no /archived)
     if (lead.is_archived) {
-      db.prepare("UPDATE leads SET is_archived = 0, archived_at = NULL, has_new_after_archive = 1, updated_at = datetime('now') WHERE id = ?").run(lead.id)
-      lead.is_archived = 0
+      db.prepare("UPDATE leads SET has_new_after_archive = 1, updated_at = datetime('now') WHERE id = ?").run(lead.id)
     }
     return { lead, isNew: false }
   }
@@ -259,6 +259,10 @@ router.post('/evolution/:accountSlug', (req, res) => {
         const r = getOrCreateLead(account.id, null, leadName, sourceForNew, dedupJid, waInstance?.id || null)
         lead = r.lead; isNew = r.isNew
       } else {
+        // Se arquivado, marca has_new_after_archive mas NAO desarquiva (so manual)
+        if (lead.is_archived && !fromMe) {
+          db.prepare("UPDATE leads SET has_new_after_archive = 1, updated_at = datetime('now') WHERE id = ?").run(lead.id)
+        }
         isNew = false
       }
     } else {
