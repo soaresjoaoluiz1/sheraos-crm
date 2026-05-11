@@ -369,11 +369,98 @@ async function pollTick() {
 
 export { pollTick as runPollNow }
 
+// ─── Verificacao diaria de TODAS as instancias (auto-reconecta as desconectadas)
+// Roda 1x por dia as 5h (horario BRT = America/Sao_Paulo)
+// Diferente do checkWhatsAppInstances() padrao que so age em transicoes,
+// este aqui tenta reconectar instancias que ja estavam disconnected ha tempo.
+async function dailyInstanceHealthCheck() {
+  console.log('[DailyHealthCheck] Iniciando verificacao diaria das instancias...')
+  const instances = db.prepare(`
+    SELECT w.id, w.instance_name, w.api_url, w.api_key, w.status, a.name as account_name
+    FROM whatsapp_instances w
+    JOIN accounts a ON a.id = w.account_id
+  `).all()
+
+  let connected = 0, reconnected = 0, qrNeeded = 0, errors = 0
+
+  for (const inst of instances) {
+    try {
+      const encoded = encodeURIComponent(inst.instance_name)
+      const stateRes = await fetch(`${inst.api_url}/instance/connectionState/${encoded}`, {
+        headers: { apikey: inst.api_key },
+        timeout: 15000,
+      })
+      const stateData = await stateRes.json().catch(() => ({}))
+      const realState = stateData?.instance?.state || stateData?.state || ''
+
+      if (realState === 'open' || realState === 'connected') {
+        if (inst.status !== 'connected') {
+          db.prepare("UPDATE whatsapp_instances SET status='connected', updated_at=datetime('now') WHERE id=?").run(inst.id)
+        }
+        connected++
+      } else if (realState === 'close' || realState === 'closed' || realState === 'disconnected') {
+        // Tenta reconectar
+        const connRes = await fetch(`${inst.api_url}/instance/connect/${encoded}`, {
+          headers: { apikey: inst.api_key },
+          timeout: 20000,
+        })
+        const connData = await connRes.json().catch(() => ({}))
+        const newState = connData?.instance?.state || connData?.state || ''
+        const hasQr = !!(connData?.qrcode?.base64 || connData?.base64 || (typeof connData?.qrcode === 'string' && connData.qrcode.startsWith('data:image')))
+
+        if (hasQr) {
+          db.prepare("UPDATE whatsapp_instances SET status='connecting', qr_code=?, updated_at=datetime('now') WHERE id=?")
+            .run(connData?.qrcode?.base64 || connData?.base64 || connData?.qrcode || null, inst.id)
+          qrNeeded++
+          console.log(`[DailyHealthCheck] ${inst.account_name} → ${inst.instance_name}: precisa QR`)
+        } else if (newState === 'open' || newState === 'connected') {
+          db.prepare("UPDATE whatsapp_instances SET status='connected', updated_at=datetime('now') WHERE id=?").run(inst.id)
+          reconnected++
+          console.log(`[DailyHealthCheck] ${inst.account_name} → ${inst.instance_name}: reconectada sem QR`)
+        } else {
+          db.prepare("UPDATE whatsapp_instances SET status='connecting', updated_at=datetime('now') WHERE id=?").run(inst.id)
+        }
+      } else if (!realState) {
+        errors++
+      }
+    } catch (err) {
+      errors++
+      console.error(`[DailyHealthCheck] Erro em ${inst.instance_name}:`, err.message)
+    }
+    // Espacamento entre instancias pra nao sobrecarregar Evolution
+    await new Promise(r => setTimeout(r, 500))
+  }
+
+  console.log(`[DailyHealthCheck] Concluido — ${connected} conectadas, ${reconnected} reconectadas, ${qrNeeded} precisam QR, ${errors} erros`)
+}
+
+// Agenda dailyInstanceHealthCheck pra rodar todo dia as 5h (horario BRT/America/Sao_Paulo)
+function scheduleDailyHealthCheck() {
+  const now = new Date()
+  // SQLite stores UTC. Servidor pode estar em UTC ou BRT.
+  // Vamos calcular proxima execucao em hora local do servidor pegando como referencia 5h da manha de Sao Paulo (UTC-3)
+  // = 08:00 UTC. Se o servidor estiver em BRT, sera 05:00 local; se UTC, 08:00 local.
+  const next = new Date(now)
+  next.setUTCHours(8, 0, 0, 0) // 08:00 UTC = 05:00 BRT
+  if (next.getTime() <= now.getTime()) next.setUTCDate(next.getUTCDate() + 1)
+  const msUntilNext = next.getTime() - now.getTime()
+  console.log(`[Scheduler] Proximo health check diario em ${Math.round(msUntilNext / 60000)}min (${next.toISOString()})`)
+  setTimeout(() => {
+    dailyInstanceHealthCheck().catch(e => console.error('[DailyHealthCheck] Fatal:', e.message))
+    // Depois roda a cada 24h
+    setInterval(() => {
+      dailyInstanceHealthCheck().catch(e => console.error('[DailyHealthCheck] Fatal:', e.message))
+    }, 24 * 60 * 60 * 1000)
+  }, msUntilNext)
+}
+
 export function startScheduler() {
-  console.log('[Scheduler] Started — main every 5 min, polling every 30s')
+  console.log('[Scheduler] Started — main every 5 min, polling every 30s, daily health 05h BRT')
   tick()
   setInterval(tick, INTERVAL_MS)
   // Polling runs aggressively (30s) so missed messages surface quickly when webhook misbehaves
   setTimeout(() => pollTick(), 10000) // first poll after 10s
   setInterval(pollTick, 30 * 1000)
+  // Daily instance health check (auto-reconecta disconnected)
+  scheduleDailyHealthCheck()
 }
