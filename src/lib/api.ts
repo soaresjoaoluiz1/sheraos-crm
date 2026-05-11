@@ -169,6 +169,17 @@ export const sendBroadcast = (id: number, accountId: number) => apiFetch(`/api/b
 export const resumeBroadcast = (id: number, accountId: number) => apiFetch(`/api/broadcasts/${id}/resume?account_id=${accountId}`, { method: 'POST' })
 export const deleteBroadcast = (id: number, accountId: number) => apiFetch(`/api/broadcasts/${id}?account_id=${accountId}`, { method: 'DELETE' })
 
+// Admin: check all WhatsApp instances across all accounts (super_admin only)
+export interface InstanceCheckResult {
+  id: number; account: string; instance: string; state: string; action: string; error?: string
+}
+export interface InstanceCheckResponse {
+  ok: boolean
+  summary: { total: number; connected: number; needs_qr: number; connecting: number; error: number }
+  results: InstanceCheckResult[]
+}
+export const checkAllInstances = () => apiFetch<InstanceCheckResponse>('/api/admin/instances/check-all', { method: 'POST' })
+
 // Notes
 export const addLeadNote = (leadId: number, content: string) => apiFetch<{ note: LeadNote }>(`/api/leads/${leadId}/notes`, { method: 'POST', body: JSON.stringify({ content }) }).then(d => d.note)
 

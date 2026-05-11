@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { fetchAccounts, createAccount, formatNumber, type Account } from '../../lib/api'
-import { Building2, Plus, Eye } from 'lucide-react'
+import { fetchAccounts, createAccount, formatNumber, checkAllInstances, type Account, type InstanceCheckResult } from '../../lib/api'
+import { Building2, Plus, Eye, RefreshCw, Wifi, WifiOff, QrCode, AlertTriangle, Loader, CheckCircle, X } from 'lucide-react'
 
 const SEGMENTOS = ['Imobiliaria', 'Clinica', 'E-commerce', 'Restaurante', 'Educacao', 'Saude', 'Servicos', 'Industria', 'Varejo', 'Tecnologia', 'Outro']
 
@@ -11,6 +11,8 @@ export default function Clients() {
   const [loading, setLoading] = useState(true)
   const [showNew, setShowNew] = useState(false)
   const [form, setForm] = useState({ name: '', cnpj: '', razao_social: '', instagram: '', segmento: '', trabalha_anuncio: false, investimento_anuncios: '', valor_mensal: '', observacoes: '' })
+  const [checking, setChecking] = useState(false)
+  const [checkResults, setCheckResults] = useState<{ summary: any; results: InstanceCheckResult[] } | null>(null)
 
   const load = () => { setLoading(true); fetchAccounts().then(setAccounts).finally(() => setLoading(false)) }
   useEffect(load, [])
@@ -30,12 +32,68 @@ export default function Clients() {
 
   const u = (field: string, value: any) => setForm(prev => ({ ...prev, [field]: value }))
 
+  const handleCheckAll = async () => {
+    setChecking(true)
+    setCheckResults(null)
+    try {
+      const data = await checkAllInstances()
+      setCheckResults({ summary: data.summary, results: data.results })
+    } catch (e: any) {
+      alert('Erro: ' + e.message)
+    }
+    setChecking(false)
+  }
+
   return (
     <div>
       <div className="page-header">
         <h1><Building2 size={20} style={{ marginRight: 8 }} /> Clientes</h1>
-        <button className="btn btn-primary btn-sm" onClick={() => setShowNew(true)}><Plus size={14} /> Novo Cliente</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-secondary btn-sm" onClick={handleCheckAll} disabled={checking} title="Verifica estado real de cada instancia na Evolution e reconecta as que cairam">
+            {checking ? <><Loader size={14} className="spinning" /> Verificando...</> : <><RefreshCw size={14} /> Verificar instancias</>}
+          </button>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowNew(true)}><Plus size={14} /> Novo Cliente</button>
+        </div>
       </div>
+
+      {checkResults && (
+        <div className="card" style={{ marginBottom: 16, padding: 16, position: 'relative' }}>
+          <button onClick={() => setCheckResults(null)} style={{ position: 'absolute', top: 10, right: 10, background: 'none', border: 'none', color: '#9B96B0', cursor: 'pointer' }}>
+            <X size={16} />
+          </button>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>Resultado da verificacao</div>
+          <div style={{ display: 'flex', gap: 16, marginBottom: 12, fontSize: 12 }}>
+            <span><strong>{checkResults.summary.total}</strong> total</span>
+            <span style={{ color: '#34C759' }}>✓ {checkResults.summary.connected} conectadas</span>
+            {checkResults.summary.needs_qr > 0 && <span style={{ color: '#FFB300' }}>📱 {checkResults.summary.needs_qr} precisam QR</span>}
+            {checkResults.summary.connecting > 0 && <span style={{ color: '#5DADE2' }}>⏳ {checkResults.summary.connecting} conectando</span>}
+            {checkResults.summary.error > 0 && <span style={{ color: '#FF6B6B' }}>✗ {checkResults.summary.error} com erro</span>}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 320, overflowY: 'auto' }}>
+            {checkResults.results.map(r => {
+              const icon = r.state === 'connected' ? <Wifi size={12} style={{ color: '#34C759' }} />
+                : r.state === 'needs_qr' ? <QrCode size={12} style={{ color: '#FFB300' }} />
+                : r.state === 'connecting' ? <Loader size={12} style={{ color: '#5DADE2' }} className="spinning" />
+                : <AlertTriangle size={12} style={{ color: '#FF6B6B' }} />
+              const label = r.action === 'already_connected' ? 'Ja estava conectada'
+                : r.action === 'reconnected_without_qr' ? 'Reconectada sem QR ✓'
+                : r.action === 'qr_required' ? 'Precisa scan QR'
+                : r.action === 'pending_reconnect' ? 'Conectando...'
+                : r.action === 'evolution_unreachable' ? 'Evolution nao respondeu'
+                : r.action === 'request_failed' ? `Erro: ${r.error || ''}`
+                : r.action
+              return (
+                <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: 'rgba(255,255,255,0.03)', borderRadius: 6, fontSize: 12 }}>
+                  {icon}
+                  <span style={{ minWidth: 140, color: '#9B96B0' }}>{r.account}</span>
+                  <span style={{ flex: 1, fontWeight: 500 }}>{r.instance}</span>
+                  <span style={{ color: r.state === 'connected' ? '#34C759' : r.state === 'needs_qr' ? '#FFB300' : r.state === 'error' || r.state === 'no_response' ? '#FF6B6B' : '#9B96B0' }}>{label}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {loading ? <div className="loading-container"><div className="spinner" /></div> : (
         <div className="table-card"><table>
