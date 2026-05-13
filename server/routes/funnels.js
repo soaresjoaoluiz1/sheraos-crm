@@ -53,28 +53,29 @@ router.put('/:id/stages', requireRole('super_admin', 'gerente'), (req, res) => {
 
   // IDs que o frontend enviou (stages que existem e devem ser mantidas/atualizadas)
   const sentStageIds = new Set(stages.filter(s => s.id).map(s => s.id))
-  // Stages com leads ativos NUNCA podem ser deletadas
-  const stagesWithLeads = new Set(db.prepare('SELECT DISTINCT stage_id FROM leads WHERE funnel_id = ? AND is_active = 1').all(funnel.id).map(r => r.stage_id))
+  // Stages com QUALQUER lead apontando (inclui arquivados) NUNCA podem ser deletadas
+  const stagesWithLeads = new Set(db.prepare('SELECT DISTINCT stage_id FROM leads WHERE funnel_id = ?').all(funnel.id).map(r => r.stage_id))
+
+  // Tenta deletar stages FORA da transaction principal (falha individual nao quebra tudo)
+  const oldStages = db.prepare('SELECT id FROM funnel_stages WHERE funnel_id = ?').all(funnel.id)
+  for (const old of oldStages) {
+    if (sentStageIds.has(old.id)) continue // mantida pelo front
+    if (stagesWithLeads.has(old.id)) {
+      console.log(`[Funnels] Stage ${old.id} mantida — tem leads (inclui arquivados)`)
+      continue
+    }
+    try {
+      // Limpa stage_history primeiro (FK sem CASCADE)
+      db.prepare('DELETE FROM stage_history WHERE from_stage_id = ? OR to_stage_id = ?').run(old.id, old.id)
+      db.prepare('DELETE FROM funnel_stages WHERE id = ?').run(old.id)
+      console.log(`[Funnels] Stage ${old.id} deletada`)
+    } catch (err) {
+      console.error(`[Funnels] Falha ao deletar stage ${old.id} (FK constraint?):`, err.message)
+      // Segue — stage continua no banco, no proximo GET o front recebe ela de volta
+    }
+  }
 
   const transaction = db.transaction(() => {
-    // Stages no banco que NAO vieram do frontend = user quer deletar
-    const oldStages = db.prepare('SELECT id FROM funnel_stages WHERE funnel_id = ?').all(funnel.id)
-    for (const old of oldStages) {
-      if (sentStageIds.has(old.id)) continue // mantida pelo front, segue pro upsert
-      if (stagesWithLeads.has(old.id)) {
-        // Tem leads ativos — nao deleta. Loga e segue (UI vai mostrar stage continua existindo)
-        console.log(`[Funnels] Stage ${old.id} mantida — tem leads ativos`)
-        continue
-      }
-      // Sem leads, mas pode ter historico/cadencias — limpa FKs primeiro pra evitar constraint fail
-      try {
-        db.prepare('DELETE FROM stage_history WHERE from_stage_id = ? OR to_stage_id = ?').run(old.id, old.id)
-        db.prepare('DELETE FROM funnel_stages WHERE id = ?').run(old.id)
-      } catch (err) {
-        console.error(`[Funnels] Falha ao deletar stage ${old.id}:`, err.message)
-        // Nao explode — segue pro upsert. Stage vai continuar no banco (UI vai mostrar de volta no proximo GET)
-      }
-    }
     // Upsert stages
     for (let i = 0; i < stages.length; i++) {
       const s = stages[i]
