@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAccount } from '../context/AccountContext'
 import AccountSelector from '../components/AccountSelector'
 import { useSSE } from '../context/SSEContext'
-import { fetchFunnels, fetchLeads, fetchTags, moveLeadStage, fetchPipelineMetrics, archiveLead, type Funnel, type Lead, type PipelineMetric, type Tag } from '../lib/api'
+import { fetchFunnels, fetchLeads, fetchTags, fetchUsers, moveLeadStage, fetchPipelineMetrics, archiveLead, type Funnel, type Lead, type PipelineMetric, type Tag, type User } from '../lib/api'
 import { Phone, MessageCircle, User, Clock, ChevronDown, ChevronRight, ArrowRight, Smartphone, Archive } from 'lucide-react'
 
 function timeAgo(dateStr: string) {
@@ -39,6 +39,10 @@ export default function Pipeline() {
   const [moveLeadId, setMoveLeadId] = useState<number | null>(null)
   const [tags, setTags] = useState<Tag[]>([])
   const [tagFilter, setTagFilter] = useState<number | ''>('')
+  const [users, setUsers] = useState<User[]>([])
+  const [attendantFilter, setAttendantFilter] = useState<number | ''>('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
   const [expandedColumns, setExpandedColumns] = useState<Set<number>>(new Set())
   const CARDS_LIMIT = 5
 
@@ -69,8 +73,21 @@ export default function Pipeline() {
 
   useEffect(() => { loadData() }, [loadData])
   useEffect(() => { if (accountId) fetchTags(accountId).then(setTags).catch(() => {}) }, [accountId])
+  useEffect(() => { if (accountId) fetchUsers(accountId).then(setUsers).catch(() => {}) }, [accountId])
 
-  const filteredLeads = tagFilter ? leads.filter(l => l.tags?.some(t => t.id === tagFilter)) : leads
+  const filteredLeads = leads.filter(l => {
+    if (tagFilter && !l.tags?.some(t => t.id === tagFilter)) return false
+    if (attendantFilter && l.attendant_id !== attendantFilter) return false
+    if (dateFrom) {
+      const created = new Date(l.created_at).getTime()
+      if (created < new Date(dateFrom + 'T00:00:00').getTime()) return false
+    }
+    if (dateTo) {
+      const created = new Date(l.created_at).getTime()
+      if (created > new Date(dateTo + 'T23:59:59').getTime()) return false
+    }
+    return true
+  })
 
   useSSE('lead:created', useCallback(() => loadData(), [loadData]))
   useSSE('lead:updated', useCallback(() => loadData(), [loadData]))
@@ -216,16 +233,27 @@ export default function Pipeline() {
           <h1>Pipeline</h1>
           <AccountSelector />
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           {funnels.length > 1 && (
-            <select className="select" style={{ width: 200 }} value={funnel.id} onChange={e => { const f = funnels.find(x => x.id === +e.target.value); if (f) setFunnel(f) }}>
+            <select className="select" style={{ width: 180 }} value={funnel.id} onChange={e => { const f = funnels.find(x => x.id === +e.target.value); if (f) setFunnel(f) }}>
               {funnels.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
             </select>
           )}
-          <select className="select" style={{ width: 160 }} value={tagFilter} onChange={e => setTagFilter(e.target.value ? +e.target.value : '')}>
+          <select className="select" style={{ width: 140 }} value={tagFilter} onChange={e => setTagFilter(e.target.value ? +e.target.value : '')}>
             <option value="">Todas as tags</option>
             {tags.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
+          <select className="select" style={{ width: 160 }} value={attendantFilter} onChange={e => setAttendantFilter(e.target.value ? +e.target.value : '')}>
+            <option value="">Todos atendentes</option>
+            {users.filter(u => u.is_active).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+          <input type="date" className="input" style={{ width: 140 }} value={dateFrom} onChange={e => setDateFrom(e.target.value)} title="Data inicial (criacao)" />
+          <input type="date" className="input" style={{ width: 140 }} value={dateTo} onChange={e => setDateTo(e.target.value)} title="Data final (criacao)" />
+          {(tagFilter || attendantFilter || dateFrom || dateTo) && (
+            <button className="btn btn-secondary btn-sm" onClick={() => { setTagFilter(''); setAttendantFilter(''); setDateFrom(''); setDateTo('') }}>
+              Limpar filtros
+            </button>
+          )}
         </div>
       </div>
 

@@ -15,6 +15,8 @@ export default function Funnels() {
   const [editStages, setEditStages] = useState<Partial<FunnelStage>[]>([])
   const [showNew, setShowNew] = useState(false)
   const [newName, setNewName] = useState('')
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
 
   const load = () => { if (accountId) { setLoading(true); fetchFunnels(accountId).then(setFunnels).finally(() => setLoading(false)) } }
   useEffect(load, [accountId])
@@ -42,6 +44,21 @@ export default function Funnels() {
     if (!editing || !accountId) return
     await updateFunnelStages(editing.id, accountId, editStages.map((s, i) => ({ ...s, position: i })))
     setEditing(null); load()
+  }
+
+  const handleDragStart = (i: number) => () => { setDragIndex(i) }
+  const handleDragOver = (i: number) => (e: React.DragEvent) => { e.preventDefault(); setDragOverIndex(i) }
+  const handleDragEnd = () => { setDragIndex(null); setDragOverIndex(null) }
+  const handleDrop = (i: number) => (e: React.DragEvent) => {
+    e.preventDefault()
+    if (dragIndex === null || dragIndex === i) { handleDragEnd(); return }
+    setEditStages(prev => {
+      const arr = [...prev]
+      const [moved] = arr.splice(dragIndex, 1)
+      arr.splice(i, 0, moved)
+      return arr
+    })
+    handleDragEnd()
   }
 
   return (
@@ -83,8 +100,24 @@ export default function Funnels() {
             <h2>Editar Etapas — {editing.name}</h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
               {editStages.map((s, i) => (
-                <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <GripVertical size={14} style={{ color: '#6B6580', cursor: 'grab' }} />
+                <div
+                  key={i}
+                  draggable
+                  onDragStart={handleDragStart(i)}
+                  onDragOver={handleDragOver(i)}
+                  onDrop={handleDrop(i)}
+                  onDragEnd={handleDragEnd}
+                  style={{
+                    display: 'flex', gap: 8, alignItems: 'center',
+                    padding: 6, borderRadius: 6,
+                    opacity: dragIndex === i ? 0.4 : 1,
+                    background: dragOverIndex === i && dragIndex !== i ? 'rgba(255,179,0,0.08)' : 'transparent',
+                    borderTop: dragOverIndex === i && dragIndex !== null && dragIndex > i ? '2px solid #FFB300' : '2px solid transparent',
+                    borderBottom: dragOverIndex === i && dragIndex !== null && dragIndex < i ? '2px solid #FFB300' : '2px solid transparent',
+                    transition: 'background 0.15s',
+                  }}
+                >
+                  <GripVertical size={14} style={{ color: '#9B96B0', cursor: 'grab' }} />
                   <input type="color" value={s.color || '#FFB300'} onChange={e => updateStage(i, 'color', e.target.value)} style={{ width: 30, height: 30, border: 'none', background: 'none', cursor: 'pointer' }} />
                   <input className="input" value={s.name || ''} onChange={e => updateStage(i, 'name', e.target.value)} placeholder="Nome da etapa" style={{ flex: 1 }} />
                   <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, whiteSpace: 'nowrap', cursor: 'pointer' }}>
