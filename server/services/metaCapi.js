@@ -174,6 +174,7 @@ export async function testCapi(accountId) {
     }],
   }
   if (account.meta_capi_test_event_code) payload.test_event_code = account.meta_capi_test_event_code
+  console.log(`[CAPI TEST] account ${accountId} pixel ${account.meta_pixel_id} test_code ${account.meta_capi_test_event_code || '(none)'}`)
   try {
     const url = `https://graph.facebook.com/v18.0/${account.meta_pixel_id}/events?access_token=${encodeURIComponent(account.meta_capi_token)}`
     const r = await fetch(url, {
@@ -183,11 +184,13 @@ export async function testCapi(accountId) {
       timeout: 10000,
     })
     const responseData = await r.json().catch(() => ({}))
+    console.log(`[CAPI TEST] account ${accountId} response HTTP ${r.status}:`, JSON.stringify(responseData).substring(0, 400))
     if (!r.ok || responseData.error) {
       return { ok: false, error: responseData.error?.message || `HTTP ${r.status}`, response: responseData }
     }
     return { ok: true, response: responseData }
   } catch (err) {
+    console.error(`[CAPI TEST] account ${accountId} erro fatal:`, err.message)
     return { ok: false, error: err.message }
   }
 }
