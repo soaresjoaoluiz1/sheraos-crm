@@ -47,9 +47,10 @@ export async function sendCapiEvent({ accountId, lead, eventName, stageId, histo
     return { skipped: true, reason: 'capi_not_configured' }
   }
 
-  // Decisao: so dispara pra leads que vieram de CTWA (tem ctwa_clid salvo)
-  if (!lead.ctwa_clid) {
-    return { skipped: true, reason: 'not_ctwa_lead' }
+  // Decisao: dispara pra leads que vieram do Meta — CTWA (ctwa_clid) OU Meta Lead Form (ad_id/campaign_id/form_id)
+  const isMetaLead = lead.ctwa_clid || lead.meta_ad_id || lead.meta_campaign_id || lead.meta_form_id
+  if (!isMetaLead) {
+    return { skipped: true, reason: 'not_meta_lead' }
   }
 
   const eventTime = Math.floor(Date.now() / 1000)
@@ -70,6 +71,17 @@ export async function sendCapiEvent({ accountId, lead, eventName, stageId, histo
   const fbc = buildFbc(lead.ctwa_clid, eventTime)
   if (fbc) userData.fbc = fbc
 
+  // custom_data com origem do lead — ajuda Meta atribuir
+  const customData = {
+    lead_source: lead.source || 'crm',
+    stage_id: stageId || null,
+    currency: 'BRL',
+  }
+  if (lead.ctwa_clid) customData.ctwa_clid = lead.ctwa_clid
+  if (lead.meta_ad_id) customData.ad_id = lead.meta_ad_id
+  if (lead.meta_campaign_id) customData.campaign_id = lead.meta_campaign_id
+  if (lead.meta_form_id) customData.lead_form_id = lead.meta_form_id
+
   const payload = {
     data: [{
       event_name: eventName,
@@ -77,11 +89,7 @@ export async function sendCapiEvent({ accountId, lead, eventName, stageId, histo
       event_id: eventId,
       action_source: 'system_generated',
       user_data: userData,
-      custom_data: {
-        lead_source: lead.source || 'crm',
-        stage_id: stageId || null,
-        currency: 'BRL',
-      },
+      custom_data: customData,
     }],
   }
   if (account.meta_capi_test_event_code) {
@@ -127,7 +135,7 @@ export async function sendCapiEvent({ accountId, lead, eventName, stageId, histo
 
 // Helper: pega lead completo pelo id (pra callers que so tem o id)
 export function loadLeadForCapi(leadId) {
-  return db.prepare('SELECT id, account_id, name, phone, email, ctwa_clid, source FROM leads WHERE id = ?').get(leadId)
+  return db.prepare('SELECT id, account_id, name, phone, email, ctwa_clid, meta_ad_id, meta_campaign_id, meta_form_id, source FROM leads WHERE id = ?').get(leadId)
 }
 
 // Helper: dispara CAPI se stage tem meta_event_name configurado.

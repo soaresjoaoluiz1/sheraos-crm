@@ -519,6 +519,11 @@ router.post('/sheets/:accountSlug', (req, res) => {
     if (instagram) db.prepare('UPDATE leads SET instagram = COALESCE(instagram, ?) WHERE id = ?').run(instagram, lead.id)
     if (source_detail) db.prepare('UPDATE leads SET source_detail = COALESCE(source_detail, ?) WHERE id = ?').run(source_detail, lead.id)
 
+    // Marcadores Meta — guarda ids da campanha/anuncio/form pra usar no CAPI depois
+    if (body.ad_id) db.prepare('UPDATE leads SET meta_ad_id = COALESCE(meta_ad_id, ?) WHERE id = ?').run(String(body.ad_id), lead.id)
+    if (body.campaign_id) db.prepare('UPDATE leads SET meta_campaign_id = COALESCE(meta_campaign_id, ?) WHERE id = ?').run(String(body.campaign_id), lead.id)
+    if (body.form_id) db.prepare('UPDATE leads SET meta_form_id = COALESCE(meta_form_id, ?) WHERE id = ?').run(String(body.form_id), lead.id)
+
     // Movimentacao opcional pra etapa especifica do funil (case-insensitive, ignora acentos)
     const stageName = body.stage_name || body.stage || body.etapa || ''
     if (stageName && lead.funnel_id) {

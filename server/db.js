@@ -402,6 +402,10 @@ addColumnIfNotExists('funnel_stages', 'meta_event_name', 'TEXT')
 
 // Leads: ctwa_clid capturado do click-to-WhatsApp ad (pra correlacionar com campanha Meta via CAPI)
 addColumnIfNotExists('leads', 'ctwa_clid', 'TEXT')
+// Leads: ids de Meta Lead Form (campanha/anuncio/formulario) — usado pra disparar CAPI pra leads vindos de forms
+addColumnIfNotExists('leads', 'meta_ad_id', 'TEXT')
+addColumnIfNotExists('leads', 'meta_campaign_id', 'TEXT')
+addColumnIfNotExists('leads', 'meta_form_id', 'TEXT')
 
 // stage_history: auditoria de envios CAPI
 addColumnIfNotExists('stage_history', 'capi_event_id', 'TEXT')

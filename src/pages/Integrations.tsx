@@ -532,7 +532,7 @@ function onChange(e) {
           <div className="section-title"><Activity size={14} /> Meta Pixel / Conversions API</div>
           <div className="card">
             <p style={{ fontSize: 12, color: '#9B96B0', marginBottom: 12 }}>
-              Envia eventos pro Meta quando leads avançam de etapa no funil — otimiza campanhas pra atrair leads que viram cliente real. Dispara <strong>apenas pra leads que vieram de anúncios click-to-WhatsApp</strong>.
+              Envia eventos pro Meta quando leads avançam de etapa no funil — otimiza campanhas pra atrair leads que viram cliente real. Dispara pra leads que vieram do Meta: <strong>click-to-WhatsApp ads</strong> ou <strong>Meta Lead Forms</strong> (planilha com ad_id/campaign_id/form_id).
             </p>
 
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginBottom: 14, cursor: 'pointer' }}>
