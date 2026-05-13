@@ -34,7 +34,6 @@ export default function Integrations() {
   const [account, setAccount] = useState<Account | null>(null)
   const [metaPixelId, setMetaPixelId] = useState('')
   const [metaCapiToken, setMetaCapiToken] = useState('')
-  const [metaTestCode, setMetaTestCode] = useState('')
   const [metaEnabled, setMetaEnabled] = useState(false)
   const [showMetaToken, setShowMetaToken] = useState(false)
   const [savingMeta, setSavingMeta] = useState(false)
@@ -76,7 +75,6 @@ export default function Integrations() {
       setAccount(d.account || null)
       setMetaPixelId(d.account?.meta_pixel_id || '')
       setMetaCapiToken(d.account?.meta_capi_token || '')
-      setMetaTestCode(d.account?.meta_capi_test_event_code || '')
       setMetaEnabled(!!d.account?.meta_capi_enabled)
     }).catch(() => {})
   }, [accountId])
@@ -557,16 +555,6 @@ function onChange(e) {
               </div>
             </div>
 
-            <div style={{ marginBottom: 12 }}>
-              <label style={{ fontSize: 11, color: '#9B96B0', display: 'block', marginBottom: 4 }}>
-                Test Event Code <span style={{ color: '#6B6580' }}>(opcional — pega no Meta Events Manager → Test Events)</span>
-              </label>
-              <input className="input" value={metaTestCode} onChange={e => setMetaTestCode(e.target.value)} placeholder="TEST12345 (deixe vazio em produção)" disabled={!metaEnabled} />
-              <div style={{ fontSize: 10, color: '#6B6580', marginTop: 4 }}>
-                Quando preenchido, eventos aparecem só na aba "Test Events" do Meta — não contam pra otimização. Use pra validar a integração antes de virar produção.
-              </div>
-            </div>
-
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <button
                 className="btn btn-primary btn-sm"
@@ -577,7 +565,6 @@ function onChange(e) {
                     await updateMetaCapi(accountId, {
                       meta_pixel_id: metaPixelId || null,
                       meta_capi_token: metaCapiToken || null,
-                      meta_capi_test_event_code: metaTestCode || null,
                       meta_capi_enabled: metaEnabled ? 1 : 0,
                     })
                     setMetaSaved(true)
@@ -593,18 +580,24 @@ function onChange(e) {
                 className="btn btn-secondary btn-sm"
                 onClick={async () => {
                   if (!accountId) return
+                  // Aviso explicito antes de mandar evento real pra producao
+                  const confirmed = confirm(
+                    'Isso vai enviar um evento "Lead" REAL pro seu Pixel da Meta (sem test code).\n\n' +
+                    'O evento aparece em "Visao geral" do Pixel em ~30 minutos e conta como conversao real (descartavel, nao afeta otimizacao com volume normal).\n\n' +
+                    'Continuar?'
+                  )
+                  if (!confirmed) return
                   setTestingMeta(true)
                   setMetaTestResult(null)
                   try {
-                    // Auto-salva antes de testar (evita confusao de "preencheu mas nao salvou")
+                    // Auto-salva antes de testar
                     await updateMetaCapi(accountId, {
                       meta_pixel_id: metaPixelId || null,
                       meta_capi_token: metaCapiToken || null,
-                      meta_capi_test_event_code: metaTestCode || null,
                       meta_capi_enabled: metaEnabled ? 1 : 0,
                     })
                     const r = await testMetaCapi(accountId)
-                    setMetaTestResult({ ok: !!r.ok, msg: r.ok ? 'Evento de teste enviado! Confere na aba "Test Events" do Meta Events Manager.' : (r.error || 'Falha desconhecida') })
+                    setMetaTestResult({ ok: !!r.ok, msg: r.ok ? 'Evento Lead enviado! Aparece em Meta Events Manager → Pixel → Visão geral em ~30 minutos.' : (r.error || 'Falha desconhecida') })
                   } catch (e: any) { setMetaTestResult({ ok: false, msg: e.message }) }
                   setTestingMeta(false)
                 }}
@@ -627,7 +620,7 @@ function onChange(e) {
             </div>
 
             <div style={{ marginTop: 14, padding: 10, background: 'rgba(91,173,226,0.06)', borderRadius: 6, fontSize: 11, color: '#9B96B0' }}>
-              💡 Depois de salvar, vai em <strong>Funis → Editar Etapas</strong> pra escolher qual evento Meta cada etapa dispara (ex: "Visita Agendada" → <code>Schedule</code>, "Venda" → <code>Purchase</code>).
+              💡 Depois de salvar, vai em <strong>Funis → Editar Etapas</strong> pra escolher qual evento Meta cada etapa dispara (ex: "Visita Agendada" → <code>Schedule</code>, "Venda" → <code>Purchase</code>). Confere em <strong>Meta Events Manager → Pixel → Visão geral</strong> (em até 30 minutos).
             </div>
           </div>
         </section>

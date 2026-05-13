@@ -155,9 +155,11 @@ export function triggerCapiForStageChange(leadOrId, newStageId, historyId = null
 }
 
 // Teste manual (chamado pelo endpoint /test-meta-capi)
+// Envia um evento 'Lead' REAL pra producao (sem test_event_code) — usuario foi avisado no UI antes.
+// Aparece na "Visao geral" do Pixel em ~30min, confirma visualmente que CAPI esta vinculado.
 export async function testCapi(accountId) {
   const account = db.prepare(`
-    SELECT meta_pixel_id, meta_capi_token, meta_capi_test_event_code
+    SELECT meta_pixel_id, meta_capi_token
     FROM accounts WHERE id = ?
   `).get(accountId)
   if (!account?.meta_pixel_id || !account?.meta_capi_token) {
@@ -166,15 +168,17 @@ export async function testCapi(accountId) {
   const eventTime = Math.floor(Date.now() / 1000)
   const payload = {
     data: [{
-      event_name: 'TestEvent',
+      event_name: 'Lead',
       event_time: eventTime,
-      event_id: `test_${eventTime}`,
+      event_id: `crm_validation_${eventTime}`,
       action_source: 'system_generated',
-      user_data: { external_id: [sha256(`test_${eventTime}`)] },
+      user_data: {
+        external_id: [sha256(`crm_validation_${accountId}_${eventTime}`)],
+      },
+      custom_data: { source: 'crm_validation' },
     }],
   }
-  if (account.meta_capi_test_event_code) payload.test_event_code = account.meta_capi_test_event_code
-  console.log(`[CAPI TEST] account ${accountId} pixel ${account.meta_pixel_id} test_code ${account.meta_capi_test_event_code || '(none)'}`)
+  console.log(`[CAPI TEST] account ${accountId} enviando evento Lead REAL (sem test code) pixel ${account.meta_pixel_id}`)
   try {
     const url = `https://graph.facebook.com/v18.0/${account.meta_pixel_id}/events?access_token=${encodeURIComponent(account.meta_capi_token)}`
     const r = await fetch(url, {
