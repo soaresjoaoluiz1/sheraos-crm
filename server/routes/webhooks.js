@@ -174,6 +174,60 @@ router.post('/evolution/:accountSlug', (req, res) => {
       mediaType = 'document'; mediaUrl = msg.documentMessage.url || null; content = msg.documentMessage.fileName || '[Documento]'
     } else if (msg.stickerMessage) {
       mediaType = 'sticker'; mediaUrl = msg.stickerMessage.url || null; content = '[Sticker]'
+    } else if (msg.reactionMessage) {
+      // Lead reagiu a uma mensagem com emoji
+      const emoji = msg.reactionMessage.text || '❤️'
+      content = `${emoji} (reacao)`
+      mediaType = 'reaction'
+    } else if (msg.locationMessage || msg.liveLocationMessage) {
+      const loc = msg.locationMessage || msg.liveLocationMessage
+      const lat = loc.degreesLatitude
+      const lng = loc.degreesLongitude
+      const name = loc.name || ''
+      content = name ? `📍 ${name}` : (lat && lng ? `📍 Localizacao: ${lat}, ${lng}` : '📍 Localizacao compartilhada')
+      mediaType = 'location'
+    } else if (msg.contactMessage || msg.contactsArrayMessage) {
+      const contact = msg.contactMessage?.displayName || msg.contactsArrayMessage?.contacts?.[0]?.displayName || ''
+      content = contact ? `👤 Contato: ${contact}` : '👤 Contato compartilhado'
+      mediaType = 'contact'
+    } else if (msg.protocolMessage?.type === 0 || msg.protocolMessage?.type === 'REVOKE') {
+      // type 0 = REVOKE (mensagem apagada pelo remetente)
+      content = '🚫 Mensagem apagada'
+      mediaType = 'system'
+    } else if (msg.pollCreationMessage || msg.pollCreationMessageV2 || msg.pollCreationMessageV3) {
+      const poll = msg.pollCreationMessage || msg.pollCreationMessageV2 || msg.pollCreationMessageV3
+      content = poll?.name ? `📊 Enquete: ${poll.name}` : '📊 Enquete'
+      mediaType = 'poll'
+    } else if (msg.pollUpdateMessage) {
+      content = '📊 Voto em enquete'
+      mediaType = 'poll'
+    } else if (msg.editedMessage || msg.protocolMessage?.editedMessage) {
+      // Mensagem editada — tenta pegar o novo texto
+      const edited = msg.editedMessage || msg.protocolMessage?.editedMessage
+      const newText = edited?.message?.conversation || edited?.message?.extendedTextMessage?.text || ''
+      content = newText ? `✏️ ${newText}` : '✏️ Mensagem editada'
+    } else if (msg.buttonsResponseMessage) {
+      content = msg.buttonsResponseMessage.selectedDisplayText || msg.buttonsResponseMessage.selectedButtonId || '[Botao clicado]'
+    } else if (msg.listResponseMessage) {
+      content = msg.listResponseMessage.title || msg.listResponseMessage.singleSelectReply?.selectedRowId || '[Opcao selecionada]'
+    } else if (msg.templateButtonReplyMessage) {
+      content = msg.templateButtonReplyMessage.selectedDisplayText || '[Botao de template]'
+    } else if (msg.viewOnceMessage || msg.viewOnceMessageV2 || msg.viewOnceMessageV2Extension) {
+      content = '👁️ Mensagem de visualizacao unica'
+      mediaType = 'view_once'
+    } else if (msg.ephemeralMessage) {
+      // Mensagem temporaria — desempacota a mensagem interna
+      const inner = msg.ephemeralMessage.message || {}
+      if (inner.conversation) content = inner.conversation
+      else if (inner.extendedTextMessage?.text) content = inner.extendedTextMessage.text
+      else content = '⏱️ Mensagem temporaria'
+    }
+    // Log de tipos nao mapeados pra ajudar a expandir a lista futuramente
+    if (!content && Object.keys(msg).length > 0) {
+      const tipo = Object.keys(msg).filter(k => k !== 'messageContextInfo' && k !== 'senderKeyDistributionMessage')[0] || 'desconhecido'
+      console.log(`[Webhook] Tipo de mensagem nao tratado: ${tipo}`, JSON.stringify(msg).substring(0, 200))
+      content = `[${tipo}]`
+      mediaType = 'unknown'
     }
 
     // ─── Detecta click-to-WhatsApp Ad (CTWA) — lead veio de campanha de mensagem
