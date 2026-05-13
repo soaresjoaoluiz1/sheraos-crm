@@ -40,6 +40,7 @@ export default function Integrations() {
   const [metaSaved, setMetaSaved] = useState(false)
   const [testingMeta, setTestingMeta] = useState(false)
   const [metaTestResult, setMetaTestResult] = useState<{ ok: boolean; msg: string } | null>(null)
+  const [showTestMetaConfirm, setShowTestMetaConfirm] = useState(false)
   const [users, setUsers] = useState<UserType[]>([])
 
   useEffect(() => {
@@ -578,29 +579,7 @@ function onChange(e) {
               </button>
               <button
                 className="btn btn-secondary btn-sm"
-                onClick={async () => {
-                  if (!accountId) return
-                  // Aviso explicito antes de mandar evento real pra producao
-                  const confirmed = confirm(
-                    'Isso vai enviar um evento "Lead" REAL pro seu Pixel da Meta (sem test code).\n\n' +
-                    'O evento aparece em "Visao geral" do Pixel em ~30 minutos e conta como conversao real (descartavel, nao afeta otimizacao com volume normal).\n\n' +
-                    'Continuar?'
-                  )
-                  if (!confirmed) return
-                  setTestingMeta(true)
-                  setMetaTestResult(null)
-                  try {
-                    // Auto-salva antes de testar
-                    await updateMetaCapi(accountId, {
-                      meta_pixel_id: metaPixelId || null,
-                      meta_capi_token: metaCapiToken || null,
-                      meta_capi_enabled: metaEnabled ? 1 : 0,
-                    })
-                    const r = await testMetaCapi(accountId)
-                    setMetaTestResult({ ok: !!r.ok, msg: r.ok ? 'Evento Lead enviado! Aparece em Meta Events Manager → Pixel → Visão geral em ~30 minutos.' : (r.error || 'Falha desconhecida') })
-                  } catch (e: any) { setMetaTestResult({ ok: false, msg: e.message }) }
-                  setTestingMeta(false)
-                }}
+                onClick={() => setShowTestMetaConfirm(true)}
                 disabled={testingMeta || !metaPixelId || !metaCapiToken}
               >
                 {testingMeta ? <><Loader size={14} className="spinning" /> Testando...</> : <><RefreshCw size={14} /> Testar conexão</>}
@@ -624,6 +603,62 @@ function onChange(e) {
             </div>
           </div>
         </section>
+      )}
+
+      {/* Modal de confirmação — teste de conexão Meta CAPI */}
+      {showTestMetaConfirm && (
+        <div className="modal-overlay" onClick={() => setShowTestMetaConfirm(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 520 }}>
+            <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Activity size={18} style={{ color: '#FFB300' }} /> Confirmar teste de conexão
+            </h2>
+            <div style={{ marginTop: 12, fontSize: 13, color: '#C8C4D4', lineHeight: 1.6 }}>
+              <p style={{ marginBottom: 10 }}>
+                Isso vai enviar um evento <strong style={{ color: '#FFB300' }}>"Lead" real</strong> pro seu Pixel da Meta, sem código de teste.
+              </p>
+              <p style={{ marginBottom: 10 }}>
+                O evento aparece em <strong>"Visão geral"</strong> do Pixel em ~30 minutos e conta como uma conversão real (descartável — não afeta otimização com volume normal de leads).
+              </p>
+              <div style={{ padding: 10, background: 'rgba(91,173,226,0.06)', borderRadius: 6, fontSize: 12, color: '#9B96B0', marginTop: 12 }}>
+                💡 Confere depois em <strong>Meta Events Manager → Pixel → Visão geral</strong>. Se aparecer "Lead | API de Conversões" → conexão validada.
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button className="btn btn-secondary" onClick={() => setShowTestMetaConfirm(false)} disabled={testingMeta}>
+                Cancelar
+              </button>
+              <button
+                className="btn btn-primary"
+                disabled={testingMeta}
+                onClick={async () => {
+                  if (!accountId) return
+                  setTestingMeta(true)
+                  setMetaTestResult(null)
+                  try {
+                    await updateMetaCapi(accountId, {
+                      meta_pixel_id: metaPixelId || null,
+                      meta_capi_token: metaCapiToken || null,
+                      meta_capi_enabled: metaEnabled ? 1 : 0,
+                    })
+                    const r = await testMetaCapi(accountId)
+                    setMetaTestResult({
+                      ok: !!r.ok,
+                      msg: r.ok
+                        ? 'Evento Lead enviado! Aparece em Meta Events Manager → Pixel → Visão geral em ~30 minutos.'
+                        : (r.error || 'Falha desconhecida'),
+                    })
+                  } catch (e: any) {
+                    setMetaTestResult({ ok: false, msg: e.message })
+                  }
+                  setTestingMeta(false)
+                  setShowTestMetaConfirm(false)
+                }}
+              >
+                {testingMeta ? <><Loader size={14} className="spinning" /> Enviando...</> : <><RefreshCw size={14} /> Enviar evento Lead</>}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* New Instance Modal — only asks for name */}
