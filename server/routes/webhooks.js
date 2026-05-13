@@ -2,6 +2,7 @@ import { Router } from 'express'
 import fetch from 'node-fetch'
 import db from '../db.js'
 import { broadcastSSE } from '../sse.js'
+import { triggerCapiForStageChange } from '../services/metaCapi.js'
 
 const router = Router()
 
@@ -111,9 +112,11 @@ function autoDetectStage(lead, messageText) {
     if (matched) {
       const oldStageId = lead.stage_id
       db.prepare("UPDATE leads SET stage_id = ?, updated_at = datetime('now') WHERE id = ?").run(stage.id, lead.id)
-      db.prepare('INSERT INTO stage_history (lead_id, from_stage_id, to_stage_id, trigger_type) VALUES (?, ?, ?, ?)').run(
+      const histRes = db.prepare('INSERT INTO stage_history (lead_id, from_stage_id, to_stage_id, trigger_type) VALUES (?, ?, ?, ?)').run(
         lead.id, oldStageId, stage.id, 'auto_keyword'
       )
+      // Dispara CAPI se a etapa tem evento Meta mapeado
+      triggerCapiForStageChange(lead.id, stage.id, histRes.lastInsertRowid)
       break // Only advance to first match
     }
   }
@@ -282,6 +285,17 @@ router.post('/evolution/:accountSlug', (req, res) => {
       }
     }
 
+    // Salva o ctwa_clid do CTWA na primeira vez que detectamos — vai ser usado pra montar fbc no CAPI
+    if (adInfo?.ctwaClid && !lead.ctwa_clid) {
+      db.prepare("UPDATE leads SET ctwa_clid = ? WHERE id = ?").run(adInfo.ctwaClid, lead.id)
+      lead.ctwa_clid = adInfo.ctwaClid
+    }
+
+    // CAPI: lead novo → dispara evento da primeira etapa (se mapeada)
+    if (isNew) {
+      triggerCapiForStageChange(lead.id, lead.stage_id, null)
+    }
+
     // Fetch profile picture in background (no await)
     if (waInstance && (isNew || !lead.profile_pic_url)) {
       fetchAndSaveProfilePic(waInstance, phone, lead.id)
@@ -293,9 +307,10 @@ router.post('/evolution/:accountSlug', (req, res) => {
       const secondStage = db.prepare('SELECT id FROM funnel_stages WHERE funnel_id = ? ORDER BY position LIMIT 1 OFFSET 1').get(lead.funnel_id)
       if (firstStage && secondStage && lead.stage_id === firstStage.id) {
         db.prepare("UPDATE leads SET stage_id = ?, updated_at = datetime('now') WHERE id = ?").run(secondStage.id, lead.id)
-        db.prepare('INSERT INTO stage_history (lead_id, from_stage_id, to_stage_id, trigger_type) VALUES (?, ?, ?, ?)').run(
+        const histRes = db.prepare('INSERT INTO stage_history (lead_id, from_stage_id, to_stage_id, trigger_type) VALUES (?, ?, ?, ?)').run(
           lead.id, firstStage.id, secondStage.id, 'webhook'
         )
+        triggerCapiForStageChange(lead.id, secondStage.id, histRes.lastInsertRowid)
       }
     }
 
@@ -460,7 +475,8 @@ router.post('/sheets/:accountSlug', (req, res) => {
       if (match && match.id !== lead.stage_id) {
         const prevStage = lead.stage_id
         db.prepare("UPDATE leads SET stage_id = ?, updated_at = datetime('now') WHERE id = ?").run(match.id, lead.id)
-        db.prepare('INSERT INTO stage_history (lead_id, from_stage_id, to_stage_id, trigger_type) VALUES (?, ?, ?, ?)').run(lead.id, prevStage, match.id, 'webhook')
+        const histRes = db.prepare('INSERT INTO stage_history (lead_id, from_stage_id, to_stage_id, trigger_type) VALUES (?, ?, ?, ?)').run(lead.id, prevStage, match.id, 'webhook')
+        triggerCapiForStageChange(lead.id, match.id, histRes.lastInsertRowid)
       }
     }
 
@@ -479,6 +495,8 @@ router.post('/sheets/:accountSlug', (req, res) => {
 
     if (isNew) {
       try { broadcastSSE(account.id, 'lead:created', lead) } catch {}
+      // CAPI: dispara evento da etapa inicial (mas service vai filtrar se nao tiver ctwa_clid)
+      triggerCapiForStageChange(lead.id, lead.stage_id, null)
     }
 
     console.log(`[Webhook Sheets] ${isNew ? 'New' : 'Existing'} lead: ${name || phone} → account ${account.name}`)

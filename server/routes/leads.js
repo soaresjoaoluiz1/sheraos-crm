@@ -3,6 +3,7 @@ import fetch from 'node-fetch'
 import db from '../db.js'
 import { requireRole } from '../middleware/auth.js'
 import { broadcastSSE } from '../sse.js'
+import { triggerCapiForStageChange } from '../services/metaCapi.js'
 
 const router = Router()
 
@@ -121,11 +122,13 @@ router.post('/', (req, res) => {
   `).run(req.accountId, fid, firstStage.id, attendant_id || null, instance_id || null, name, phone, email, city, source || 'manual', source_detail, notes, empresa || null, cpf_cnpj || null, instagram || null, trabalha_anuncio ? 1 : 0, investimento_anuncios || null)
 
   // Log stage history
-  db.prepare('INSERT INTO stage_history (lead_id, to_stage_id, trigger_type, triggered_by) VALUES (?, ?, ?, ?)').run(
+  const histRes = db.prepare('INSERT INTO stage_history (lead_id, to_stage_id, trigger_type, triggered_by) VALUES (?, ?, ?, ?)').run(
     result.lastInsertRowid, firstStage.id, 'manual', req.user.id
   )
 
   const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(result.lastInsertRowid)
+  // CAPI: dispara evento da etapa inicial (service filtra se nao tiver ctwa_clid)
+  triggerCapiForStageChange(lead.id, firstStage.id, histRes.lastInsertRowid)
   try { broadcastSSE(req.accountId, 'lead:created', lead) } catch {}
   res.json({ lead })
 })
@@ -261,9 +264,11 @@ router.put('/:id/stage', (req, res) => {
 
   const oldStageId = lead.stage_id
   db.prepare("UPDATE leads SET stage_id = ?, updated_at = datetime('now') WHERE id = ?").run(stage_id, lead.id)
-  db.prepare('INSERT INTO stage_history (lead_id, from_stage_id, to_stage_id, trigger_type, triggered_by) VALUES (?, ?, ?, ?, ?)').run(
+  const histRes = db.prepare('INSERT INTO stage_history (lead_id, from_stage_id, to_stage_id, trigger_type, triggered_by) VALUES (?, ?, ?, ?, ?)').run(
     lead.id, oldStageId, stage_id, 'manual', req.user.id
   )
+  // CAPI: dispara evento da nova etapa (service filtra se nao tiver ctwa_clid)
+  triggerCapiForStageChange(lead.id, stage_id, histRes.lastInsertRowid)
 
   const updated = db.prepare('SELECT l.*, fs.name as stage_name, fs.color as stage_color, wi.instance_name as instance_name FROM leads l LEFT JOIN funnel_stages fs ON l.stage_id = fs.id LEFT JOIN whatsapp_instances wi ON l.instance_id = wi.id WHERE l.id = ?').get(lead.id)
   try { broadcastSSE(lead.account_id, 'lead:updated', updated) } catch {}
@@ -479,13 +484,19 @@ router.post('/bulk/stage', requireRole('super_admin', 'gerente'), (req, res) => 
   if (!lead_ids || !Array.isArray(lead_ids) || !stage_id) return res.status(400).json({ error: 'lead_ids and stage_id required' })
   const stmtUpdate = db.prepare("UPDATE leads SET stage_id = ?, updated_at = datetime('now') WHERE id = ?")
   const stmtHistory = db.prepare('INSERT INTO stage_history (lead_id, from_stage_id, to_stage_id, trigger_type, triggered_by) VALUES (?, (SELECT stage_id FROM leads WHERE id = ?), ?, ?, ?)')
+  const histIds = []
   const transaction = db.transaction(() => {
     for (const id of lead_ids) {
-      stmtHistory.run(id, id, stage_id, 'manual', req.user.id)
+      const histRes = stmtHistory.run(id, id, stage_id, 'manual', req.user.id)
+      histIds.push({ leadId: id, histId: histRes.lastInsertRowid })
       stmtUpdate.run(stage_id, id)
     }
   })
   transaction()
+  // CAPI: fire-and-forget pra cada lead (service filtra os sem ctwa_clid)
+  for (const { leadId, histId } of histIds) {
+    triggerCapiForStageChange(leadId, stage_id, histId)
+  }
   res.json({ ok: true, count: lead_ids.length })
 })
 

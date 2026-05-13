@@ -4,9 +4,10 @@ import {
   fetchWhatsAppInstances, createWhatsAppInstance, connectWhatsAppInstance,
   checkWhatsAppStatus, refreshWhatsAppQR, disconnectWhatsApp, deleteWhatsAppInstance,
   fetchEvolutionConfig, saveEvolutionConfig, setupWhatsAppWebhook, restartWhatsAppInstance, syncWhatsAppNow, setInstanceAttendant, fetchUsers, apiFetch,
-  type WhatsAppInstance, type User as UserType,
+  updateAccount, testMetaCapi,
+  type WhatsAppInstance, type User as UserType, type Account,
 } from '../lib/api'
-import { Plug, Plus, Wifi, WifiOff, Loader, Trash2, QrCode, Power, PowerOff, RefreshCw, Smartphone, Save, Check, Settings, FileSpreadsheet, Copy, Webhook, RotateCw, Download, User } from 'lucide-react'
+import { Plug, Plus, Wifi, WifiOff, Loader, Trash2, QrCode, Power, PowerOff, RefreshCw, Smartphone, Save, Check, Settings, FileSpreadsheet, Copy, Webhook, RotateCw, Download, User, Eye, EyeOff, Activity, AlertTriangle } from 'lucide-react'
 
 export default function Integrations() {
   const { accountId } = useAccount()
@@ -28,6 +29,18 @@ export default function Integrations() {
   const [sheetsCopied, setSheetsCopied] = useState(false)
   const [sheetsTabName, setSheetsTabName] = useState('')
   const [scriptCopied, setScriptCopied] = useState(false)
+
+  // Meta CAPI
+  const [account, setAccount] = useState<Account | null>(null)
+  const [metaPixelId, setMetaPixelId] = useState('')
+  const [metaCapiToken, setMetaCapiToken] = useState('')
+  const [metaTestCode, setMetaTestCode] = useState('')
+  const [metaEnabled, setMetaEnabled] = useState(false)
+  const [showMetaToken, setShowMetaToken] = useState(false)
+  const [savingMeta, setSavingMeta] = useState(false)
+  const [metaSaved, setMetaSaved] = useState(false)
+  const [testingMeta, setTestingMeta] = useState(false)
+  const [metaTestResult, setMetaTestResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [users, setUsers] = useState<UserType[]>([])
 
   useEffect(() => {
@@ -58,7 +71,14 @@ export default function Integrations() {
       setEvoConfigured(!!(config.api_url && config.api_key))
     }).finally(() => setLoading(false))
     // Load account slug for webhook URLs
-    apiFetch(`/api/accounts/${accountId}`).then((d: any) => setAccountSlug(d.account?.slug || '')).catch(() => {})
+    apiFetch(`/api/accounts/${accountId}`).then((d: any) => {
+      setAccountSlug(d.account?.slug || '')
+      setAccount(d.account || null)
+      setMetaPixelId(d.account?.meta_pixel_id || '')
+      setMetaCapiToken(d.account?.meta_capi_token || '')
+      setMetaTestCode(d.account?.meta_capi_test_event_code || '')
+      setMetaEnabled(!!d.account?.meta_capi_enabled)
+    }).catch(() => {})
   }, [accountId])
 
   useEffect(() => { load() }, [load])
@@ -503,6 +523,105 @@ function onChange(e) {
                 )
               })()}
             </details>
+          </div>
+        </section>
+      )}
+
+      {/* Meta Pixel / Conversions API */}
+      {accountId && account && (
+        <section className="dash-section" style={{ marginTop: 24 }}>
+          <div className="section-title"><Activity size={14} /> Meta Pixel / Conversions API</div>
+          <div className="card">
+            <p style={{ fontSize: 12, color: '#9B96B0', marginBottom: 12 }}>
+              Envia eventos pro Meta quando leads avançam de etapa no funil — otimiza campanhas pra atrair leads que viram cliente real. Dispara <strong>apenas pra leads que vieram de anúncios click-to-WhatsApp</strong>.
+            </p>
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginBottom: 14, cursor: 'pointer' }}>
+              <input type="checkbox" checked={metaEnabled} onChange={e => setMetaEnabled(e.target.checked)} />
+              <strong>Ativar envio de eventos pro Meta</strong>
+            </label>
+
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+              <div style={{ flex: 1, minWidth: 220 }}>
+                <label style={{ fontSize: 11, color: '#9B96B0', display: 'block', marginBottom: 4 }}>Pixel ID</label>
+                <input className="input" value={metaPixelId} onChange={e => setMetaPixelId(e.target.value)} placeholder="Ex: 1234567890123456" disabled={!metaEnabled} />
+              </div>
+              <div style={{ flex: 2, minWidth: 280 }}>
+                <label style={{ fontSize: 11, color: '#9B96B0', display: 'block', marginBottom: 4 }}>Access Token (CAPI)</label>
+                <div style={{ position: 'relative' }}>
+                  <input className="input" type={showMetaToken ? 'text' : 'password'} value={metaCapiToken} onChange={e => setMetaCapiToken(e.target.value)} placeholder="EAAxxxx..." disabled={!metaEnabled} style={{ paddingRight: 36 }} />
+                  <button type="button" onClick={() => setShowMetaToken(s => !s)} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#9B96B0', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center' }}>
+                    {showMetaToken ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 11, color: '#9B96B0', display: 'block', marginBottom: 4 }}>
+                Test Event Code <span style={{ color: '#6B6580' }}>(opcional — pega no Meta Events Manager → Test Events)</span>
+              </label>
+              <input className="input" value={metaTestCode} onChange={e => setMetaTestCode(e.target.value)} placeholder="TEST12345 (deixe vazio em produção)" disabled={!metaEnabled} />
+              <div style={{ fontSize: 10, color: '#6B6580', marginTop: 4 }}>
+                Quando preenchido, eventos aparecem só na aba "Test Events" do Meta — não contam pra otimização. Use pra validar a integração antes de virar produção.
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={async () => {
+                  if (!accountId) return
+                  setSavingMeta(true)
+                  try {
+                    await updateAccount(accountId, {
+                      meta_pixel_id: metaPixelId || null,
+                      meta_capi_token: metaCapiToken || null,
+                      meta_capi_test_event_code: metaTestCode || null,
+                      meta_capi_enabled: metaEnabled ? 1 : 0,
+                    } as any)
+                    setMetaSaved(true)
+                    setTimeout(() => setMetaSaved(false), 2000)
+                  } catch (e: any) { alert('Erro: ' + e.message) }
+                  setSavingMeta(false)
+                }}
+                disabled={savingMeta}
+              >
+                {metaSaved ? <><Check size={14} /> Salvo</> : <><Save size={14} /> Salvar</>}
+              </button>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={async () => {
+                  if (!accountId) return
+                  setTestingMeta(true)
+                  setMetaTestResult(null)
+                  try {
+                    const r = await testMetaCapi(accountId)
+                    setMetaTestResult({ ok: !!r.ok, msg: r.ok ? 'Evento de teste enviado! Confere na aba "Test Events" do Meta Events Manager.' : (r.error || 'Falha desconhecida') })
+                  } catch (e: any) { setMetaTestResult({ ok: false, msg: e.message }) }
+                  setTestingMeta(false)
+                }}
+                disabled={testingMeta || !metaPixelId || !metaCapiToken}
+              >
+                {testingMeta ? <><Loader size={14} className="spinning" /> Testando...</> : <><RefreshCw size={14} /> Testar conexão</>}
+              </button>
+              {metaTestResult && (
+                <div style={{
+                  fontSize: 12,
+                  color: metaTestResult.ok ? '#34C759' : '#FF6B6B',
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  background: metaTestResult.ok ? 'rgba(52,199,89,0.08)' : 'rgba(255,107,107,0.08)',
+                  padding: '6px 10px', borderRadius: 6,
+                }}>
+                  {metaTestResult.ok ? <Check size={12} /> : <AlertTriangle size={12} />}
+                  {metaTestResult.msg}
+                </div>
+              )}
+            </div>
+
+            <div style={{ marginTop: 14, padding: 10, background: 'rgba(91,173,226,0.06)', borderRadius: 6, fontSize: 11, color: '#9B96B0' }}>
+              💡 Depois de salvar, vai em <strong>Funis → Editar Etapas</strong> pra escolher qual evento Meta cada etapa dispara (ex: "Visita Agendada" → <code>Schedule</code>, "Venda" → <code>Purchase</code>).
+            </div>
           </div>
         </section>
       )}

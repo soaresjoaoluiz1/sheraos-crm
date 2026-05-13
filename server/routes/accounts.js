@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import db, { DEFAULT_EVOLUTION_API_URL, DEFAULT_EVOLUTION_API_KEY } from '../db.js'
 import { requireRole } from '../middleware/auth.js'
+import { testCapi } from '../services/metaCapi.js'
 
 const router = Router()
 
@@ -62,7 +63,7 @@ router.get('/:id', (req, res) => {
 
 // Update account
 router.put('/:id', requireRole('super_admin'), (req, res) => {
-  const { name, logo_url, is_active, evolution_api_url, evolution_api_key, cnpj, razao_social, segmento, website, instagram, whatsapp_comercial, valor_mensal, contrato_inicio, cidade, estado, observacoes, trabalha_anuncio, investimento_anuncios } = req.body
+  const { name, logo_url, is_active, evolution_api_url, evolution_api_key, cnpj, razao_social, segmento, website, instagram, whatsapp_comercial, valor_mensal, contrato_inicio, cidade, estado, observacoes, trabalha_anuncio, investimento_anuncios, meta_pixel_id, meta_capi_token, meta_capi_test_event_code, meta_capi_enabled } = req.body
   const sets = []
   const params = []
   if (name !== undefined) { sets.push('name = ?'); params.push(name) }
@@ -83,12 +84,28 @@ router.put('/:id', requireRole('super_admin'), (req, res) => {
   if (observacoes !== undefined) { sets.push('observacoes = ?'); params.push(observacoes || null) }
   if (trabalha_anuncio !== undefined) { sets.push('trabalha_anuncio = ?'); params.push(trabalha_anuncio ? 1 : 0) }
   if (investimento_anuncios !== undefined) { sets.push('investimento_anuncios = ?'); params.push(investimento_anuncios || null) }
+  if (meta_pixel_id !== undefined) { sets.push('meta_pixel_id = ?'); params.push(meta_pixel_id || null) }
+  if (meta_capi_token !== undefined) { sets.push('meta_capi_token = ?'); params.push(meta_capi_token || null) }
+  if (meta_capi_test_event_code !== undefined) { sets.push('meta_capi_test_event_code = ?'); params.push(meta_capi_test_event_code || null) }
+  if (meta_capi_enabled !== undefined) { sets.push('meta_capi_enabled = ?'); params.push(meta_capi_enabled ? 1 : 0) }
   if (sets.length === 0) return res.status(400).json({ error: 'Nada pra atualizar' })
   sets.push("updated_at = datetime('now')")
   params.push(req.params.id)
   db.prepare(`UPDATE accounts SET ${sets.join(', ')} WHERE id = ?`).run(...params)
   const account = db.prepare('SELECT * FROM accounts WHERE id = ?').get(req.params.id)
   res.json({ account })
+})
+
+// Teste de conexao Meta CAPI — envia evento TestEvent pra validar credenciais
+router.post('/:id/test-meta-capi', requireRole('super_admin', 'gerente'), async (req, res) => {
+  const account = db.prepare('SELECT id FROM accounts WHERE id = ?').get(req.params.id)
+  if (!account) return res.status(404).json({ error: 'Conta nao encontrada' })
+  // Scope check: gerente so testa propria conta
+  if (req.user.role === 'gerente' && req.user.account_id !== account.id) {
+    return res.status(403).json({ error: 'Sem permissao' })
+  }
+  const result = await testCapi(account.id)
+  res.json(result)
 })
 
 export default router

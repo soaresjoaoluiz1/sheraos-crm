@@ -99,7 +99,9 @@ export default function Funnels() {
           <div className="modal" style={{ maxWidth: 600 }} onClick={e => e.stopPropagation()}>
             <h2>Editar Etapas — {editing.name}</h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
-              {editStages.map((s, i) => (
+              {editStages.map((s, i) => {
+                const isCustomEvent = s.meta_event_name && !['Lead','Contact','Schedule','SubmitApplication','Purchase','CompleteRegistration','AddToCart','InitiateCheckout'].includes(s.meta_event_name)
+                return (
                 <div
                   key={i}
                   draggable
@@ -108,27 +110,62 @@ export default function Funnels() {
                   onDrop={handleDrop(i)}
                   onDragEnd={handleDragEnd}
                   style={{
-                    display: 'flex', gap: 8, alignItems: 'center',
-                    padding: 6, borderRadius: 6,
+                    display: 'flex', flexDirection: 'column', gap: 6,
+                    padding: 8, borderRadius: 6,
                     opacity: dragIndex === i ? 0.4 : 1,
-                    background: dragOverIndex === i && dragIndex !== i ? 'rgba(255,179,0,0.08)' : 'transparent',
+                    background: dragOverIndex === i && dragIndex !== i ? 'rgba(255,179,0,0.08)' : 'rgba(255,255,255,0.02)',
                     borderTop: dragOverIndex === i && dragIndex !== null && dragIndex > i ? '2px solid #FFB300' : '2px solid transparent',
                     borderBottom: dragOverIndex === i && dragIndex !== null && dragIndex < i ? '2px solid #FFB300' : '2px solid transparent',
                     transition: 'background 0.15s',
                   }}
                 >
-                  <GripVertical size={14} style={{ color: '#9B96B0', cursor: 'grab' }} />
-                  <input type="color" value={s.color || '#FFB300'} onChange={e => updateStage(i, 'color', e.target.value)} style={{ width: 30, height: 30, border: 'none', background: 'none', cursor: 'pointer' }} />
-                  <input className="input" value={s.name || ''} onChange={e => updateStage(i, 'name', e.target.value)} placeholder="Nome da etapa" style={{ flex: 1 }} />
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, whiteSpace: 'nowrap', cursor: 'pointer' }}>
-                    <input type="checkbox" checked={!!s.is_conversion} onChange={e => updateStage(i, 'is_conversion', e.target.checked ? 1 : 0)} /> Conv.
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, whiteSpace: 'nowrap', cursor: 'pointer' }}>
-                    <input type="checkbox" checked={!!s.is_terminal} onChange={e => updateStage(i, 'is_terminal', e.target.checked ? 1 : 0)} /> Final
-                  </label>
-                  <button className="btn btn-danger btn-sm btn-icon" onClick={() => removeStage(i)}><Trash2 size={12} /></button>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <GripVertical size={14} style={{ color: '#9B96B0', cursor: 'grab' }} />
+                    <input type="color" value={s.color || '#FFB300'} onChange={e => updateStage(i, 'color', e.target.value)} style={{ width: 30, height: 30, border: 'none', background: 'none', cursor: 'pointer' }} />
+                    <input className="input" value={s.name || ''} onChange={e => updateStage(i, 'name', e.target.value)} placeholder="Nome da etapa" style={{ flex: 1 }} />
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, whiteSpace: 'nowrap', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={!!s.is_conversion} onChange={e => updateStage(i, 'is_conversion', e.target.checked ? 1 : 0)} /> Conv.
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, whiteSpace: 'nowrap', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={!!s.is_terminal} onChange={e => updateStage(i, 'is_terminal', e.target.checked ? 1 : 0)} /> Final
+                    </label>
+                    <button className="btn btn-danger btn-sm btn-icon" onClick={() => removeStage(i)}><Trash2 size={12} /></button>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', paddingLeft: 22 }}>
+                    <span style={{ fontSize: 10, color: '#9B96B0', minWidth: 90 }}>Evento Meta:</span>
+                    <select
+                      className="select"
+                      value={isCustomEvent ? '__custom__' : (s.meta_event_name || '')}
+                      onChange={e => {
+                        if (e.target.value === '__custom__') updateStage(i, 'meta_event_name', '')
+                        else updateStage(i, 'meta_event_name', e.target.value || null)
+                      }}
+                      style={{ fontSize: 11, flex: 1 }}
+                    >
+                      <option value="">— nenhum (não dispara) —</option>
+                      <option value="Lead">Lead</option>
+                      <option value="Contact">Contact</option>
+                      <option value="Schedule">Schedule</option>
+                      <option value="SubmitApplication">SubmitApplication</option>
+                      <option value="CompleteRegistration">CompleteRegistration</option>
+                      <option value="AddToCart">AddToCart</option>
+                      <option value="InitiateCheckout">InitiateCheckout</option>
+                      <option value="Purchase">Purchase</option>
+                      <option value="__custom__">Custom...</option>
+                    </select>
+                    {isCustomEvent && (
+                      <input
+                        className="input"
+                        value={s.meta_event_name || ''}
+                        onChange={e => updateStage(i, 'meta_event_name', e.target.value || null)}
+                        placeholder="Nome do evento custom"
+                        style={{ fontSize: 11, flex: 1 }}
+                      />
+                    )}
+                  </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
             <button className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={addStage}><Plus size={12} /> Adicionar Etapa</button>
             <div className="modal-actions">

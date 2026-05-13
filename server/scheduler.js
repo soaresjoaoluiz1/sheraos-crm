@@ -2,6 +2,7 @@ import fetch from 'node-fetch'
 import db from './db.js'
 import { broadcastSSE } from './sse.js'
 import { resumeBroadcastIfPaused } from './routes/broadcasts.js'
+import { triggerCapiForStageChange } from './services/metaCapi.js'
 
 // Runs every 5 minutes
 const INTERVAL_MS = 5 * 60 * 1000
@@ -288,8 +289,9 @@ async function pollMissedMessages() {
             inst.acc_id, funnel.id, stage.id, attendantId, pushName || phone || 'Sem nome', leadPhone, 'whatsapp', dedupJid, inst.id
           )
           lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(result.lastInsertRowid)
-          db.prepare('INSERT INTO stage_history (lead_id, to_stage_id, trigger_type) VALUES (?, ?, ?)').run(lead.id, stage.id, 'polling')
+          const histRes = db.prepare('INSERT INTO stage_history (lead_id, to_stage_id, trigger_type) VALUES (?, ?, ?)').run(lead.id, stage.id, 'polling')
           broadcastSSE(inst.acc_id, 'lead:created', lead)
+          triggerCapiForStageChange(lead.id, stage.id, histRes.lastInsertRowid)
         }
 
         // Store message + track instance

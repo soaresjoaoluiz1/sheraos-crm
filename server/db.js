@@ -391,6 +391,22 @@ addColumnIfNotExists('accounts', 'observacoes', 'TEXT')
 addColumnIfNotExists('accounts', 'trabalha_anuncio', 'INTEGER NOT NULL DEFAULT 0')
 addColumnIfNotExists('accounts', 'investimento_anuncios', 'REAL')
 
+// Meta Pixel + Conversions API (CAPI) — envio de eventos pra Meta otimizar campanhas
+addColumnIfNotExists('accounts', 'meta_pixel_id', 'TEXT')
+addColumnIfNotExists('accounts', 'meta_capi_token', 'TEXT')
+addColumnIfNotExists('accounts', 'meta_capi_test_event_code', 'TEXT')
+addColumnIfNotExists('accounts', 'meta_capi_enabled', 'INTEGER NOT NULL DEFAULT 0')
+
+// Funnel stages: evento Meta enviado quando lead entra nessa etapa (CAPI)
+addColumnIfNotExists('funnel_stages', 'meta_event_name', 'TEXT')
+
+// Leads: ctwa_clid capturado do click-to-WhatsApp ad (pra correlacionar com campanha Meta via CAPI)
+addColumnIfNotExists('leads', 'ctwa_clid', 'TEXT')
+
+// stage_history: auditoria de envios CAPI
+addColumnIfNotExists('stage_history', 'capi_event_id', 'TEXT')
+addColumnIfNotExists('stage_history', 'capi_status', 'TEXT')
+
 // Leads: extra business fields
 addColumnIfNotExists('leads', 'empresa', 'TEXT')
 addColumnIfNotExists('leads', 'cpf_cnpj', 'TEXT')
