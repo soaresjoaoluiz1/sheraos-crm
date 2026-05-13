@@ -7,6 +7,7 @@ import {
   sendMessage, sendMessageMedia, updateLead, moveLeadStage, assignLead, addLeadNote, addLeadTag, removeLeadTag,
   fetchLeadCadence, advanceLeadCadence, removeLeadCadence, fetchCadences, assignLeadCadence, createTag,
   archiveLead, createStandaloneTask, fetchLeadTasks, completeStandaloneTask, deleteStandaloneTask, completeTask, skipTask, fetchLeadConversations, type LeadConversation,
+  fetchReadyMessages, type ReadyMessage,
   type WhatsAppInstance, type Lead, type Message, type StageHistoryEntry, type LeadNote,
   type Funnel, type User as UserType, type Tag, type LeadCadence, type Cadence,
 } from '../lib/api'
@@ -56,6 +57,12 @@ export default function Chat() {
   const [stageFilter, setStageFilter] = useState<number | ''>('')
   const [showArchived, setShowArchived] = useState(false)
   const [msgText, setMsgText] = useState('')
+  const [readyMessages, setReadyMessages] = useState<ReadyMessage[]>([])
+  const [showReadyMsgs, setShowReadyMsgs] = useState(false)
+  const [readyMsgFilter, setReadyMsgFilter] = useState('')
+  const [readyMsgIdx, setReadyMsgIdx] = useState(0)
+  const readyMsgsContainerRef = useRef<HTMLDivElement>(null)
+  const msgInputRef = useRef<HTMLInputElement>(null)
   const [noteText, setNoteText] = useState('')
   const [sending, setSending] = useState(false)
   const [attachFile, setAttachFile] = useState<File | null>(null)
@@ -96,7 +103,48 @@ export default function Chat() {
     fetchUsers(accountId).then(setUsers)
     fetchTags(accountId).then(setTags)
     fetchCadences(accountId).then(setCadences)
+    fetchReadyMessages(accountId).then(setReadyMessages).catch(() => {})
   }, [accountId])
+
+  // Lista filtrada de mensagens prontas (filtra por filter + ordena por stage_id do lead atual)
+  const filteredReadyMsgs = useMemo(() => {
+    const term = readyMsgFilter.toLowerCase().trim()
+    let list = readyMessages.filter(m => m.is_active)
+    if (term) list = list.filter(m => m.title.toLowerCase().includes(term))
+    const currentStage = lead?.stage_id
+    list = [...list].sort((a, b) => {
+      const aStage = a.stage_id === currentStage ? 0 : (a.stage_id ? 2 : 1)
+      const bStage = b.stage_id === currentStage ? 0 : (b.stage_id ? 2 : 1)
+      return aStage - bStage
+    })
+    return list.slice(0, 10)
+  }, [readyMessages, readyMsgFilter, lead?.stage_id])
+
+  // Fecha popup ao clicar fora
+  useEffect(() => {
+    if (!showReadyMsgs) return
+    const onClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      if (!readyMsgsContainerRef.current?.contains(target)) {
+        setShowReadyMsgs(false); setReadyMsgFilter('')
+      }
+    }
+    document.addEventListener('mousedown', onClick)
+    return () => document.removeEventListener('mousedown', onClick)
+  }, [showReadyMsgs])
+
+  const selectReadyMsg = (m: ReadyMessage) => {
+    const filled = applyMessageVars(m.content, {
+      leadName: lead?.name,
+      leadEmpresa: lead?.empresa,
+      leadCity: lead?.city,
+      attendantName: user?.name,
+    })
+    setMsgText(filled)
+    setShowReadyMsgs(false)
+    setReadyMsgFilter('')
+    setTimeout(() => msgInputRef.current?.focus(), 0)
+  }
 
   // Load leads list (with optional instance filter)
   const loadLeadsList = useCallback(() => {
@@ -509,7 +557,121 @@ export default function Chat() {
                 >
                   <Paperclip size={16} />
                 </button>
-                <input className="input" placeholder="Mensagem..." value={msgText} onChange={e => setMsgText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); handleSendMsg() } }} disabled={sending} />
+                <div ref={readyMsgsContainerRef} style={{ position: 'relative', flex: 1, display: 'flex' }}>
+                  <input
+                    ref={msgInputRef}
+                    className="input"
+                    style={{ flex: 1 }}
+                    placeholder='Mensagem... (digite "/" para usar mensagens prontas)'
+                    value={showReadyMsgs ? `/${readyMsgFilter}` : msgText}
+                    onChange={e => {
+                      const v = e.target.value
+                      if (showReadyMsgs) {
+                        if (v.startsWith('/')) {
+                          setReadyMsgFilter(v.slice(1))
+                          setReadyMsgIdx(0)
+                        } else {
+                          setShowReadyMsgs(false)
+                          setReadyMsgFilter('')
+                          setMsgText(v)
+                        }
+                      } else {
+                        // Abre popup se digitou "/" com input vazio (cursor no inicio)
+                        if (v === '/' && msgText === '') {
+                          setShowReadyMsgs(true)
+                          setReadyMsgFilter('')
+                          setReadyMsgIdx(0)
+                        } else {
+                          setMsgText(v)
+                        }
+                      }
+                    }}
+                    onKeyDown={e => {
+                      if (showReadyMsgs) {
+                        if (e.key === 'ArrowDown') {
+                          e.preventDefault()
+                          setReadyMsgIdx(i => Math.min(i + 1, Math.max(0, filteredReadyMsgs.length - 1)))
+                        } else if (e.key === 'ArrowUp') {
+                          e.preventDefault()
+                          setReadyMsgIdx(i => Math.max(i - 1, 0))
+                        } else if (e.key === 'Enter') {
+                          e.preventDefault()
+                          const selected = filteredReadyMsgs[readyMsgIdx] || filteredReadyMsgs[0]
+                          if (selected) selectReadyMsg(selected)
+                        } else if (e.key === 'Escape') {
+                          e.preventDefault()
+                          setShowReadyMsgs(false)
+                          setReadyMsgFilter('')
+                        } else if (e.key === 'Backspace' && readyMsgFilter === '') {
+                          // Backspace no filtro vazio fecha popup
+                          e.preventDefault()
+                          setShowReadyMsgs(false)
+                        }
+                        return
+                      }
+                      if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                        e.preventDefault()
+                        handleSendMsg()
+                      }
+                    }}
+                    disabled={sending}
+                  />
+
+                  {showReadyMsgs && (
+                    <div style={{
+                      position: 'absolute', bottom: '100%', left: 0, right: 0,
+                      background: '#16102A', border: '1px solid rgba(255,255,255,0.08)',
+                      borderRadius: 8, marginBottom: 6, maxHeight: 360, overflowY: 'auto',
+                      zIndex: 100, boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                    }}>
+                      <div style={{ padding: '8px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)', fontSize: 11, color: '#9B96B0', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <FileText size={12} style={{ color: '#FFB300' }} />
+                        Mensagens prontas {readyMsgFilter && <span style={{ color: '#FFB300' }}>· "{readyMsgFilter}"</span>}
+                      </div>
+                      {filteredReadyMsgs.length === 0 ? (
+                        readyMessages.length === 0 ? (
+                          <div style={{ padding: 20, fontSize: 12, color: '#9B96B0', textAlign: 'center' }}>
+                            Nenhuma mensagem cadastrada.<br/>
+                            <a href={`${import.meta.env.BASE_URL || ''}ready-messages`} style={{ color: '#FFB300', textDecoration: 'underline' }}>Criar mensagens prontas →</a>
+                          </div>
+                        ) : (
+                          <div style={{ padding: 20, fontSize: 12, color: '#9B96B0', textAlign: 'center' }}>
+                            Nenhuma mensagem com "{readyMsgFilter}"
+                          </div>
+                        )
+                      ) : (
+                        filteredReadyMsgs.map((m, i) => {
+                          const isCurrent = m.stage_id === lead?.stage_id
+                          return (
+                            <button
+                              key={m.id}
+                              onClick={() => selectReadyMsg(m)}
+                              onMouseEnter={() => setReadyMsgIdx(i)}
+                              style={{
+                                width: '100%', textAlign: 'left', padding: '10px 12px',
+                                background: i === readyMsgIdx ? 'rgba(255,179,0,0.12)' : 'transparent',
+                                border: 'none', cursor: 'pointer', display: 'block',
+                                borderBottom: '1px solid rgba(255,255,255,0.04)',
+                              }}
+                            >
+                              <div style={{ fontSize: 12, fontWeight: 600, color: i === readyMsgIdx ? '#FFB300' : '#F0EDF5', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                {m.title}
+                                {isCurrent && <span style={{ fontSize: 9, color: '#34C759', fontWeight: 500 }}>· nesta etapa</span>}
+                                {m.stage_name && !isCurrent && <span style={{ fontSize: 9, color: m.stage_color || '#9B96B0', fontWeight: 500 }}>· {m.stage_name}</span>}
+                              </div>
+                              <div style={{ fontSize: 11, color: '#9B96B0', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {m.content.substring(0, 90)}{m.content.length > 90 ? '...' : ''}
+                              </div>
+                            </button>
+                          )
+                        })
+                      )}
+                      <div style={{ padding: '6px 12px', borderTop: '1px solid rgba(255,255,255,0.06)', fontSize: 10, color: '#6B6580' }}>
+                        ↑↓ navegar · Enter selecionar · Esc cancelar
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <button className="btn btn-primary btn-icon" onClick={handleSendMsg} disabled={sending || !msgText.trim()}><Send size={16} /></button>
               </div>
               {attachFile && (
