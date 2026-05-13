@@ -40,10 +40,18 @@ export default function Funnels() {
   const removeStage = (i: number) => { setEditStages(prev => prev.filter((_, idx) => idx !== i)) }
   const updateStage = (i: number, field: string, value: any) => { setEditStages(prev => prev.map((s, idx) => idx === i ? { ...s, [field]: value } : s)) }
 
+  const [savingStages, setSavingStages] = useState(false)
   const saveStages = async () => {
     if (!editing || !accountId) return
-    await updateFunnelStages(editing.id, accountId, editStages.map((s, i) => ({ ...s, position: i })))
-    setEditing(null); load()
+    setSavingStages(true)
+    try {
+      await updateFunnelStages(editing.id, accountId, editStages.map((s, i) => ({ ...s, position: i })))
+      setEditing(null); load()
+    } catch (e: any) {
+      alert('Erro ao salvar etapas: ' + (e.message || 'desconhecido'))
+    } finally {
+      setSavingStages(false)
+    }
   }
 
   const handleDragStart = (i: number) => () => { setDragIndex(i) }
@@ -170,7 +178,7 @@ export default function Funnels() {
             <button className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={addStage}><Plus size={12} /> Adicionar Etapa</button>
             <div className="modal-actions">
               <button className="btn btn-secondary" onClick={() => setEditing(null)}>Cancelar</button>
-              <button className="btn btn-primary" onClick={saveStages}><Save size={14} /> Salvar</button>
+              <button className="btn btn-primary" onClick={saveStages} disabled={savingStages}><Save size={14} /> {savingStages ? 'Salvando...' : 'Salvar'}</button>
             </div>
           </div>
         </div>
