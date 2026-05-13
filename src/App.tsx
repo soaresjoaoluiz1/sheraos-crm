@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { useEffect } from 'react'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { AccountProvider } from './context/AccountContext'
 import { SSEProvider } from './context/SSEContext'
@@ -27,8 +28,34 @@ import AdminGlobalDashboard from './pages/admin/GlobalDashboard'
 import AdminUsers from './pages/admin/Users'
 import Propostas from './pages/Propostas'
 
+// Fix global: impede modal de fechar quando user arrasta seleção de texto
+// de dentro do input pra fora do modal (mousedown dentro, mouseup no overlay)
+function useModalDragFix() {
+  useEffect(() => {
+    let mousedownInsideModal = false
+    const onMouseDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null
+      mousedownInsideModal = !!target?.closest?.('.modal')
+    }
+    const onClickCapture = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null
+      if (mousedownInsideModal && target?.classList?.contains('modal-overlay')) {
+        e.stopPropagation()
+      }
+      mousedownInsideModal = false
+    }
+    document.addEventListener('mousedown', onMouseDown, true)
+    document.addEventListener('click', onClickCapture, true)
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown, true)
+      document.removeEventListener('click', onClickCapture, true)
+    }
+  }, [])
+}
+
 function AppRoutes() {
   const { user, loading } = useAuth()
+  useModalDragFix()
 
   if (loading) return <div className="loading-container"><div className="spinner" /><span>Carregando...</span></div>
   if (!user) return <Routes><Route path="*" element={<Login />} /></Routes>
