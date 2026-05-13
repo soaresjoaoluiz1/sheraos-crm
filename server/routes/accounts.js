@@ -96,6 +96,30 @@ router.put('/:id', requireRole('super_admin'), (req, res) => {
   res.json({ account })
 })
 
+// Atualiza apenas config Meta CAPI — gerente da propria conta tem permissao (nao precisa ser super_admin)
+router.put('/:id/meta-capi', requireRole('super_admin', 'gerente'), (req, res) => {
+  const accountId = parseInt(req.params.id)
+  const account = db.prepare('SELECT id FROM accounts WHERE id = ?').get(accountId)
+  if (!account) return res.status(404).json({ error: 'Conta nao encontrada' })
+  // Scope check: gerente so atualiza propria conta
+  if (req.user.role === 'gerente' && req.user.account_id !== account.id) {
+    return res.status(403).json({ error: 'Sem permissao' })
+  }
+  const { meta_pixel_id, meta_capi_token, meta_capi_test_event_code, meta_capi_enabled } = req.body
+  const sets = []
+  const params = []
+  if (meta_pixel_id !== undefined) { sets.push('meta_pixel_id = ?'); params.push(meta_pixel_id || null) }
+  if (meta_capi_token !== undefined) { sets.push('meta_capi_token = ?'); params.push(meta_capi_token || null) }
+  if (meta_capi_test_event_code !== undefined) { sets.push('meta_capi_test_event_code = ?'); params.push(meta_capi_test_event_code || null) }
+  if (meta_capi_enabled !== undefined) { sets.push('meta_capi_enabled = ?'); params.push(meta_capi_enabled ? 1 : 0) }
+  if (sets.length === 0) return res.status(400).json({ error: 'Nada pra atualizar' })
+  sets.push("updated_at = datetime('now')")
+  params.push(accountId)
+  db.prepare(`UPDATE accounts SET ${sets.join(', ')} WHERE id = ?`).run(...params)
+  const updated = db.prepare('SELECT id, meta_pixel_id, meta_capi_token, meta_capi_test_event_code, meta_capi_enabled FROM accounts WHERE id = ?').get(accountId)
+  res.json({ account: updated })
+})
+
 // Teste de conexao Meta CAPI — envia evento TestEvent pra validar credenciais
 router.post('/:id/test-meta-capi', requireRole('super_admin', 'gerente'), async (req, res) => {
   const account = db.prepare('SELECT id FROM accounts WHERE id = ?').get(req.params.id)

@@ -4,7 +4,7 @@ import {
   fetchWhatsAppInstances, createWhatsAppInstance, connectWhatsAppInstance,
   checkWhatsAppStatus, refreshWhatsAppQR, disconnectWhatsApp, deleteWhatsAppInstance,
   fetchEvolutionConfig, saveEvolutionConfig, setupWhatsAppWebhook, restartWhatsAppInstance, syncWhatsAppNow, setInstanceAttendant, fetchUsers, apiFetch,
-  updateAccount, testMetaCapi,
+  updateMetaCapi, testMetaCapi,
   type WhatsAppInstance, type User as UserType, type Account,
 } from '../lib/api'
 import { Plug, Plus, Wifi, WifiOff, Loader, Trash2, QrCode, Power, PowerOff, RefreshCw, Smartphone, Save, Check, Settings, FileSpreadsheet, Copy, Webhook, RotateCw, Download, User, Eye, EyeOff, Activity, AlertTriangle } from 'lucide-react'
@@ -574,12 +574,12 @@ function onChange(e) {
                   if (!accountId) return
                   setSavingMeta(true)
                   try {
-                    await updateAccount(accountId, {
+                    await updateMetaCapi(accountId, {
                       meta_pixel_id: metaPixelId || null,
                       meta_capi_token: metaCapiToken || null,
                       meta_capi_test_event_code: metaTestCode || null,
                       meta_capi_enabled: metaEnabled ? 1 : 0,
-                    } as any)
+                    })
                     setMetaSaved(true)
                     setTimeout(() => setMetaSaved(false), 2000)
                   } catch (e: any) { alert('Erro: ' + e.message) }
@@ -596,6 +596,13 @@ function onChange(e) {
                   setTestingMeta(true)
                   setMetaTestResult(null)
                   try {
+                    // Auto-salva antes de testar (evita confusao de "preencheu mas nao salvou")
+                    await updateMetaCapi(accountId, {
+                      meta_pixel_id: metaPixelId || null,
+                      meta_capi_token: metaCapiToken || null,
+                      meta_capi_test_event_code: metaTestCode || null,
+                      meta_capi_enabled: metaEnabled ? 1 : 0,
+                    })
                     const r = await testMetaCapi(accountId)
                     setMetaTestResult({ ok: !!r.ok, msg: r.ok ? 'Evento de teste enviado! Confere na aba "Test Events" do Meta Events Manager.' : (r.error || 'Falha desconhecida') })
                   } catch (e: any) { setMetaTestResult({ ok: false, msg: e.message }) }

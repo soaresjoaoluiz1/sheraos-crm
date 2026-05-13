@@ -75,6 +75,7 @@ export const fetchAccounts = () => apiFetch<{ accounts: Account[] }>('/api/accou
 export const createAccount = (data: Partial<Account> & { name: string }) => apiFetch<{ account: Account }>('/api/accounts', { method: 'POST', body: JSON.stringify(data) }).then(d => d.account)
 export const updateAccount = (id: number, data: Partial<Account>) => apiFetch<{ account: Account }>(`/api/accounts/${id}`, { method: 'PUT', body: JSON.stringify(data) }).then(d => d.account)
 export const testMetaCapi = (id: number) => apiFetch<{ ok: boolean; error?: string; response?: any }>(`/api/accounts/${id}/test-meta-capi`, { method: 'POST' })
+export const updateMetaCapi = (id: number, data: { meta_pixel_id?: string | null; meta_capi_token?: string | null; meta_capi_test_event_code?: string | null; meta_capi_enabled?: number }) => apiFetch<{ account: Account }>(`/api/accounts/${id}/meta-capi`, { method: 'PUT', body: JSON.stringify(data) }).then(d => d.account)
 export const fetchAccount = (id: number) => apiFetch<{ account: Account; users: User[]; funnels: Funnel[] }>(`/api/accounts/${id}`)
 
 // Users
