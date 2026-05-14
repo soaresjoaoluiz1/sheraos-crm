@@ -33,6 +33,10 @@ export interface Lead {
   is_archived?: number; archived_at?: string | null; has_new_after_archive?: number
   empresa?: string | null; cpf_cnpj?: string | null; instagram?: string | null; trabalha_anuncio?: number; investimento_anuncios?: number | null
   opted_in_at?: string | null; opted_out_at?: string | null; last_broadcast_at?: string | null
+  state?: string | null; zip?: string | null; birthdate?: string | null; gender?: string | null
+  ctwa_clid?: string | null; fbp?: string | null; fbc?: string | null
+  meta_ad_id?: string | null; meta_campaign_id?: string | null; meta_form_id?: string | null; lead_form_lead_id?: string | null
+  client_ip_address?: string | null; client_user_agent?: string | null
   stage_name?: string; stage_color?: string; attendant_name?: string; instance_name?: string
   last_message?: string; message_count?: number; tags?: Tag[]
 }

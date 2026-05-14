@@ -13,17 +13,16 @@ function normalizePhoneForHash(p) {
   if (!p) return null
   const digits = String(p).replace(/[^\d]/g, '')
   if (!digits) return null
-  // SHA256 do telefone com codigo do pais, sem +
   return sha256(digits)
 }
 
-// Constroi fbc a partir de ctwa_clid (formato padrao Meta)
-function buildFbc(ctwaClid, eventTimeSec) {
-  if (!ctwaClid) return null
-  return `fb.1.${eventTimeSec * 1000}.${ctwaClid}`
+// Constroi fbc no formato Meta (fb.1.{ms}.{fbclid_ou_ctwa_clid})
+function buildFbc(clid, eventTimeSec) {
+  if (!clid) return null
+  if (String(clid).startsWith('fb.')) return String(clid) // ja vem montado
+  return `fb.1.${eventTimeSec * 1000}.${clid}`
 }
 
-// Tenta separar first_name e last_name de um nome completo
 function splitName(fullName) {
   if (!fullName) return { fn: null, ln: null }
   const parts = String(fullName).trim().split(/\s+/)
@@ -32,10 +31,18 @@ function splitName(fullName) {
   return { fn: parts[0], ln: parts.slice(1).join(' ') }
 }
 
+// Normaliza cidade pra hash: lowercase, sem acento, sem espacos extras
+function normalizeCityForHash(s) {
+  if (!s) return null
+  const normalized = String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim().replace(/\s+/g, '')
+  return normalized ? sha256(normalized) : null
+}
+
 // ─── Envia evento pro Meta CAPI ──────────────────────────────────────
-// opts: { accountId, lead, eventName, stageId, historyId }
+// opts: { accountId, lead, eventName, stageId, historyId, request? }
+// request opcional: req do express (extrai IP/UA)
 // retorna: { ok, skipped, reason, event_id, response, error }
-export async function sendCapiEvent({ accountId, lead, eventName, stageId, historyId }) {
+export async function sendCapiEvent({ accountId, lead, eventName, stageId, historyId, request }) {
   if (!accountId || !lead || !eventName) return { skipped: true, reason: 'missing_params' }
 
   const account = db.prepare(`
@@ -50,43 +57,84 @@ export async function sendCapiEvent({ accountId, lead, eventName, stageId, histo
     return { skipped: true, reason: 'capi_not_configured' }
   }
 
-  // Envia pra TODOS os leads — Meta deduplica por external_id/phone hasheado
-  // CTWA-specific atribuicao so funciona se ctwa_clid foi capturado (continua tentando no webhook)
   const eventTime = Math.floor(Date.now() / 1000)
   const eventId = `lead_${lead.id}_stage_${stageId || 0}_${eventTime}`
 
   const { fn, ln } = splitName(lead.name)
 
-  // user_data — tudo hasheado em SHA256 lowercase trim
+  // user_data — Meta requer SHA256 lowercase trim em PII, plaintext em IDs/IP/UA
   const userData = {}
+
   const phHash = normalizePhoneForHash(lead.phone)
   if (phHash) userData.ph = [phHash]
   if (lead.email) userData.em = [sha256(lead.email)]
   if (fn) userData.fn = [sha256(fn)]
   if (ln) userData.ln = [sha256(ln)]
-  // external_id facilita match com lead unico no CRM
-  userData.external_id = [sha256(`crm_lead_${lead.id}`)]
-  // fbc reconstruido a partir do ctwa_clid — Meta usa pra atribuir ao clique original
-  const fbc = buildFbc(lead.ctwa_clid, eventTime)
+
+  // external_id — Meta aceita plaintext (preferido) ou hash. Usamos plaintext pra max EMQ.
+  userData.external_id = [`crm_lead_${lead.id}`]
+
+  // Localizacao (hash) — eleva EMQ
+  const ctHash = normalizeCityForHash(lead.city)
+  if (ctHash) userData.ct = [ctHash]
+  if (lead.state) userData.st = [sha256(lead.state)]
+  if (lead.zip) userData.zp = [sha256(String(lead.zip).replace(/\D/g, ''))]
+  userData.country = [sha256('br')] // default Brasil
+
+  // Data nascimento + genero (se tiver — hash)
+  if (lead.birthdate) {
+    const dbDate = String(lead.birthdate).replace(/\D/g, '').slice(0, 8) // YYYYMMDD
+    if (dbDate.length === 8) userData.db = [sha256(dbDate)]
+  }
+  if (lead.gender) {
+    const g = String(lead.gender).trim().toLowerCase().charAt(0)
+    if (g === 'f' || g === 'm') userData.ge = [sha256(g)]
+  }
+
+  // fbp/fbc — PLAINTEXT (nao hash!)
+  if (lead.fbp) userData.fbp = lead.fbp
+  // fbc: usa lead.fbc se existir, senao reconstroi do ctwa_clid
+  const fbc = lead.fbc || buildFbc(lead.ctwa_clid, eventTime)
   if (fbc) userData.fbc = fbc
 
-  // custom_data com origem do lead — ajuda Meta atribuir
+  // lead_id Meta Lead Form — plaintext, obrigatorio pra Conversion Leads
+  if (lead.lead_form_lead_id) userData.lead_id = lead.lead_form_lead_id
+
+  // IP/UA — extrai do request quando disponivel, senao usa o salvo no lead
+  const ip = request?.headers?.['x-forwarded-for']?.split(',')[0]?.trim()
+    || request?.headers?.['x-real-ip']
+    || request?.ip
+    || lead.client_ip_address
+  if (ip && ip !== '::1' && ip !== '127.0.0.1') userData.client_ip_address = ip
+  const ua = request?.headers?.['user-agent'] || lead.client_user_agent
+  if (ua) userData.client_user_agent = ua
+
+  // Detecta se eh CTWA — define action_source e messaging_channel
+  const isCtwa = !!(lead.ctwa_clid || lead.fbc?.includes('ctwa'))
+  const isLeadForm = !!(lead.lead_form_lead_id || lead.meta_form_id)
+
+  let actionSource = 'system_generated'
+  if (isCtwa) actionSource = 'business_messaging'
+  else if (isLeadForm) actionSource = 'system_generated' // CRM agindo sobre lead do form
+
   const customData = {
     lead_source: lead.source || 'crm',
     stage_id: stageId || null,
     currency: 'BRL',
   }
+  if (isCtwa) customData.messaging_channel = 'whatsapp'
   if (lead.ctwa_clid) customData.ctwa_clid = lead.ctwa_clid
   if (lead.meta_ad_id) customData.ad_id = lead.meta_ad_id
   if (lead.meta_campaign_id) customData.campaign_id = lead.meta_campaign_id
   if (lead.meta_form_id) customData.lead_form_id = lead.meta_form_id
+  if (lead.lead_form_lead_id) customData.lead_id = lead.lead_form_lead_id
 
   const payload = {
     data: [{
       event_name: eventName,
       event_time: eventTime,
       event_id: eventId,
-      action_source: 'system_generated',
+      action_source: actionSource,
       user_data: userData,
       custom_data: customData,
     }],
@@ -95,8 +143,12 @@ export async function sendCapiEvent({ accountId, lead, eventName, stageId, histo
     payload.test_event_code = account.meta_capi_test_event_code
   }
 
+  // Log do que esta sendo enviado (preview, sem dados sensiveis no claro)
+  const sentKeys = Object.keys(userData).sort().join(',')
+  console.log(`[CAPI→Meta] account=${accountId} lead=${lead.id} event=${eventName} action_source=${actionSource} user_data_keys=[${sentKeys}] custom_data_keys=[${Object.keys(customData).join(',')}]`)
+
   try {
-    const url = `https://graph.facebook.com/v18.0/${account.meta_pixel_id}/events?access_token=${encodeURIComponent(account.meta_capi_token)}`
+    const url = `https://graph.facebook.com/v21.0/${account.meta_pixel_id}/events?access_token=${encodeURIComponent(account.meta_capi_token)}`
     const r = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -106,64 +158,71 @@ export async function sendCapiEvent({ accountId, lead, eventName, stageId, histo
     const responseData = await r.json().catch(() => ({}))
     const ok = r.ok && !responseData.error
 
-    // Audit no stage_history se foi passado
+    let status = 'failed'
+    if (ok) status = 'sent'
+    else if (responseData.error?.code === 100) status = 'failed_invalid_param'
+    else if (r.status === 400) status = 'failed_400'
+    else if (r.status === 401) status = 'failed_auth'
+    else if (r.status === 429) status = 'failed_rate_limit'
+
     if (historyId) {
       try {
         db.prepare('UPDATE stage_history SET capi_event_id = ?, capi_status = ? WHERE id = ?')
-          .run(eventId, ok ? 'sent' : 'failed', historyId)
+          .run(eventId, status, historyId)
       } catch {}
     }
 
-    if (!ok) {
-      console.error(`[CAPI] lead ${lead.id} stage ${stageId} event ${eventName} — falha:`, JSON.stringify(responseData).substring(0, 300))
+    if (ok) {
+      console.log(`[CAPI✓] lead=${lead.id} event=${eventName} event_id=${eventId} events_received=${responseData.events_received || '?'} fbtrace=${responseData.fbtrace_id || '?'}`)
     } else {
-      console.log(`[CAPI] lead ${lead.id} → ${eventName} enviado ok (event_id: ${eventId})`)
+      console.error(`[CAPI✗] lead=${lead.id} event=${eventName} HTTP ${r.status} status=${status} response=${JSON.stringify(responseData).substring(0, 400)}`)
     }
 
-    return { ok, event_id: eventId, response: responseData }
+    return { ok, event_id: eventId, status, response: responseData }
   } catch (err) {
-    console.error(`[CAPI] erro fatal lead ${lead.id}:`, err.message)
+    console.error(`[CAPI✗] erro fatal lead=${lead.id} event=${eventName}:`, err.message)
     if (historyId) {
-      try {
-        db.prepare('UPDATE stage_history SET capi_status = ? WHERE id = ?').run('failed', historyId)
-      } catch {}
+      try { db.prepare('UPDATE stage_history SET capi_status = ? WHERE id = ?').run('failed_network', historyId) } catch {}
     }
     return { ok: false, error: err.message }
   }
 }
 
-// Helper: pega lead completo pelo id (pra callers que so tem o id)
+// Helper: pega lead completo pelo id (com todos campos relevantes pra CAPI)
 export function loadLeadForCapi(leadId) {
-  return db.prepare('SELECT id, account_id, name, phone, email, ctwa_clid, meta_ad_id, meta_campaign_id, meta_form_id, source FROM leads WHERE id = ?').get(leadId)
+  return db.prepare(`
+    SELECT id, account_id, name, phone, email, city, state, zip, birthdate, gender,
+           ctwa_clid, meta_ad_id, meta_campaign_id, meta_form_id, lead_form_lead_id,
+           fbp, fbc, client_ip_address, client_user_agent, source
+    FROM leads WHERE id = ?
+  `).get(leadId)
 }
 
-// Helper: dispara CAPI se stage tem meta_event_name configurado.
-// historyId opcional pra auditoria.
-// Fire-and-forget — nunca bloqueia caller.
-export function triggerCapiForStageChange(leadOrId, newStageId, historyId = null) {
+// Helper: dispara CAPI se stage tem meta_event_name configurado
+// Fire-and-forget — nunca bloqueia caller
+export function triggerCapiForStageChange(leadOrId, newStageId, historyId = null, request = null) {
   try {
     const lead = typeof leadOrId === 'number' ? loadLeadForCapi(leadOrId) : leadOrId
     if (!lead || !newStageId) return
     const stage = db.prepare('SELECT meta_event_name FROM funnel_stages WHERE id = ?').get(newStageId)
     if (!stage?.meta_event_name) return
-    // Garante que temos ctwa_clid (recarrega se objeto veio sem)
+    // Recarrega lead completo se objeto veio "leve" (sem todos campos)
     let leadFull = lead
-    if (!('ctwa_clid' in lead)) leadFull = loadLeadForCapi(lead.id)
+    if (!('client_ip_address' in lead)) leadFull = loadLeadForCapi(lead.id)
     sendCapiEvent({
       accountId: leadFull.account_id,
       lead: leadFull,
       eventName: stage.meta_event_name,
       stageId: newStageId,
       historyId,
+      request,
     }).catch(e => console.error('[CAPI] async error:', e.message))
   } catch (e) {
     console.error('[CAPI] triggerCapiForStageChange error:', e.message)
   }
 }
 
-// Teste manual (chamado pelo endpoint /test-meta-capi)
-// Envia um evento 'Lead' REAL pra producao (sem test_event_code) — usuario foi avisado no UI antes.
-// Aparece na "Visao geral" do Pixel em ~30min, confirma visualmente que CAPI esta vinculado.
+// Teste manual — envia evento Lead REAL pra producao (sem test_event_code)
 export async function testCapi(accountId) {
   const account = db.prepare(`
     SELECT meta_pixel_id, meta_capi_token
@@ -180,14 +239,15 @@ export async function testCapi(accountId) {
       event_id: `crm_validation_${eventTime}`,
       action_source: 'system_generated',
       user_data: {
-        external_id: [sha256(`crm_validation_${accountId}_${eventTime}`)],
+        external_id: [`crm_validation_${accountId}_${eventTime}`],
+        country: [sha256('br')],
       },
       custom_data: { source: 'crm_validation' },
     }],
   }
-  console.log(`[CAPI TEST] account ${accountId} enviando evento Lead REAL (sem test code) pixel ${account.meta_pixel_id}`)
+  console.log(`[CAPI TEST] account ${accountId} enviando evento Lead REAL pixel ${account.meta_pixel_id}`)
   try {
-    const url = `https://graph.facebook.com/v18.0/${account.meta_pixel_id}/events?access_token=${encodeURIComponent(account.meta_capi_token)}`
+    const url = `https://graph.facebook.com/v21.0/${account.meta_pixel_id}/events?access_token=${encodeURIComponent(account.meta_capi_token)}`
     const r = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -195,7 +255,7 @@ export async function testCapi(accountId) {
       timeout: 10000,
     })
     const responseData = await r.json().catch(() => ({}))
-    console.log(`[CAPI TEST] account ${accountId} response HTTP ${r.status}:`, JSON.stringify(responseData).substring(0, 400))
+    console.log(`[CAPI TEST] account ${accountId} HTTP ${r.status}:`, JSON.stringify(responseData).substring(0, 400))
     if (!r.ok || responseData.error) {
       return { ok: false, error: responseData.error?.message || `HTTP ${r.status}`, response: responseData }
     }

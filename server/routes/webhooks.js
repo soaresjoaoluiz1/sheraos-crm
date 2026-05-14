@@ -354,6 +354,15 @@ router.post('/evolution/:accountSlug', (req, res) => {
       lead.ctwa_clid = adInfo.ctwaClid
     }
 
+    // Captura IP do request (1a vez) — usado pelo CAPI pra elevar EMQ
+    if (isNew || !lead.client_ip_address) {
+      const reqIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.headers['x-real-ip'] || req.ip
+      if (reqIp && reqIp !== '::1' && reqIp !== '127.0.0.1') {
+        db.prepare("UPDATE leads SET client_ip_address = COALESCE(client_ip_address, ?) WHERE id = ?").run(reqIp, lead.id)
+        lead.client_ip_address = reqIp
+      }
+    }
+
     // CAPI: lead novo → dispara evento da primeira etapa (se mapeada)
     if (isNew) {
       triggerCapiForStageChange(lead.id, lead.stage_id, null)
@@ -439,8 +448,16 @@ router.post('/meta-leads/:accountSlug', async (req, res) => {
     for (const entry of entries) {
       for (const change of (entry.changes || [])) {
         if (change.field !== 'leadgen') continue
-        const leadgenId = change.value?.leadgen_id
+        const v = change.value || {}
+        const leadgenId = v.leadgen_id
         if (!leadgenId) continue
+
+        // IDs do webhook leadgen (todos plaintext, obrigatorios pra Conversion Leads no Meta)
+        const formId = v.form_id || null
+        const adId = v.ad_id || null
+        const adsetId = v.adset_id || null
+        const campaignId = v.campaign_id || null
+        const pageId = v.page_id || null
 
         // Fetch full lead data from Meta (needs META_ACCESS_TOKEN)
         const metaToken = process.env.META_ACCESS_TOKEN
@@ -448,18 +465,43 @@ router.post('/meta-leads/:accountSlug', async (req, res) => {
 
         const r = await fetch(`https://graph.facebook.com/v21.0/${leadgenId}?access_token=${metaToken}`)
         const data = await r.json()
-        if (data.error) continue
+        if (data.error) { console.error('[Webhook Meta Lead] graph error:', data.error.message); continue }
 
-        // Extract fields
-        let name = '', phone = '', email = ''
+        // Extract fields padrao
+        let name = '', phone = '', email = '', city = '', state = '', zip = ''
         for (const field of (data.field_data || [])) {
           const val = field.values?.[0] || ''
           if (field.name === 'full_name') name = val
           else if (field.name === 'phone_number') { phone = val.replace(/[^\d]/g, ''); if (!phone.startsWith('55') && phone.length >= 10 && phone.length <= 11) phone = '55' + phone }
           else if (field.name === 'email') email = val
+          else if (field.name === 'city') city = val
+          else if (field.name === 'state') state = val
+          else if (field.name === 'zip_code' || field.name === 'post_code') zip = val
         }
 
-        getOrCreateLead(account.id, phone, name, 'meta_form', null)
+        const { lead, isNew } = getOrCreateLead(account.id, phone, name, 'meta_form', null)
+        if (!lead) continue
+
+        // Salva todos IDs Meta + dados de contato (COALESCE pra nao sobrescrever)
+        db.prepare(`
+          UPDATE leads SET
+            lead_form_lead_id = COALESCE(lead_form_lead_id, ?),
+            meta_form_id = COALESCE(meta_form_id, ?),
+            meta_ad_id = COALESCE(meta_ad_id, ?),
+            meta_campaign_id = COALESCE(meta_campaign_id, ?),
+            email = COALESCE(email, NULLIF(?, '')),
+            city = COALESCE(city, NULLIF(?, '')),
+            state = COALESCE(state, NULLIF(?, '')),
+            zip = COALESCE(zip, NULLIF(?, ''))
+          WHERE id = ?
+        `).run(leadgenId, formId, adId, campaignId, email, city, state, zip, lead.id)
+
+        console.log(`[Meta Lead Form] lead=${lead.id} leadgen_id=${leadgenId} form=${formId} ad=${adId} campaign=${campaignId} isNew=${isNew}`)
+
+        // CAPI: dispara evento Lead pra nova entrada
+        if (isNew) {
+          triggerCapiForStageChange(lead.id, lead.stage_id, null, req)
+        }
       }
     }
 
@@ -479,18 +521,57 @@ router.get('/meta-leads/:accountSlug', (req, res) => {
   res.status(403).send('Forbidden')
 })
 
-// Website form webhook
+// Website form webhook — captura tudo pra elevar EMQ no CAPI
 router.post('/site/:accountSlug', (req, res) => {
   try {
     const account = db.prepare('SELECT * FROM accounts WHERE slug = ? AND is_active = 1').get(req.params.accountSlug)
     if (!account) return res.status(404).json({ error: 'Account not found' })
 
-    const { name, phone, email, city, source, message } = req.body
-    const { lead, isNew } = getOrCreateLead(account.id, phone, name, 'website', null)
-    if (lead && email) db.prepare('UPDATE leads SET email = ? WHERE id = ? AND email IS NULL').run(email, lead.id)
-    if (lead && city) db.prepare('UPDATE leads SET city = ? WHERE id = ? AND city IS NULL').run(city, lead.id)
+    const { name, phone, email, city, state, zip, message } = req.body
+    // Tracking Meta: site pode mandar esses no body (capturados via JS no front)
+    const { fbp, fbc, fbclid, ctwa_clid, ad_id, campaign_id, form_id, source: src } = req.body
+    const { lead, isNew } = getOrCreateLead(account.id, phone, name, src || 'website', null)
+    if (!lead) return res.status(500).json({ error: 'Falha ao criar lead' })
 
-    res.json({ ok: true, leadId: lead?.id })
+    // IP/UA do request
+    const reqIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.headers['x-real-ip'] || req.ip
+    const ua = req.headers['user-agent']
+
+    // fbc: se nao veio do cookie mas tem fbclid, monta
+    let fbcFinal = fbc || null
+    if (!fbcFinal && fbclid) fbcFinal = `fb.1.${Date.now()}.${fbclid}`
+
+    db.prepare(`
+      UPDATE leads SET
+        email = COALESCE(email, NULLIF(?, '')),
+        city = COALESCE(city, NULLIF(?, '')),
+        state = COALESCE(state, NULLIF(?, '')),
+        zip = COALESCE(zip, NULLIF(?, '')),
+        fbp = COALESCE(fbp, NULLIF(?, '')),
+        fbc = COALESCE(fbc, NULLIF(?, '')),
+        ctwa_clid = COALESCE(ctwa_clid, NULLIF(?, '')),
+        meta_ad_id = COALESCE(meta_ad_id, NULLIF(?, '')),
+        meta_campaign_id = COALESCE(meta_campaign_id, NULLIF(?, '')),
+        meta_form_id = COALESCE(meta_form_id, NULLIF(?, '')),
+        client_ip_address = COALESCE(client_ip_address, NULLIF(?, '')),
+        client_user_agent = COALESCE(client_user_agent, NULLIF(?, ''))
+      WHERE id = ?
+    `).run(
+      email || '', city || '', state || '', zip || '',
+      fbp || '', fbcFinal || '', ctwa_clid || '',
+      ad_id || '', campaign_id || '', form_id || '',
+      (reqIp && reqIp !== '::1' && reqIp !== '127.0.0.1') ? reqIp : '',
+      ua || '',
+      lead.id
+    )
+
+    console.log(`[Site Form] lead=${lead.id} account=${account.slug} isNew=${isNew} fbp=${!!fbp} fbc=${!!fbcFinal} ctwa=${!!ctwa_clid}`)
+
+    if (isNew) {
+      triggerCapiForStageChange(lead.id, lead.stage_id, null, req)
+    }
+
+    res.json({ ok: true, leadId: lead.id })
   } catch (err) {
     console.error('[Webhook Site]', err.message)
     res.status(500).json({ error: err.message })
@@ -534,6 +615,22 @@ router.post('/sheets/:accountSlug', (req, res) => {
     if (body.ad_id) db.prepare('UPDATE leads SET meta_ad_id = COALESCE(meta_ad_id, ?) WHERE id = ?').run(String(body.ad_id), lead.id)
     if (body.campaign_id) db.prepare('UPDATE leads SET meta_campaign_id = COALESCE(meta_campaign_id, ?) WHERE id = ?').run(String(body.campaign_id), lead.id)
     if (body.form_id) db.prepare('UPDATE leads SET meta_form_id = COALESCE(meta_form_id, ?) WHERE id = ?').run(String(body.form_id), lead.id)
+    if (body.leadgen_id) db.prepare('UPDATE leads SET lead_form_lead_id = COALESCE(lead_form_lead_id, ?) WHERE id = ?').run(String(body.leadgen_id), lead.id)
+
+    // Tracking pixel — vem da LP (browser-side) via cookies
+    if (body.fbp) db.prepare('UPDATE leads SET fbp = COALESCE(fbp, ?) WHERE id = ?').run(String(body.fbp), lead.id)
+    let fbcVal = body.fbc || null
+    if (!fbcVal && body.fbclid) fbcVal = `fb.1.${Date.now()}.${body.fbclid}`
+    if (fbcVal) db.prepare('UPDATE leads SET fbc = COALESCE(fbc, ?) WHERE id = ?').run(String(fbcVal), lead.id)
+    if (body.ctwa_clid) db.prepare('UPDATE leads SET ctwa_clid = COALESCE(ctwa_clid, ?) WHERE id = ?').run(String(body.ctwa_clid), lead.id)
+    if (body.user_agent) db.prepare('UPDATE leads SET client_user_agent = COALESCE(client_user_agent, ?) WHERE id = ?').run(String(body.user_agent), lead.id)
+    // IP do request (Apps Script geralmente sobrescreve com o IP do GAE, mas vale tentar)
+    const reqIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.headers['x-real-ip'] || req.ip
+    if (reqIp && reqIp !== '::1' && reqIp !== '127.0.0.1') {
+      db.prepare('UPDATE leads SET client_ip_address = COALESCE(client_ip_address, ?) WHERE id = ?').run(reqIp, lead.id)
+    }
+    if (body.state || body.estado) db.prepare('UPDATE leads SET state = COALESCE(state, ?) WHERE id = ?').run(String(body.state || body.estado), lead.id)
+    if (body.zip || body.cep) db.prepare('UPDATE leads SET zip = COALESCE(zip, ?) WHERE id = ?').run(String(body.zip || body.cep), lead.id)
 
     // Movimentacao opcional pra etapa especifica do funil (case-insensitive, ignora acentos)
     const stageName = body.stage_name || body.stage || body.etapa || ''
@@ -565,11 +662,11 @@ router.post('/sheets/:accountSlug', (req, res) => {
 
     if (isNew) {
       try { broadcastSSE(account.id, 'lead:created', lead) } catch {}
-      // CAPI: dispara evento da etapa inicial (mas service vai filtrar se nao tiver ctwa_clid)
-      triggerCapiForStageChange(lead.id, lead.stage_id, null)
+      // CAPI: dispara evento da etapa inicial (lead recarregado com todos campos via service)
+      triggerCapiForStageChange(lead.id, lead.stage_id, null, req)
     }
 
-    console.log(`[Webhook Sheets] ${isNew ? 'New' : 'Existing'} lead: ${name || phone} → account ${account.name}`)
+    console.log(`[Webhook Sheets] ${isNew ? 'New' : 'Existing'} lead: ${name || phone} → account ${account.name} fbp=${!!body.fbp} fbc=${!!fbcVal} event_id=${body.event_id || 'none'}`)
     res.json({ ok: true, leadId: lead.id, isNew })
   } catch (err) {
     console.error('[Webhook Sheets]', err.message)

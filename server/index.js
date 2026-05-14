@@ -32,6 +32,8 @@ import { startScheduler } from './scheduler.js'
 import { recoverPendingBroadcasts } from './routes/broadcasts.js'
 
 const app = express()
+// Atras de Apache reverse proxy — confia no X-Forwarded-For pra req.ip funcionar
+app.set('trust proxy', 1)
 app.use(cors())
 app.use(express.json({ limit: '5mb' }))
 

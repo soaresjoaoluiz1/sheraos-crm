@@ -411,6 +411,17 @@ addColumnIfNotExists('leads', 'meta_form_id', 'TEXT')
 addColumnIfNotExists('stage_history', 'capi_event_id', 'TEXT')
 addColumnIfNotExists('stage_history', 'capi_status', 'TEXT')
 
+// Leads: campos extras pra elevar Event Match Quality (EMQ) no Meta CAPI
+addColumnIfNotExists('leads', 'fbp', 'TEXT')                  // _fbp cookie do browser (plaintext)
+addColumnIfNotExists('leads', 'fbc', 'TEXT')                  // _fbc cookie ou montado a partir de fbclid (plaintext)
+addColumnIfNotExists('leads', 'client_ip_address', 'TEXT')    // IP do lead na 1a interacao
+addColumnIfNotExists('leads', 'client_user_agent', 'TEXT')    // UA do navegador (so faz sentido em forms web)
+addColumnIfNotExists('leads', 'lead_form_lead_id', 'TEXT')    // leadgen_id do Meta Lead Form (NAO confundir com leads.id)
+addColumnIfNotExists('leads', 'state', 'TEXT')                // estado (UF) — pra hash st no CAPI
+addColumnIfNotExists('leads', 'zip', 'TEXT')                  // CEP — pra hash zp no CAPI
+addColumnIfNotExists('leads', 'birthdate', 'TEXT')            // YYYY-MM-DD — pra hash db no CAPI
+addColumnIfNotExists('leads', 'gender', 'TEXT')               // 'f' ou 'm' — pra hash ge no CAPI
+
 // Leads: extra business fields
 addColumnIfNotExists('leads', 'empresa', 'TEXT')
 addColumnIfNotExists('leads', 'cpf_cnpj', 'TEXT')
