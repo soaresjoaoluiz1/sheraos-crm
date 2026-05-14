@@ -46,6 +46,7 @@ export default function Chat() {
   const [newChatName, setNewChatName] = useState('')
   const [newChatPhone, setNewChatPhone] = useState('')
   const [creatingNewChat, setCreatingNewChat] = useState(false)
+  const [notice, setNotice] = useState<{ kind: 'info' | 'error' | 'success'; title: string; message: string } | null>(null)
   const [lead, setLead] = useState<Lead | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [history, setHistory] = useState<StageHistoryEntry[]>([])
@@ -225,8 +226,8 @@ export default function Chat() {
   const handleCreateNewChat = async () => {
     if (!accountId) return
     const phone = newChatPhone.replace(/[^\d]/g, '')
-    if (!phone) { alert('Informe o telefone'); return }
-    if (phone.length < 10) { alert('Telefone invalido (minimo 10 digitos com DDD)'); return }
+    if (!phone) { setNotice({ kind: 'error', title: 'Telefone obrigatorio', message: 'Informe o telefone do contato.' }); return }
+    if (phone.length < 10) { setNotice({ kind: 'error', title: 'Telefone invalido', message: 'Use no minimo 10 digitos (DDD + numero).' }); return }
     const name = newChatName.trim() || phone
     setCreatingNewChat(true)
     try {
@@ -237,11 +238,10 @@ export default function Chat() {
       loadLeadsList()
       setSelectedLeadId(targetLead.id)
       if (alreadyExisted) {
-        // Aguarda render do chat, ai avisa que abriu o existente
-        setTimeout(() => alert(`Contato ja existia (${targetLead.name || phone}). Abrindo a conversa atual.`), 100)
+        setNotice({ kind: 'info', title: 'Contato ja existia', message: `Voce ja tinha conversa com ${targetLead.name || phone}. Abrindo a conversa atual.` })
       }
     } catch (e: any) {
-      alert('Erro ao criar contato: ' + (e.message || 'desconhecido'))
+      setNotice({ kind: 'error', title: 'Erro ao criar contato', message: e.message || 'Erro desconhecido' })
     } finally {
       setCreatingNewChat(false)
     }
@@ -269,10 +269,10 @@ export default function Chat() {
       const result = await sendMessage(lead.id, accountId, msgText, override)
       setMessages(prev => [...prev, result.message])
       setMsgText('')
-      if (!result.delivered) alert('Mensagem salva mas NAO enviada no WhatsApp. Verifique a conexao.')
+      if (!result.delivered) setNotice({ kind: 'error', title: 'Mensagem nao entregue', message: 'A mensagem foi salva mas NAO foi enviada no WhatsApp. Verifique a conexao da instancia.' })
       setSendInstanceOverride(null)
       loadLead()
-    } catch (e: any) { alert('Erro: ' + (e?.message || 'desconhecido')) }
+    } catch (e: any) { setNotice({ kind: 'error', title: 'Erro ao enviar', message: e?.message || 'Erro desconhecido' }) }
     setSending(false)
   }
 
@@ -289,7 +289,7 @@ export default function Chat() {
     const type = detectMediaType(file.type || '')
     const maxMb = MEDIA_LIMITS_MB[type]
     if (file.size > maxMb * 1024 * 1024) {
-      alert(`Arquivo muito grande. Limite para ${type}: ${maxMb}MB.`)
+      setNotice({ kind: 'error', title: 'Arquivo muito grande', message: `Limite para ${type}: ${maxMb}MB.` })
       return
     }
     setAttachFile(file)
@@ -332,11 +332,11 @@ export default function Chat() {
         instance_id: override,
       })
       setMessages(prev => [...prev, result.message])
-      if (!result.delivered) alert('Anexo salvo mas NAO enviado no WhatsApp. Verifique a conexao.')
+      if (!result.delivered) setNotice({ kind: 'error', title: 'Anexo nao entregue', message: 'O anexo foi salvo mas NAO foi enviado no WhatsApp. Verifique a conexao da instancia.' })
       handleCancelAttach()
       setSendInstanceOverride(null)
       loadLead()
-    } catch (e: any) { alert('Erro: ' + (e?.message || 'desconhecido')) }
+    } catch (e: any) { setNotice({ kind: 'error', title: 'Erro ao enviar anexo', message: e?.message || 'Erro desconhecido' }) }
     setSending(false)
   }
 
@@ -381,10 +381,10 @@ export default function Chat() {
         await advanceLeadCadence(leadCadence.id, accountId)
         loadLead()
       } else {
-        alert('Mensagem NAO foi entregue no WhatsApp. Cadencia mantida na etapa atual. Verifique a conexao e tente novamente.')
+        setNotice({ kind: 'error', title: 'Mensagem nao entregue', message: 'A mensagem NAO foi entregue no WhatsApp. Cadencia mantida na etapa atual. Verifique a conexao e tente novamente.' })
       }
     } catch (err: any) {
-      alert('Erro ao enviar: ' + (err?.message || 'desconhecido'))
+      setNotice({ kind: 'error', title: 'Erro ao enviar', message: err?.message || 'Erro desconhecido' })
     }
     setSending(false)
   }
@@ -850,7 +850,7 @@ export default function Chat() {
                           <button className="btn btn-primary btn-sm" disabled={savingNotes} onClick={async () => {
                             setSavingNotes(true)
                             try { await updateLead(lead.id, { notes: notesDraft }); await loadLead(); setEditingNotes(false) }
-                            catch (e: any) { alert('Erro: ' + e.message) }
+                            catch (e: any) { setNotice({ kind: 'error', title: 'Erro ao salvar', message: e.message }) }
                             setSavingNotes(false)
                           }} style={{ padding: '2px 6px' }}><Save size={10} /></button>
                           <button className="btn btn-secondary btn-sm" onClick={() => setEditingNotes(false)} style={{ padding: '2px 6px' }}><X size={10} /></button>
@@ -1003,7 +1003,7 @@ export default function Chat() {
                                     if (isCadence) await completeTask(t.lead_cadence_id, accountId)
                                     else await completeStandaloneTask(t.id, accountId)
                                     fetchLeadTasks(lead.id, accountId).then(setLeadTasks)
-                                  } catch (e: any) { alert('Erro: ' + e.message) }
+                                  } catch (e: any) { setNotice({ kind: 'error', title: 'Erro ao concluir', message: e.message }) }
                                 }} style={{ fontSize: 10, padding: '3px 8px', background: '#34C759', borderColor: '#34C759', flex: 1 }}>
                                   <Check size={10} /> Concluir
                                 </button>
@@ -1011,7 +1011,7 @@ export default function Chat() {
                                   <button className="btn btn-secondary btn-sm" onClick={async () => {
                                     if (!accountId || !lead) return
                                     if (!confirm('Pular esta etapa da cadencia?')) return
-                                    try { await skipTask(t.lead_cadence_id, accountId); fetchLeadTasks(lead.id, accountId).then(setLeadTasks) } catch (e: any) { alert('Erro: ' + e.message) }
+                                    try { await skipTask(t.lead_cadence_id, accountId); fetchLeadTasks(lead.id, accountId).then(setLeadTasks) } catch (e: any) { setNotice({ kind: 'error', title: 'Erro ao pular', message: e.message }) }
                                   }} style={{ fontSize: 10, padding: '3px 8px' }} title="Pular etapa">
                                     <ChevronRight size={10} />
                                   </button>
@@ -1066,8 +1066,8 @@ export default function Chat() {
                         })
                         setTaskTitle(''); setTaskMinutes('10'); setTaskDate(''); setTaskTime('')
                         if (lead) fetchLeadTasks(lead.id, accountId).then(setLeadTasks)
-                        alert('Tarefa criada!')
-                      } catch (e: any) { alert('Erro: ' + (e?.message || 'desconhecido')) }
+                        setNotice({ kind: 'success', title: 'Tarefa criada', message: 'A tarefa foi adicionada com sucesso.' })
+                      } catch (e: any) { setNotice({ kind: 'error', title: 'Erro ao criar tarefa', message: e?.message || 'Erro desconhecido' }) }
                       setCreatingTask(false)
                     }}>
                       <ListTodo size={10} /> {creatingTask ? 'Criando...' : 'Criar Tarefa'}
@@ -1134,6 +1134,22 @@ export default function Chat() {
             </div>
             <div className="modal-actions">
               <button className="btn btn-primary" onClick={() => setScriptModal(null)}>Fechar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notice modal (substitui alert do browser) */}
+      {notice && (
+        <div className="modal-overlay" onClick={() => setNotice(null)}>
+          <div className="modal" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+            <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {notice.kind === 'error' ? <X size={18} style={{ color: '#FF6B6B' }} /> : notice.kind === 'success' ? <Check size={18} style={{ color: '#34C759' }} /> : <MessageCircle size={18} style={{ color: '#FFB300' }} />}
+              {notice.title}
+            </h2>
+            <p style={{ fontSize: 13, color: '#C8C2D8', marginTop: 8, lineHeight: 1.5 }}>{notice.message}</p>
+            <div className="modal-actions">
+              <button className="btn btn-primary" onClick={() => setNotice(null)} autoFocus>OK</button>
             </div>
           </div>
         </div>
