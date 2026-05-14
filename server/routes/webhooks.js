@@ -358,8 +358,10 @@ router.post('/evolution/:accountSlug', (req, res) => {
       fetchAndSaveProfilePic(waInstance, phone, lead.id)
     }
 
-    // When attendant sends first message (fromMe=true) and lead is in first stage, advance to "Em Atendimento"
-    if (!isNew && fromMe) {
+    // Quando o LEAD responde (nao fromMe) e ja existia (nao eh a 1a msg dele), avanca de "Novo Lead" pra "Em Atendimento"
+    // Logica: lead chega -> Novo Lead. Atendente manda quantas msgs quiser -> continua Novo Lead.
+    // Lead responde pela 1a vez -> Em Atendimento (engajamento real)
+    if (!isNew && !fromMe) {
       const firstStage = db.prepare('SELECT id FROM funnel_stages WHERE funnel_id = ? ORDER BY position LIMIT 1').get(lead.funnel_id)
       const secondStage = db.prepare('SELECT id FROM funnel_stages WHERE funnel_id = ? ORDER BY position LIMIT 1 OFFSET 1').get(lead.funnel_id)
       if (firstStage && secondStage && lead.stage_id === firstStage.id) {
