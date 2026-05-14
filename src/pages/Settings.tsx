@@ -39,7 +39,7 @@ export default function SettingsPage() {
     }).finally(() => setLoading(false))
   }, [accountId])
 
-  const attendants = users.filter(u => u.role === 'atendente' && u.is_active)
+  const attendants = users.filter(u => (u.role === 'atendente' || u.role === 'gerente') && u.is_active)
 
   const updateRule = (funnelId: number, field: string, value: any) => {
     setRules(prev => {

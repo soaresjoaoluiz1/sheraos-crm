@@ -154,7 +154,7 @@ export default function LeadDetail() {
 
   const allStages = funnels.flatMap(f => f.stages || [])
   const currentStage = allStages.find(s => s.id === lead.stage_id)
-  const attendants = users.filter(u => u.role === 'atendente' && u.is_active)
+  const attendants = users.filter(u => (u.role === 'atendente' || u.role === 'gerente') && u.is_active)
   const availableTags = tags.filter(t => !lead.tags?.some(lt => lt.id === t.id))
 
   return (

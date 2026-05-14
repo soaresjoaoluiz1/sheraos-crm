@@ -409,7 +409,8 @@ export default function Chat() {
 
   const allStages = funnels.flatMap(f => f.stages || [])
   const currentStage = lead ? allStages.find(s => s.id === lead.stage_id) : null
-  const attendants = users.filter(u => u.role === 'atendente' && u.is_active)
+  // Gerentes tambem atendem leads — incluir junto com atendentes no dropdown
+  const attendants = users.filter(u => (u.role === 'atendente' || u.role === 'gerente') && u.is_active)
   const availableTags = lead ? tags.filter(t => !lead.tags?.some(lt => lt.id === t.id)) : []
 
   return (
