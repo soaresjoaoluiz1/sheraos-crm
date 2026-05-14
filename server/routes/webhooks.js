@@ -355,9 +355,12 @@ router.post('/evolution/:accountSlug', (req, res) => {
     }
 
     // Captura IP do request (1a vez) — usado pelo CAPI pra elevar EMQ
+    // NOTA: webhook do Evolution vem da MESMA VPS (127.0.0.1) — IP do lead NAO esta no request.
+    // So serve pra forms web (/site, /sheets) onde o lead conecta direto.
     if (isNew || !lead.client_ip_address) {
       const reqIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.headers['x-real-ip'] || req.ip
-      if (reqIp && reqIp !== '::1' && reqIp !== '127.0.0.1') {
+      if (isNew) console.log(`[IP DEBUG] lead=${lead.id} xff=${req.headers['x-forwarded-for'] || 'none'} xri=${req.headers['x-real-ip'] || 'none'} req.ip=${req.ip}`)
+      if (reqIp && reqIp !== '::1' && reqIp !== '127.0.0.1' && !reqIp.startsWith('::ffff:127.')) {
         db.prepare("UPDATE leads SET client_ip_address = COALESCE(client_ip_address, ?) WHERE id = ?").run(reqIp, lead.id)
         lead.client_ip_address = reqIp
       }
