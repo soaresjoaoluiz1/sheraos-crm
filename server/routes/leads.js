@@ -135,7 +135,19 @@ router.post('/', (req, res) => {
   )
 
   const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(result.lastInsertRowid)
-  // CAPI: dispara evento da etapa inicial (service filtra se nao tiver ctwa_clid)
+
+  // Cria assignment do lead com a instancia escolhida (necessario pras tabs aparecerem no Chat)
+  // Tambem grava last_instance_id pra o envio manual usar essa instancia por padrao
+  if (instance_id) {
+    db.prepare("UPDATE leads SET last_instance_id = ? WHERE id = ?").run(instance_id, lead.id)
+    db.prepare(`
+      INSERT OR IGNORE INTO lead_instance_assignments (lead_id, instance_id, attendant_id)
+      VALUES (?, ?, ?)
+    `).run(lead.id, instance_id, attendant_id || null)
+    lead.last_instance_id = instance_id
+  }
+
+  // CAPI: dispara evento da etapa inicial
   triggerCapiForStageChange(lead.id, firstStage.id, histRes.lastInsertRowid)
   try { broadcastSSE(req.accountId, 'lead:created', lead) } catch {}
   res.json({ lead })

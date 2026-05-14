@@ -45,6 +45,7 @@ export default function Chat() {
   const [showNewChat, setShowNewChat] = useState(false)
   const [newChatName, setNewChatName] = useState('')
   const [newChatPhone, setNewChatPhone] = useState('')
+  const [newChatInstanceId, setNewChatInstanceId] = useState<number | null>(null)
   const [creatingNewChat, setCreatingNewChat] = useState(false)
   const [notice, setNotice] = useState<{ kind: 'info' | 'error' | 'success'; title: string; message: string } | null>(null)
   const [lead, setLead] = useState<Lead | null>(null)
@@ -223,18 +224,26 @@ export default function Chat() {
     try { await archiveLead(leadId) } catch { loadLeadsList() }
   }
 
+  const connectedInstances = useMemo(() => instances.filter(i => i.status === 'connected'), [instances])
+
   const handleCreateNewChat = async () => {
     if (!accountId) return
     const phone = newChatPhone.replace(/[^\d]/g, '')
     if (!phone) { setNotice({ kind: 'error', title: 'Telefone obrigatorio', message: 'Informe o telefone do contato.' }); return }
     if (phone.length < 10) { setNotice({ kind: 'error', title: 'Telefone invalido', message: 'Use no minimo 10 digitos (DDD + numero).' }); return }
+    if (connectedInstances.length > 1 && !newChatInstanceId) {
+      setNotice({ kind: 'error', title: 'Escolha um numero', message: 'Selecione de qual WhatsApp essa conversa vai sair.' })
+      return
+    }
     const name = newChatName.trim() || phone
+    const instanceId = newChatInstanceId || connectedInstances[0]?.id || undefined
     setCreatingNewChat(true)
     try {
-      const { lead: targetLead, alreadyExisted } = await createLeadOrFindExisting(accountId, { name, phone, source: 'manual' })
+      const { lead: targetLead, alreadyExisted } = await createLeadOrFindExisting(accountId, { name, phone, source: 'manual', instance_id: instanceId } as any)
       setShowNewChat(false)
       setNewChatName('')
       setNewChatPhone('')
+      setNewChatInstanceId(null)
       loadLeadsList()
       setSelectedLeadId(targetLead.id)
       if (alreadyExisted) {
@@ -448,7 +457,11 @@ export default function Chat() {
           <div style={{ padding: '8px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
             <button
               className="btn btn-primary btn-sm"
-              onClick={() => setShowNewChat(true)}
+              onClick={() => {
+                setShowNewChat(true)
+                // Pre-seleciona se so tem 1 instancia conectada
+                if (connectedInstances.length === 1) setNewChatInstanceId(connectedInstances[0].id)
+              }}
               style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 12 }}
               title="Iniciar conversa com novo contato"
             >
@@ -1190,6 +1203,24 @@ export default function Chat() {
                 Sem precisar de + ou DDI. Use codigo do pais + DDD + numero (11 digitos).
               </p>
             </div>
+            {connectedInstances.length > 0 && (
+              <div className="form-group">
+                <label>Enviar de qual WhatsApp?</label>
+                <select
+                  className="select"
+                  value={newChatInstanceId ?? (connectedInstances.length === 1 ? connectedInstances[0].id : '')}
+                  onChange={e => setNewChatInstanceId(e.target.value ? +e.target.value : null)}
+                >
+                  {connectedInstances.length > 1 && <option value="">— escolha —</option>}
+                  {connectedInstances.map(i => (
+                    <option key={i.id} value={i.id}>{i.instance_name}{i.phone_number ? ` (${i.phone_number})` : ''}</option>
+                  ))}
+                </select>
+                {connectedInstances.length === 0 && (
+                  <p style={{ fontSize: 10, color: '#FF6B6B', marginTop: 4 }}>Nenhum WhatsApp conectado.</p>
+                )}
+              </div>
+            )}
             <div className="modal-actions">
               <button className="btn btn-secondary" onClick={() => setShowNewChat(false)} disabled={creatingNewChat}>Cancelar</button>
               <button className="btn btn-primary" onClick={handleCreateNewChat} disabled={creatingNewChat || !newChatPhone.trim()}>
