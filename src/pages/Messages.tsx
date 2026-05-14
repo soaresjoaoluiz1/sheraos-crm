@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAccount } from '../context/AccountContext'
-import { fetchBroadcasts, fetchLeads, createBroadcast, sendBroadcast, fetchTags, fetchFunnels, fetchWhatsAppInstances, type Broadcast, type Lead, type Tag, type Funnel, type WhatsAppInstance } from '../lib/api'
-import { MessageCircle, Plus, Send, CheckCircle, Clock, Trash2, Filter, Tag as TagIcon, GitBranch, Smartphone, AlertTriangle, Eye, PauseCircle } from 'lucide-react'
+import { fetchBroadcasts, fetchLeads, createBroadcast, sendBroadcast, fetchTags, fetchFunnels, fetchWhatsAppInstances, fetchBroadcastCloneData, type Broadcast, type Lead, type Tag, type Funnel, type WhatsAppInstance } from '../lib/api'
+import { MessageCircle, Plus, Send, CheckCircle, Clock, Trash2, Filter, Tag as TagIcon, GitBranch, Smartphone, AlertTriangle, Eye, PauseCircle, Copy } from 'lucide-react'
 import { parseSqlDate } from '../lib/dates'
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
@@ -48,6 +48,8 @@ export default function Messages() {
   const [filterTags, setFilterTags] = useState<number[]>([])
   const [filterStages, setFilterStages] = useState<number[]>([])
   const [creating, setCreating] = useState(false)
+  const [duplicating, setDuplicating] = useState(false)
+  const [cloneNotice, setCloneNotice] = useState<string | null>(null)
 
   const load = () => { if (accountId) { setLoading(true); fetchBroadcasts(accountId).then(setBroadcasts).finally(() => setLoading(false)) } }
   useEffect(load, [accountId])
@@ -140,6 +142,7 @@ export default function Messages() {
     setShowNew(false); setStep(1); setNewName(''); setNewTemplate('')
     setNewVariations(['', '']); setNewDelay(DEFAULT_DELAY); setNewInstanceId('')
     setSelectedLeads([]); setLeadSearch(''); setFilterTags([]); setFilterStages([])
+    setCloneNotice(null)
   }
 
   const handleCreate = async () => {
@@ -163,6 +166,38 @@ export default function Messages() {
     if (!accountId || !confirm('Enviar disparo agora?')) return
     try { await sendBroadcast(id, accountId); load() }
     catch (e: any) { alert('Erro: ' + e.message) }
+  }
+
+  const handleDuplicate = async (id: number) => {
+    if (!accountId) return
+    setDuplicating(true)
+    setCloneNotice(null)
+    try {
+      const data = await fetchBroadcastCloneData(id, accountId)
+      // Pre-preenche state do modal
+      setNewName(data.clone.name)
+      setNewTemplate(data.clone.message_template)
+      // Garante minimo 2 slots de variacao (mesmo se original tinha 0)
+      const vars = [...data.clone.message_variations]
+      while (vars.length < 2) vars.push('')
+      setNewVariations(vars)
+      setNewDelay(data.clone.delay_seconds || DEFAULT_DELAY)
+      setNewInstanceId(data.clone.instance_id || '')
+      setSelectedLeads(data.clone.leads)
+      // Reseta filtros e busca pra evitar confusao no step 2
+      setLeadSearch(''); setFilterTags([]); setFilterStages([]); setSearchResults([])
+      setStep(1)
+      setShowNew(true)
+      // Aviso se algum lead foi arquivado/deletado desde o original
+      if (data.original.valid_leads_now < data.original.total_count) {
+        const sumiu = data.original.total_count - data.original.valid_leads_now
+        setCloneNotice(`${sumiu} lead${sumiu > 1 ? 's' : ''} do disparo original nao existe${sumiu > 1 ? 'm' : ''} mais (arquivado${sumiu > 1 ? 's' : ''} ou removido${sumiu > 1 ? 's' : ''}). ${data.clone.leads.length} lead${data.clone.leads.length !== 1 ? 's' : ''} pre-selecionado${data.clone.leads.length !== 1 ? 's' : ''}.`)
+      }
+    } catch (e: any) {
+      alert('Erro ao duplicar: ' + (e?.message || 'desconhecido'))
+    } finally {
+      setDuplicating(false)
+    }
   }
 
   return (
@@ -204,6 +239,7 @@ export default function Messages() {
                     <td className="right">
                       <div style={{ display: 'inline-flex', gap: 4 }}>
                         <button className="btn btn-secondary btn-sm btn-icon" onClick={() => navigate(`/messages/${b.id}`)} title="Ver detalhes"><Eye size={12} /></button>
+                        <button className="btn btn-secondary btn-sm btn-icon" onClick={() => handleDuplicate(b.id)} disabled={duplicating} title="Duplicar disparo"><Copy size={12} /></button>
                         {b.status === 'draft' && <button className="btn btn-primary btn-sm" onClick={() => handleSend(b.id)} style={{ fontSize: 11 }}><Send size={11} /> Enviar</button>}
                         {b.status === 'completed' && <CheckCircle size={14} style={{ color: '#34C759' }} />}
                         {b.status === 'sending' && !isPaused && <Clock size={14} style={{ color: '#5DADE2' }} className="spinning" />}
@@ -224,6 +260,13 @@ export default function Messages() {
         <div className="modal-overlay" onClick={resetForm}>
           <div className="modal" style={{ maxWidth: 620 }} onClick={e => e.stopPropagation()}>
             <h2>Novo Disparo — Etapa {step}/3</h2>
+
+            {cloneNotice && (
+              <div style={{ background: 'rgba(251,188,4,0.1)', border: '1px solid rgba(251,188,4,0.3)', borderRadius: 6, padding: 10, marginTop: 8, marginBottom: 8, fontSize: 12, color: '#FBBC04', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+                <span>{cloneNotice}</span>
+              </div>
+            )}
 
             {step === 1 && (
               <>

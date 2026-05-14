@@ -69,6 +69,43 @@ router.post('/', requireRole('super_admin', 'gerente'), (req, res) => {
   res.json({ broadcast, skippedNoOptin })
 })
 
+// Clone data — retorna config + lead_ids pra pre-preencher modal de criar (duplicar disparo)
+router.get('/:id/clone-data', requireRole('super_admin', 'gerente'), (req, res) => {
+  if (!req.accountId) return res.status(400).json({ error: 'account_id required' })
+
+  const broadcast = db.prepare('SELECT * FROM broadcasts WHERE id = ? AND account_id = ?').get(req.params.id, req.accountId)
+  if (!broadcast) return res.status(404).json({ error: 'Broadcast nao encontrado' })
+
+  const recipients = db.prepare('SELECT lead_id FROM broadcast_recipients WHERE broadcast_id = ?').all(broadcast.id)
+  const leadIds = recipients.map(r => r.lead_id).filter(Boolean)
+
+  // Filtra apenas leads que ainda existem, ativos e nao arquivados (snapshot pode estar obsoleto)
+  let validLeads = []
+  if (leadIds.length) {
+    const placeholders = leadIds.map(() => '?').join(',')
+    validLeads = db.prepare(`SELECT id, name, phone, email, city, source, stage_id, attendant_id, instance_id, last_instance_id, created_at, updated_at, is_active FROM leads WHERE id IN (${placeholders}) AND account_id = ? AND is_active = 1 AND is_archived = 0`).all(...leadIds, req.accountId)
+  }
+
+  let variations = []
+  try { variations = broadcast.message_variations ? JSON.parse(broadcast.message_variations) : [] } catch {}
+
+  res.json({
+    clone: {
+      name: `${broadcast.name} (cópia)`,
+      message_template: broadcast.message_template,
+      message_variations: variations,
+      media_url: broadcast.media_url || null,
+      delay_seconds: broadcast.delay_seconds,
+      instance_id: broadcast.instance_id,
+      leads: validLeads, // objetos completos pra o front popular selectedLeads direto
+    },
+    original: {
+      total_count: broadcast.total_count,
+      valid_leads_now: validLeads.length,
+    },
+  })
+})
+
 // Get broadcast detail (com info de instancia + recipients enriquecidos)
 router.get('/:id', requireRole('super_admin', 'gerente'), (req, res) => {
   const broadcast = db.prepare(`
