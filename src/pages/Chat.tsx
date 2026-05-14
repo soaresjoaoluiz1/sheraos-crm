@@ -8,7 +8,7 @@ import {
   fetchLeadCadence, advanceLeadCadence, removeLeadCadence, fetchCadences, assignLeadCadence, createTag,
   archiveLead, createStandaloneTask, fetchLeadTasks, completeStandaloneTask, deleteStandaloneTask, completeTask, skipTask, fetchLeadConversations, type LeadConversation,
   fetchReadyMessages, type ReadyMessage,
-  createLead,
+  createLeadOrFindExisting,
   type WhatsAppInstance, type Lead, type Message, type StageHistoryEntry, type LeadNote,
   type Funnel, type User as UserType, type Tag, type LeadCadence, type Cadence,
 } from '../lib/api'
@@ -230,12 +230,16 @@ export default function Chat() {
     const name = newChatName.trim() || phone
     setCreatingNewChat(true)
     try {
-      const newLead = await createLead(accountId, { name, phone, source: 'manual' })
+      const { lead: targetLead, alreadyExisted } = await createLeadOrFindExisting(accountId, { name, phone, source: 'manual' })
       setShowNewChat(false)
       setNewChatName('')
       setNewChatPhone('')
       loadLeadsList()
-      setSelectedLeadId(newLead.id)
+      setSelectedLeadId(targetLead.id)
+      if (alreadyExisted) {
+        // Aguarda render do chat, ai avisa que abriu o existente
+        setTimeout(() => alert(`Contato ja existia (${targetLead.name || phone}). Abrindo a conversa atual.`), 100)
+      }
     } catch (e: any) {
       alert('Erro ao criar contato: ' + (e.message || 'desconhecido'))
     } finally {

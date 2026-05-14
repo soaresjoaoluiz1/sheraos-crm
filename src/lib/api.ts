@@ -99,6 +99,23 @@ export const fetchLeads = (accountId: number, filters: LeadFilters = {}) => {
 }
 export const fetchLead = (id: number, accountId: number) => apiFetch<{ lead: Lead; messages: Message[]; stageHistory: StageHistoryEntry[]; notes: LeadNote[] }>(`/api/leads/${id}?account_id=${accountId}`)
 export const createLead = (accountId: number, data: Partial<Lead>) => apiFetch<{ lead: Lead }>(`/api/leads?account_id=${accountId}`, { method: 'POST', body: JSON.stringify(data) }).then(d => d.lead)
+export async function createLeadOrFindExisting(accountId: number, data: Partial<Lead>): Promise<{ lead: Lead; alreadyExisted: boolean }> {
+  const url = `${BASE}/api/leads?account_id=${accountId}`
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (res.status === 401) { localStorage.removeItem('dros_crm_token'); window.location.href = `${BASE}/login`; throw new Error('Unauthorized') }
+  if (res.status === 409) {
+    const body = await res.json().catch(() => ({}))
+    if (body.existing) return { lead: body.existing as Lead, alreadyExisted: true }
+    throw new Error(body.error || 'Contato ja existe')
+  }
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `API error: ${res.status}`) }
+  const body = await res.json()
+  return { lead: body.lead as Lead, alreadyExisted: false }
+}
 export const updateLead = (id: number, data: Partial<Lead>) => apiFetch(`/api/leads/${id}`, { method: 'PUT', body: JSON.stringify(data) })
 export const optInLead = (id: number) => apiFetch(`/api/leads/${id}/opt-in`, { method: 'POST' })
 export const optOutLead = (id: number) => apiFetch(`/api/leads/${id}/opt-out`, { method: 'POST' })
