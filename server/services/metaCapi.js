@@ -44,15 +44,14 @@ export async function sendCapiEvent({ accountId, lead, eventName, stageId, histo
   `).get(accountId)
 
   if (!account?.meta_capi_enabled || !account.meta_pixel_id || !account.meta_capi_token) {
+    if (historyId) {
+      try { db.prepare('UPDATE stage_history SET capi_status = ? WHERE id = ?').run('skipped_not_configured', historyId) } catch {}
+    }
     return { skipped: true, reason: 'capi_not_configured' }
   }
 
-  // Decisao: dispara pra leads que vieram do Meta — CTWA (ctwa_clid) OU Meta Lead Form (ad_id/campaign_id/form_id)
-  const isMetaLead = lead.ctwa_clid || lead.meta_ad_id || lead.meta_campaign_id || lead.meta_form_id
-  if (!isMetaLead) {
-    return { skipped: true, reason: 'not_meta_lead' }
-  }
-
+  // Envia pra TODOS os leads — Meta deduplica por external_id/phone hasheado
+  // CTWA-specific atribuicao so funciona se ctwa_clid foi capturado (continua tentando no webhook)
   const eventTime = Math.floor(Date.now() / 1000)
   const eventId = `lead_${lead.id}_stage_${stageId || 0}_${eventTime}`
 
