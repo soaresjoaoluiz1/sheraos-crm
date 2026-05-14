@@ -675,6 +675,14 @@ router.post('/sheets/:accountSlug', (req, res) => {
       db.prepare('INSERT OR IGNORE INTO lead_tags (lead_id, tag_id) VALUES (?, ?)').run(lead.id, tag.id)
     }
 
+    // Remove tags: aceita array ou string. Util pra correcao em massa.
+    const removeTagsRaw = body.remove_tags || ''
+    const removeTagList = Array.isArray(removeTagsRaw) ? removeTagsRaw : String(removeTagsRaw).split(',').map(t => t.trim()).filter(Boolean)
+    for (const tagName of removeTagList) {
+      const tag = db.prepare('SELECT id FROM tags WHERE account_id = ? AND LOWER(name) = LOWER(?)').get(account.id, tagName)
+      if (tag) db.prepare('DELETE FROM lead_tags WHERE lead_id = ? AND tag_id = ?').run(lead.id, tag.id)
+    }
+
     // Collect custom/dynamic fields (Facebook form questions, etc)
     const knownKeys = new Set(['name','first_name','last_name','full_name','nome','phone','phone_number','telefone','whatsapp','celular','email','city','cidade','empresa','cpf_cnpj','cpf','cnpj','instagram','source','fonte','form_name','source_detail','campaign_name','campaign_id','adset_name','adset_id','ad_name','ad_id','form_id','id','created_time','is_organic','platform','lead_status','crm_enviado','stage_name','stage','etapa','status','attendant_name','corretor','atendente','tags','tag','fbp','fbc','fbclid','ctwa_clid','user_agent','event_id','leadgen_id','state','estado','zip','cep'])
     const customFields = Object.entries(body)
