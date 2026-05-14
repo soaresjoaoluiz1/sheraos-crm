@@ -22,8 +22,8 @@ import { applyMessageVars } from '../lib/messageVars'
 import { parseSqlDate, formatTime } from '../lib/dates'
 
 function timeAgo(dateStr: string) {
-  const diff = Date.now() - new Date(dateStr).getTime()
-  const mins = Math.floor(diff / 60000)
+  const diff = Date.now() - parseSqlDate(dateStr).getTime()
+  const mins = Math.max(0, Math.floor(diff / 60000))
   if (mins < 1) return 'agora'
   if (mins < 60) return `${mins}m`
   const hrs = Math.floor(mins / 60)

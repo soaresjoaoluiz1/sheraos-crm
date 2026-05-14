@@ -5,10 +5,12 @@ import AccountSelector from '../components/AccountSelector'
 import { useSSE } from '../context/SSEContext'
 import { fetchFunnels, fetchLeads, fetchTags, fetchUsers, moveLeadStage, fetchPipelineMetrics, archiveLead, type Funnel, type Lead, type PipelineMetric, type Tag, type User } from '../lib/api'
 import { Phone, MessageCircle, User, Clock, ChevronDown, ChevronRight, ArrowRight, Smartphone, Archive } from 'lucide-react'
+import { parseSqlDate } from '../lib/dates'
 
 function timeAgo(dateStr: string) {
-  const diff = Date.now() - new Date(dateStr).getTime()
-  const mins = Math.floor(diff / 60000)
+  // parseSqlDate interpreta UTC (backend grava sem timezone)
+  const diff = Date.now() - parseSqlDate(dateStr).getTime()
+  const mins = Math.max(0, Math.floor(diff / 60000))
   if (mins < 60) return `${mins}m`
   const hrs = Math.floor(mins / 60)
   if (hrs < 24) return `${hrs}h`

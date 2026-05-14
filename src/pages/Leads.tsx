@@ -10,8 +10,9 @@ import {
   formatNumber, type Lead, type Funnel, type User as UserType, type Tag, type WhatsAppInstance,
 } from '../lib/api'
 import { Plus, Download, Phone, MessageCircle, Clock, CheckSquare, Square, Users, ArrowRight, Archive, ArchiveRestore } from 'lucide-react'
+import { parseSqlDate } from '../lib/dates'
 
-function timeAgo(d: string) { const m = Math.floor((Date.now() - new Date(d).getTime()) / 60000); if (m < 60) return `${m}m`; const h = Math.floor(m / 60); if (h < 24) return `${h}h`; return `${Math.floor(h / 24)}d` }
+function timeAgo(d: string) { const m = Math.max(0, Math.floor((Date.now() - parseSqlDate(d).getTime()) / 60000)); if (m < 60) return `${m}m`; const h = Math.floor(m / 60); if (h < 24) return `${h}h`; return `${Math.floor(h / 24)}d` }
 
 function useIsMobile() {
   const [m, setM] = useState(window.innerWidth <= 640)
