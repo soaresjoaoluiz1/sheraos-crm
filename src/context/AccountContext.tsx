@@ -12,6 +12,7 @@ interface AccountCtx {
 const AccountContext = createContext<AccountCtx>({} as AccountCtx)
 
 const STORAGE_KEY = 'dros_crm_active_account'
+const SESSION_FLAG = 'dros_crm_session_started'
 
 export function AccountProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
@@ -32,12 +33,22 @@ export function AccountProvider({ children }: { children: ReactNode }) {
         .then(accs => {
           setAccounts(accs)
           if (accs.length > 0 && !selectedId) {
-            // Prioridade: 1) ultima conta usada na sessao (localStorage)  2) conta propria do admin  3) Dros | Deivid (fallback nome)  4) primeira da lista
-            const stored = Number(localStorage.getItem(STORAGE_KEY))
-            const fromStorage = stored && accs.find(a => a.id === stored) ? stored : null
-            const ownById = user.account_id ? accs.find(a => a.id === user.account_id)?.id : null
+            // sessionStorage zera ao fechar a aba: detecta "login fresco" vs F5 na mesma sessao
+            const isFreshSession = !sessionStorage.getItem(SESSION_FLAG)
             const drosDeivid = accs.find(a => a.name === 'Dros | Deivid')?.id
-            setSelectedIdState(fromStorage || ownById || drosDeivid || accs[0].id)
+
+            if (isFreshSession && drosDeivid) {
+              // Login novo (super_admin) — comeca SEMPRE em Dros | Deivid
+              setSelectedIdState(drosDeivid)
+              try { localStorage.setItem(STORAGE_KEY, String(drosDeivid)) } catch {}
+            } else {
+              // F5 ou mesma sessao — respeita ultima conta escolhida
+              const stored = Number(localStorage.getItem(STORAGE_KEY))
+              const fromStorage = stored && accs.find(a => a.id === stored) ? stored : null
+              const ownById = user.account_id ? accs.find(a => a.id === user.account_id)?.id : null
+              setSelectedIdState(fromStorage || ownById || drosDeivid || accs[0].id)
+            }
+            try { sessionStorage.setItem(SESSION_FLAG, '1') } catch {}
           }
         })
         .catch(() => {})
