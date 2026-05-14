@@ -612,7 +612,19 @@ router.post('/sheets/:accountSlug', (req, res) => {
     if (empresa) db.prepare('UPDATE leads SET empresa = COALESCE(empresa, ?) WHERE id = ?').run(empresa, lead.id)
     if (cpf_cnpj) db.prepare('UPDATE leads SET cpf_cnpj = COALESCE(cpf_cnpj, ?) WHERE id = ?').run(cpf_cnpj, lead.id)
     if (instagram) db.prepare('UPDATE leads SET instagram = COALESCE(instagram, ?) WHERE id = ?').run(instagram, lead.id)
-    if (source_detail) db.prepare('UPDATE leads SET source_detail = COALESCE(source_detail, ?) WHERE id = ?').run(source_detail, lead.id)
+    // source_detail: combina o source_detail explicito + utms + page_url quando vierem
+    const detailExtras = []
+    if (source_detail) detailExtras.push(source_detail)
+    if (body.utm_source) detailExtras.push(`utm_source=${body.utm_source}`)
+    if (body.utm_medium) detailExtras.push(`utm_medium=${body.utm_medium}`)
+    if (body.utm_campaign) detailExtras.push(`utm_campaign=${body.utm_campaign}`)
+    if (body.utm_content) detailExtras.push(`utm_content=${body.utm_content}`)
+    if (body.utm_term) detailExtras.push(`utm_term=${body.utm_term}`)
+    if (body.page_url) detailExtras.push(`url=${body.page_url}`)
+    if (body.interesse || body.busca || body.objetivo) detailExtras.push(`interesse=${body.interesse || body.busca || body.objetivo}`)
+    if (body.gclid) detailExtras.push(`gclid=${body.gclid}`)
+    const finalDetail = detailExtras.join(' | ').substring(0, 500)
+    if (finalDetail) db.prepare('UPDATE leads SET source_detail = COALESCE(source_detail, ?) WHERE id = ?').run(finalDetail, lead.id)
 
     // Marcadores Meta — guarda ids da campanha/anuncio/form pra usar no CAPI depois
     if (body.ad_id) db.prepare('UPDATE leads SET meta_ad_id = COALESCE(meta_ad_id, ?) WHERE id = ?').run(String(body.ad_id), lead.id)
@@ -684,7 +696,7 @@ router.post('/sheets/:accountSlug', (req, res) => {
     }
 
     // Collect custom/dynamic fields (Facebook form questions, etc)
-    const knownKeys = new Set(['name','first_name','last_name','full_name','nome','phone','phone_number','telefone','whatsapp','celular','email','city','cidade','empresa','cpf_cnpj','cpf','cnpj','instagram','source','fonte','form_name','source_detail','campaign_name','campaign_id','adset_name','adset_id','ad_name','ad_id','form_id','id','created_time','is_organic','platform','lead_status','crm_enviado','stage_name','stage','etapa','status','attendant_name','corretor','atendente','tags','tag','fbp','fbc','fbclid','ctwa_clid','user_agent','event_id','leadgen_id','state','estado','zip','cep'])
+    const knownKeys = new Set(['name','first_name','last_name','full_name','nome','phone','phone_number','telefone','whatsapp','celular','email','city','cidade','empresa','cpf_cnpj','cpf','cnpj','instagram','source','fonte','form_name','source_detail','campaign_name','campaign_id','adset_name','adset_id','ad_name','ad_id','form_id','id','created_time','is_organic','platform','lead_status','crm_enviado','stage_name','stage','etapa','status','attendant_name','corretor','atendente','tags','tag','remove_tags','fbp','fbc','fbclid','ctwa_clid','user_agent','event_id','leadgen_id','state','estado','zip','cep','utm_source','utm_medium','utm_campaign','utm_content','utm_term','gclid','page_url','interesse','busca','objetivo','data_hora','data','hora'])
     const customFields = Object.entries(body)
       .filter(([k, v]) => !knownKeys.has(k) && v && String(v).trim())
       .map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`)
