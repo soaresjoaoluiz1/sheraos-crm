@@ -268,6 +268,12 @@ router.post('/evolution/:accountSlug', (req, res) => {
     const adInfo = getCtwaInfo(msg, data)
     const adSourceLabel = detectAdSource(adInfo) // ex: "Facebook Pago", "Instagram", null
 
+    // DEBUG TEMPORARIO: loga payload bruto quando inbound de potencial CTWA (P9 padrao, ou ja tem adInfo)
+    // Remover apos confirmar funcionamento
+    if (!fromMe && (adInfo || (content && content.startsWith('P9')))) {
+      console.log(`[CTWA DEBUG] account=${req.params.accountSlug} content="${(content||'').substring(0,60)}" adInfo=${JSON.stringify(adInfo)} dataContextInfo=${JSON.stringify(data.contextInfo || null)} msgKeys=${Object.keys(msg).slice(0,8).join(',')}`)
+    }
+
     // Skip groups, status, broadcasts
     if (!remoteJid || remoteJid.includes('@g.us') || remoteJid.includes('@broadcast') || remoteJid.includes('status@')) {
       return res.json({ ok: true })
