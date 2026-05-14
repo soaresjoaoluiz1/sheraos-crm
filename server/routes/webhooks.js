@@ -231,9 +231,12 @@ router.post('/evolution/:accountSlug', (req, res) => {
     }
 
     // ─── Detecta click-to-WhatsApp Ad (CTWA) — lead veio de campanha de mensagem
-    // Baileys/Evolution coloca contextInfo.externalAdReply em qualquer tipo de msg
-    function getCtwaInfo(message) {
+    // Evolution v2+ coloca contextInfo.externalAdReply no NIVEL ROOT do payload (data.contextInfo)
+    // Evolution antiga colocava dentro de message.<tipo>.contextInfo
+    // Cobrimos os 2 formatos
+    function getCtwaInfo(message, dataRoot) {
       const ctxs = [
+        dataRoot?.contextInfo,                       // Evolution v2+: nivel root
         message.extendedTextMessage?.contextInfo,
         message.imageMessage?.contextInfo,
         message.videoMessage?.contextInfo,
@@ -262,7 +265,7 @@ router.post('/evolution/:accountSlug', (req, res) => {
       if (!platform) return null
       return isPaid ? `${platform} Pago` : platform
     }
-    const adInfo = getCtwaInfo(msg)
+    const adInfo = getCtwaInfo(msg, data)
     const adSourceLabel = detectAdSource(adInfo) // ex: "Facebook Pago", "Instagram", null
 
     // Skip groups, status, broadcasts
