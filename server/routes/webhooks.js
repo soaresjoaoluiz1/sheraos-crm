@@ -637,8 +637,8 @@ router.post('/sheets/:accountSlug', (req, res) => {
 
     // Movimentacao opcional pra etapa especifica do funil (case-insensitive, ignora acentos)
     const stageName = body.stage_name || body.stage || body.etapa || ''
+    const norm = (s) => String(s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
     if (stageName && lead.funnel_id) {
-      const norm = (s) => String(s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
       const target = norm(stageName)
       const stages = db.prepare('SELECT id, name FROM funnel_stages WHERE funnel_id = ?').all(lead.funnel_id)
       const match = stages.find(s => norm(s.name) === target)
@@ -650,8 +650,33 @@ router.post('/sheets/:accountSlug', (req, res) => {
       }
     }
 
+    // Atendente (corretor): busca user da conta pelo nome (case-insensitive, ignora acentos)
+    const attendantName = body.attendant_name || body.corretor || body.atendente || ''
+    if (attendantName) {
+      const targetA = norm(attendantName)
+      const users = db.prepare("SELECT id, name FROM users WHERE (account_id = ? OR account_id IS NULL) AND role IN ('atendente','gerente','super_admin') AND is_active = 1").all(account.id)
+      const matchUser = users.find(u => norm(u.name) === targetA || norm(u.name).startsWith(targetA))
+      if (matchUser && matchUser.id !== lead.attendant_id) {
+        db.prepare('UPDATE leads SET attendant_id = ? WHERE id = ?').run(matchUser.id, lead.id)
+        // Atualiza assignment se existir
+        db.prepare('UPDATE lead_instance_assignments SET attendant_id = ? WHERE lead_id = ? AND attendant_id IS NULL').run(matchUser.id, lead.id)
+      }
+    }
+
+    // Tags: aceita array ou string separada por virgula. Cria a tag se nao existir.
+    const tagsRaw = body.tags || body.tag || ''
+    const tagList = Array.isArray(tagsRaw) ? tagsRaw : String(tagsRaw).split(',').map(t => t.trim()).filter(Boolean)
+    for (const tagName of tagList) {
+      let tag = db.prepare('SELECT id FROM tags WHERE account_id = ? AND LOWER(name) = LOWER(?)').get(account.id, tagName)
+      if (!tag) {
+        const r = db.prepare('INSERT INTO tags (account_id, name, color) VALUES (?, ?, ?)').run(account.id, tagName, '#FFB300')
+        tag = { id: r.lastInsertRowid }
+      }
+      db.prepare('INSERT OR IGNORE INTO lead_tags (lead_id, tag_id) VALUES (?, ?)').run(lead.id, tag.id)
+    }
+
     // Collect custom/dynamic fields (Facebook form questions, etc)
-    const knownKeys = new Set(['name','first_name','last_name','full_name','nome','phone','phone_number','telefone','whatsapp','celular','email','city','cidade','empresa','cpf_cnpj','cpf','cnpj','instagram','source','fonte','form_name','source_detail','campaign_name','campaign_id','adset_name','adset_id','ad_name','ad_id','form_id','id','created_time','is_organic','platform','lead_status','crm_enviado'])
+    const knownKeys = new Set(['name','first_name','last_name','full_name','nome','phone','phone_number','telefone','whatsapp','celular','email','city','cidade','empresa','cpf_cnpj','cpf','cnpj','instagram','source','fonte','form_name','source_detail','campaign_name','campaign_id','adset_name','adset_id','ad_name','ad_id','form_id','id','created_time','is_organic','platform','lead_status','crm_enviado','stage_name','stage','etapa','status','attendant_name','corretor','atendente','tags','tag','fbp','fbc','fbclid','ctwa_clid','user_agent','event_id','leadgen_id','state','estado','zip','cep'])
     const customFields = Object.entries(body)
       .filter(([k, v]) => !knownKeys.has(k) && v && String(v).trim())
       .map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`)
