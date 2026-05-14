@@ -80,7 +80,7 @@ router.get('/agents', requireRole('super_admin', 'gerente'), (req, res) => {
       (SELECT COUNT(*) FROM leads WHERE attendant_id = u.id AND is_archived = 0 AND created_at >= ?) as leads_period,
       (SELECT COUNT(*) FROM leads WHERE attendant_id = u.id AND is_active = 1 AND is_archived = 0) as leads_total,
       (SELECT COUNT(*) FROM leads l JOIN funnel_stages fs ON l.stage_id = fs.id WHERE l.attendant_id = u.id AND fs.is_conversion = 1 AND l.is_active = 1 AND l.is_archived = 0) as conversions
-    FROM users u WHERE u.account_id = ? AND u.role = 'atendente'
+    FROM users u WHERE u.account_id = ? AND u.role IN ('atendente', 'gerente')
     ORDER BY leads_total DESC
   `).all(sinceStr, req.accountId)
 
