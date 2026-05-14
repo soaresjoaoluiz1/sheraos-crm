@@ -50,6 +50,7 @@ export default function Messages() {
   const [creating, setCreating] = useState(false)
   const [duplicating, setDuplicating] = useState(false)
   const [cloneNotice, setCloneNotice] = useState<string | null>(null)
+  const [showSelectedList, setShowSelectedList] = useState(false)
 
   const load = () => { if (accountId) { setLoading(true); fetchBroadcasts(accountId).then(setBroadcasts).finally(() => setLoading(false)) } }
   useEffect(load, [accountId])
@@ -184,6 +185,7 @@ export default function Messages() {
       setNewDelay(data.clone.delay_seconds || DEFAULT_DELAY)
       setNewInstanceId(data.clone.instance_id || '')
       setSelectedLeads(data.clone.leads)
+      setShowSelectedList(true) // ja abre a lista expandida no step 2
       // Reseta filtros e busca pra evitar confusao no step 2
       setLeadSearch(''); setFilterTags([]); setFilterStages([]); setSearchResults([])
       setStep(1)
@@ -447,9 +449,29 @@ export default function Messages() {
                   {searchResults.length === 0 && leadSearch.length <= 1 && filterTags.length === 0 && filterStages.length === 0 && <div style={{ padding: 20, textAlign: 'center', color: '#6B6580' }}>Selecione tags, etapas, ou digite pra buscar...</div>}
                 </div>
                 {selectedLeads.length > 0 && (
-                  <div style={{ marginTop: 6, padding: '6px 10px', background: 'rgba(255,179,0,0.05)', borderRadius: 6, fontSize: 11, color: '#9B96B0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>Total acumulado: <strong style={{ color: '#FFB300' }}>{selectedLeads.length} leads</strong></span>
-                    <button className="btn btn-secondary btn-sm" onClick={() => setSelectedLeads([])} style={{ fontSize: 10, padding: '2px 8px' }}>Limpar selecao</button>
+                  <div style={{ marginTop: 6, padding: '6px 10px', background: 'rgba(255,179,0,0.05)', borderRadius: 6, fontSize: 11, color: '#9B96B0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>Total acumulado: <strong style={{ color: '#FFB300' }}>{selectedLeads.length} leads</strong></span>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button className="btn btn-secondary btn-sm" onClick={() => setShowSelectedList(v => !v)} style={{ fontSize: 10, padding: '2px 8px' }}>
+                          {showSelectedList ? 'Ocultar lista' : `Ver selecionados (${selectedLeads.length})`}
+                        </button>
+                        <button className="btn btn-secondary btn-sm" onClick={() => setSelectedLeads([])} style={{ fontSize: 10, padding: '2px 8px' }}>Limpar selecao</button>
+                      </div>
+                    </div>
+                    {showSelectedList && (
+                      <div style={{ marginTop: 8, maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2, borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 6 }}>
+                        {selectedLeads.map(l => (
+                          <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 6px', borderRadius: 4, fontSize: 11, color: '#C8C2D8' }}>
+                            <span style={{ fontWeight: 500, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name || 'Sem nome'}</span>
+                            <span style={{ color: '#9B96B0' }}>{l.phone}</span>
+                            <button onClick={() => toggleLead(l)} title="Remover" style={{ background: 'transparent', border: 'none', color: '#FF6B6B', cursor: 'pointer', padding: 2, display: 'flex' }}>
+                              <Trash2 size={11} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
                 <div className="modal-actions">
