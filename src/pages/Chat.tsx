@@ -8,13 +8,14 @@ import {
   fetchLeadCadence, advanceLeadCadence, removeLeadCadence, fetchCadences, assignLeadCadence, createTag,
   archiveLead, createStandaloneTask, fetchLeadTasks, completeStandaloneTask, deleteStandaloneTask, completeTask, skipTask, fetchLeadConversations, type LeadConversation,
   fetchReadyMessages, type ReadyMessage,
+  createLead,
   type WhatsAppInstance, type Lead, type Message, type StageHistoryEntry, type LeadNote,
   type Funnel, type User as UserType, type Tag, type LeadCadence, type Cadence,
 } from '../lib/api'
 import EditTaskModal from '../components/EditTaskModal'
 import {
   MessageCircle, Search, Send, Phone, User, Edit3, Save, X, Plus,
-  StickyNote, Tag as TagIcon, GitBranch, Smartphone, ListOrdered, ChevronRight, Check, Clock, Archive, ListTodo, ChevronDown, ChevronUp, Trash2, Paperclip, FileText,
+  StickyNote, Tag as TagIcon, GitBranch, Smartphone, ListOrdered, ChevronRight, Check, Clock, Archive, ListTodo, ChevronDown, ChevronUp, Trash2, Paperclip, FileText, MessageSquarePlus,
 } from 'lucide-react'
 import MessageMedia from '../components/MessageMedia'
 import { applyMessageVars } from '../lib/messageVars'
@@ -41,6 +42,10 @@ export default function Chat() {
     const leadParam = params.get('lead')
     return leadParam ? parseInt(leadParam) : null
   })
+  const [showNewChat, setShowNewChat] = useState(false)
+  const [newChatName, setNewChatName] = useState('')
+  const [newChatPhone, setNewChatPhone] = useState('')
+  const [creatingNewChat, setCreatingNewChat] = useState(false)
   const [lead, setLead] = useState<Lead | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [history, setHistory] = useState<StageHistoryEntry[]>([])
@@ -215,6 +220,27 @@ export default function Chat() {
     setLeads(prev => prev.filter(l => l.id !== leadId))
     if (selectedLeadId === leadId) setSelectedLeadId(null)
     try { await archiveLead(leadId) } catch { loadLeadsList() }
+  }
+
+  const handleCreateNewChat = async () => {
+    if (!accountId) return
+    const phone = newChatPhone.replace(/[^\d]/g, '')
+    if (!phone) { alert('Informe o telefone'); return }
+    if (phone.length < 10) { alert('Telefone invalido (minimo 10 digitos com DDD)'); return }
+    const name = newChatName.trim() || phone
+    setCreatingNewChat(true)
+    try {
+      const newLead = await createLead(accountId, { name, phone, source: 'manual' })
+      setShowNewChat(false)
+      setNewChatName('')
+      setNewChatPhone('')
+      loadLeadsList()
+      setSelectedLeadId(newLead.id)
+    } catch (e: any) {
+      alert('Erro ao criar contato: ' + (e.message || 'desconhecido'))
+    } finally {
+      setCreatingNewChat(false)
+    }
   }
 
   const filteredLeads = useMemo(() => {
@@ -415,6 +441,16 @@ export default function Chat() {
       <div className="chat-layout">
         {/* Column 1: Contacts */}
         <div className="chat-contacts">
+          <div style={{ padding: '8px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={() => setShowNewChat(true)}
+              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 12 }}
+              title="Iniciar conversa com novo contato"
+            >
+              <MessageSquarePlus size={14} /> Novo chat
+            </button>
+          </div>
           <div className="chat-search">
             <Search size={14} style={{ color: '#6B6580' }} />
             <input className="input" placeholder="Buscar contato..." value={search} onChange={e => setSearch(e.target.value)} style={{ border: 'none', background: 'transparent', flex: 1 }} />
@@ -1094,6 +1130,51 @@ export default function Chat() {
             </div>
             <div className="modal-actions">
               <button className="btn btn-primary" onClick={() => setScriptModal(null)}>Fechar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Novo chat modal */}
+      {showNewChat && (
+        <div className="modal-overlay" onClick={() => !creatingNewChat && setShowNewChat(false)}>
+          <div className="modal" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+            <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <MessageSquarePlus size={18} style={{ color: '#FFB300' }} /> Novo chat
+            </h2>
+            <p style={{ fontSize: 12, color: '#9B96B0', marginTop: 4 }}>
+              Cria um contato e abre a conversa direto no chat.
+            </p>
+            <div className="form-group">
+              <label>Nome</label>
+              <input
+                className="input"
+                value={newChatName}
+                onChange={e => setNewChatName(e.target.value)}
+                placeholder="Ex: Joao Silva"
+                autoFocus
+                onKeyDown={e => { if (e.key === 'Enter') handleCreateNewChat() }}
+              />
+            </div>
+            <div className="form-group">
+              <label>Telefone (com DDD)</label>
+              <input
+                className="input"
+                value={newChatPhone}
+                onChange={e => setNewChatPhone(e.target.value)}
+                placeholder="Ex: 11999999999"
+                inputMode="numeric"
+                onKeyDown={e => { if (e.key === 'Enter') handleCreateNewChat() }}
+              />
+              <p style={{ fontSize: 10, color: '#6B6580', marginTop: 4 }}>
+                Sem precisar de + ou DDI. Use codigo do pais + DDD + numero (11 digitos).
+              </p>
+            </div>
+            <div className="modal-actions">
+              <button className="btn btn-secondary" onClick={() => setShowNewChat(false)} disabled={creatingNewChat}>Cancelar</button>
+              <button className="btn btn-primary" onClick={handleCreateNewChat} disabled={creatingNewChat || !newChatPhone.trim()}>
+                {creatingNewChat ? 'Criando...' : 'Criar e abrir chat'}
+              </button>
             </div>
           </div>
         </div>
