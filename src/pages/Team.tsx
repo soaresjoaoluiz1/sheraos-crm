@@ -12,7 +12,7 @@ export default function Team() {
   const [showNew, setShowNew] = useState(false)
   const [newUser, setNewUser] = useState({ name: '', email: '', password: '' })
   const [editingUser, setEditingUser] = useState<UserType | null>(null)
-  const [editForm, setEditForm] = useState({ name: '', email: '', password: '', primary_instance_id: '' as string, can_manage_proposals: false })
+  const [editForm, setEditForm] = useState({ name: '', email: '', password: '', primary_instance_id: '' as string, can_manage_proposals: false, can_grab_leads: false })
   const [instances, setInstances] = useState<WhatsAppInstance[]>([])
 
   const isAdmin = user?.role === 'super_admin'
@@ -32,10 +32,10 @@ export default function Team() {
     setShowNew(false); setNewUser({ name: '', email: '', password: '' }); load()
   }
 
-  const openEdit = (u: UserType) => { setEditingUser(u); setEditForm({ name: u.name, email: u.email, password: '', primary_instance_id: u.primary_instance_id ? String(u.primary_instance_id) : '', can_manage_proposals: u.can_manage_proposals === 1 }) }
+  const openEdit = (u: UserType) => { setEditingUser(u); setEditForm({ name: u.name, email: u.email, password: '', primary_instance_id: u.primary_instance_id ? String(u.primary_instance_id) : '', can_manage_proposals: u.can_manage_proposals === 1, can_grab_leads: u.can_grab_leads === 1 }) }
   const handleSaveEdit = async () => {
     if (!editingUser) return
-    const data: any = { name: editForm.name, email: editForm.email, primary_instance_id: editForm.primary_instance_id ? +editForm.primary_instance_id : null, can_manage_proposals: editForm.can_manage_proposals ? 1 : 0 }
+    const data: any = { name: editForm.name, email: editForm.email, primary_instance_id: editForm.primary_instance_id ? +editForm.primary_instance_id : null, can_manage_proposals: editForm.can_manage_proposals ? 1 : 0, can_grab_leads: editForm.can_grab_leads ? 1 : 0 }
     if (editForm.password) data.password = editForm.password
     await updateUser(editingUser.id, data)
     setEditingUser(null); load()
@@ -135,6 +135,15 @@ export default function Team() {
               </label>
               <small style={{ color: '#9B96B0', fontSize: 11, marginLeft: 24, display: 'block', marginTop: 4 }}>
                 Libera acesso à aba "Propostas" pra esse usuário, mesmo sem ser super admin.
+              </small>
+            </div>
+            <div className="form-group">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input type="checkbox" checked={editForm.can_grab_leads} onChange={e => setEditForm(p => ({ ...p, can_grab_leads: e.target.checked }))} />
+                <span>Pode assumir leads de outros atendentes (sem aprovação)</span>
+              </label>
+              <small style={{ color: '#9B96B0', fontSize: 11, marginLeft: 24, display: 'block', marginTop: 4 }}>
+                Permite "tomar" lead de outro atendente direto, sem pedido/aprovação. Sem essa permissão, só pode pedir transferência.
               </small>
             </div>
             <div className="modal-actions">
