@@ -95,9 +95,14 @@ router.post('/', (req, res) => {
 
   phone = normalizePhone(phone)
 
-  // Duplicata: se ja existe lead com mesmo telefone nessa conta, retorna 409 com o existente
+  // Duplicata: match exato OU por sufixo de 11 digitos (ignora prefixo pais 55)
   if (phone) {
-    const existing = db.prepare('SELECT * FROM leads WHERE account_id = ? AND phone = ? ORDER BY is_archived ASC, created_at DESC LIMIT 1').get(req.accountId, phone)
+    const last11 = phone.length >= 11 ? phone.slice(-11) : phone
+    const existing = db.prepare(`
+      SELECT * FROM leads
+      WHERE account_id = ? AND (phone = ? OR substr(phone, -11) = ?)
+      ORDER BY is_archived ASC, created_at DESC LIMIT 1
+    `).get(req.accountId, phone, last11)
     if (existing) {
       return res.status(409).json({ error: 'Contato ja existe com esse telefone', existing })
     }

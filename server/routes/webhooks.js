@@ -38,7 +38,15 @@ function getOrCreateLead(accountId, phone, name, source, waJid, instanceId) {
   // Procura lead existente (priorizando NAO arquivado; se so achar arquivado, retorna mesmo assim mas SEM desarquivar)
   let lead = null
   if (waJid) lead = db.prepare('SELECT * FROM leads WHERE account_id = ? AND wa_remote_jid = ? ORDER BY is_archived ASC, created_at DESC LIMIT 1').get(accountId, waJid)
-  if (!lead && phone) lead = db.prepare('SELECT * FROM leads WHERE account_id = ? AND phone = ? ORDER BY is_archived ASC, created_at DESC LIMIT 1').get(accountId, phone)
+  if (!lead && phone) {
+    // Match flexivel: compara phone exato OU pelos ultimos 11 digitos (DDD+9+8 = unico, ignora prefixo pais 55)
+    const last11 = phone.length >= 11 ? phone.slice(-11) : phone
+    lead = db.prepare(`
+      SELECT * FROM leads
+      WHERE account_id = ? AND (phone = ? OR substr(phone, -11) = ?)
+      ORDER BY is_archived ASC, created_at DESC LIMIT 1
+    `).get(accountId, phone, last11)
+  }
 
   if (lead) {
     // Update instance_id if not set
