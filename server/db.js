@@ -448,6 +448,8 @@ addColumnIfNotExists('leads', 'last_instance_id', 'INTEGER REFERENCES whatsapp_i
 addColumnIfNotExists('users', 'primary_instance_id', 'INTEGER REFERENCES whatsapp_instances(id) ON DELETE SET NULL')
 // users.can_manage_proposals: permissao granular pra acessar a area de Propostas (super_admin sempre tem)
 addColumnIfNotExists('users', 'can_manage_proposals', 'INTEGER NOT NULL DEFAULT 0')
+// users.can_grab_leads: permite ao atendente "tomar" leads de outros sem precisar aprovacao
+addColumnIfNotExists('users', 'can_grab_leads', 'INTEGER NOT NULL DEFAULT 0')
 // messages.instance_id: qual instancia enviou/recebeu cada mensagem (mostrado internamente no chat)
 addColumnIfNotExists('messages', 'instance_id', 'INTEGER REFERENCES whatsapp_instances(id) ON DELETE SET NULL')
 

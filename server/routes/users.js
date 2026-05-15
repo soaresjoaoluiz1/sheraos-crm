@@ -10,11 +10,11 @@ router.get('/', scopeToAccount, (req, res) => {
   if (req.user.role === 'super_admin') {
     const accountId = req.query.account_id
     const users = accountId
-      ? db.prepare('SELECT id, account_id, name, email, role, is_active, primary_instance_id, can_manage_proposals, created_at FROM users WHERE account_id = ? ORDER BY name').all(accountId)
-      : db.prepare('SELECT id, account_id, name, email, role, is_active, primary_instance_id, can_manage_proposals, created_at FROM users ORDER BY name').all()
+      ? db.prepare('SELECT id, account_id, name, email, role, is_active, primary_instance_id, can_manage_proposals, can_grab_leads, created_at FROM users WHERE account_id = ? ORDER BY name').all(accountId)
+      : db.prepare('SELECT id, account_id, name, email, role, is_active, primary_instance_id, can_manage_proposals, can_grab_leads, created_at FROM users ORDER BY name').all()
     return res.json({ users })
   }
-  const users = db.prepare('SELECT id, account_id, name, email, role, is_active, primary_instance_id, can_manage_proposals, created_at FROM users WHERE account_id = ? ORDER BY name').all(req.user.account_id)
+  const users = db.prepare('SELECT id, account_id, name, email, role, is_active, primary_instance_id, can_manage_proposals, can_grab_leads, created_at FROM users WHERE account_id = ? ORDER BY name').all(req.user.account_id)
   res.json({ users })
 })
 
@@ -53,7 +53,7 @@ router.put('/:id', (req, res) => {
   if (req.user.role === 'gerente' && user.account_id !== req.user.account_id) return res.status(403).json({ error: 'Sem permissao' })
   if (req.user.role === 'atendente' && user.id !== req.user.id) return res.status(403).json({ error: 'Sem permissao' })
 
-  const { name, email, role, is_active, password, primary_instance_id, can_manage_proposals } = req.body
+  const { name, email, role, is_active, password, primary_instance_id, can_manage_proposals, can_grab_leads } = req.body
   const sets = []
   const params = []
   if (name !== undefined) { sets.push('name = ?'); params.push(name) }
@@ -76,11 +76,15 @@ router.put('/:id', (req, res) => {
     if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Apenas admin pode alterar permissao de propostas' })
     sets.push('can_manage_proposals = ?'); params.push(can_manage_proposals ? 1 : 0)
   }
+  if (can_grab_leads !== undefined) {
+    if (!['super_admin','gerente'].includes(req.user.role)) return res.status(403).json({ error: 'Sem permissao pra alterar' })
+    sets.push('can_grab_leads = ?'); params.push(can_grab_leads ? 1 : 0)
+  }
   if (sets.length === 0) return res.status(400).json({ error: 'Nada pra atualizar' })
   sets.push("updated_at = datetime('now')")
   params.push(req.params.id)
   db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).run(...params)
-  const updated = db.prepare('SELECT id, account_id, name, email, role, is_active, primary_instance_id, can_manage_proposals FROM users WHERE id = ?').get(req.params.id)
+  const updated = db.prepare('SELECT id, account_id, name, email, role, is_active, primary_instance_id, can_manage_proposals, can_grab_leads FROM users WHERE id = ?').get(req.params.id)
   res.json({ user: updated })
 })
 

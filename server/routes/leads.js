@@ -215,6 +215,75 @@ router.get('/transfer-requests/pending', (req, res) => {
   res.json({ requests })
 })
 
+// Lista TODOS os pedidos relacionados ao usuario (recebidos + enviados, todos status)
+router.get('/transfer-requests/all', (req, res) => {
+  const received = db.prepare(`
+    SELECT tr.*, l.name as lead_name, l.phone as lead_phone,
+           uf.name as from_attendant_name,
+           ut.name as to_attendant_name
+    FROM lead_transfer_requests tr
+    JOIN leads l ON l.id = tr.lead_id
+    JOIN users uf ON uf.id = tr.from_attendant_id
+    LEFT JOIN users ut ON ut.id = tr.to_attendant_id
+    WHERE tr.to_attendant_id = ?
+    ORDER BY (tr.status = 'pending') DESC, tr.created_at DESC
+    LIMIT 100
+  `).all(req.user.id)
+  const sent = db.prepare(`
+    SELECT tr.*, l.name as lead_name, l.phone as lead_phone,
+           uf.name as from_attendant_name,
+           ut.name as to_attendant_name
+    FROM lead_transfer_requests tr
+    JOIN leads l ON l.id = tr.lead_id
+    JOIN users uf ON uf.id = tr.from_attendant_id
+    LEFT JOIN users ut ON ut.id = tr.to_attendant_id
+    WHERE tr.from_attendant_id = ?
+    ORDER BY (tr.status = 'pending') DESC, tr.created_at DESC
+    LIMIT 100
+  `).all(req.user.id)
+  res.json({ received, sent })
+})
+
+// Cancela pedido (so o requester ou gerente/admin pode)
+router.post('/transfer-requests/:reqId/cancel', (req, res) => {
+  const tr = db.prepare('SELECT * FROM lead_transfer_requests WHERE id = ?').get(req.params.reqId)
+  if (!tr) return res.status(404).json({ error: 'Pedido nao encontrado' })
+  if (tr.status !== 'pending') return res.status(400).json({ error: 'Pedido ja respondido, nao pode cancelar' })
+  const canCancel = tr.from_attendant_id === req.user.id || ['gerente','super_admin'].includes(req.user.role)
+  if (!canCancel) return res.status(403).json({ error: 'Sem permissao' })
+  db.prepare("UPDATE lead_transfer_requests SET status = 'cancelled', responded_at = datetime('now') WHERE id = ?").run(tr.id)
+  try { broadcastSSE(tr.account_id, 'lead:transfer-rejected', { requestId: tr.id, leadId: tr.lead_id, fromUserId: tr.from_attendant_id, cancelled: true }) } catch {}
+  res.json({ ok: true })
+})
+
+// Assumir lead diretamente (so pra atendentes com permissao can_grab_leads ou gerente/admin)
+router.post('/:id/grab', (req, res) => {
+  if (!req.accountId) return res.status(400).json({ error: 'account_id required' })
+  const lead = db.prepare('SELECT * FROM leads WHERE id = ? AND account_id = ?').get(req.params.id, req.accountId)
+  if (!lead) return res.status(404).json({ error: 'Lead nao encontrado' })
+  if (lead.attendant_id === req.user.id) return res.status(400).json({ error: 'Voce ja eh o atendente deste lead' })
+
+  // Permissao: gerente/admin sempre podem; atendente precisa de can_grab_leads=1
+  const fresh = db.prepare('SELECT can_grab_leads FROM users WHERE id = ?').get(req.user.id)
+  const allowed = ['super_admin','gerente'].includes(req.user.role) || (fresh?.can_grab_leads === 1)
+  if (!allowed) return res.status(403).json({ error: 'Voce nao tem permissao pra assumir leads de outros atendentes' })
+
+  const oldAttendantId = lead.attendant_id
+  db.prepare("UPDATE leads SET attendant_id = ?, updated_at = datetime('now') WHERE id = ?").run(req.user.id, lead.id)
+  if (oldAttendantId) {
+    db.prepare('UPDATE lead_instance_assignments SET attendant_id = ? WHERE lead_id = ? AND attendant_id = ?').run(req.user.id, lead.id, oldAttendantId)
+  } else {
+    db.prepare('UPDATE lead_instance_assignments SET attendant_id = ? WHERE lead_id = ? AND attendant_id IS NULL').run(req.user.id, lead.id)
+  }
+  // Cancela quaisquer pedidos pending pra esse lead
+  db.prepare("UPDATE lead_transfer_requests SET status = 'cancelled', responded_at = datetime('now') WHERE lead_id = ? AND status = 'pending'").run(lead.id)
+
+  // SSE pra atualizar UIs (atendente antigo perde, novo ganha)
+  try { broadcastSSE(req.accountId, 'lead:transfer-accepted', { requestId: null, leadId: lead.id, newAttendantId: req.user.id, newAttendantName: req.user.name, grabbed: true }) } catch {}
+
+  res.json({ ok: true, leadId: lead.id })
+})
+
 // Criar pedido de transferencia (Emily pede pra Deivid)
 router.post('/:id/transfer-request', (req, res) => {
   if (!req.accountId) return res.status(400).json({ error: 'account_id required' })

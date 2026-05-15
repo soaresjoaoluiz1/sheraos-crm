@@ -3,11 +3,11 @@ import { NavLink } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useAccount } from '../context/AccountContext'
 import { useSSE } from '../context/SSEContext'
-import { apiFetch, fetchTaskCounts } from '../lib/api'
+import { apiFetch, fetchTaskCounts, fetchPendingTransferRequests } from '../lib/api'
 import {
   LayoutDashboard, Kanban, Users, MessageCircle, UserCog, GitBranch,
   Plug, Settings, Building2, LogOut, UsersRound, Menu, X,
-  ListOrdered, MessageSquarePlus, ClipboardList, Rocket, ListTodo, ExternalLink, Tag as TagIcon, FileText,
+  ListOrdered, MessageSquarePlus, ClipboardList, Rocket, ListTodo, ExternalLink, Tag as TagIcon, FileText, ArrowRightLeft,
 } from 'lucide-react'
 
 export default function Sidebar() {
@@ -15,6 +15,7 @@ export default function Sidebar() {
   const { accountId, accounts, setAccountId } = useAccount()
   const [newLeadsCount, setNewLeadsCount] = useState(0)
   const [taskCount, setTaskCount] = useState(0)
+  const [transferCount, setTransferCount] = useState(0)
 
   const loadTaskCount = useCallback(() => {
     if (!accountId) return
@@ -23,6 +24,14 @@ export default function Sidebar() {
   useEffect(() => { loadTaskCount() }, [loadTaskCount])
   useSSE('task:updated', loadTaskCount)
   useSSE('task:due', loadTaskCount)
+
+  const loadTransferCount = useCallback(() => {
+    fetchPendingTransferRequests().then(r => setTransferCount((r.requests || []).length)).catch(() => {})
+  }, [])
+  useEffect(() => { loadTransferCount() }, [loadTransferCount])
+  useSSE('lead:transfer-requested', loadTransferCount)
+  useSSE('lead:transfer-accepted', loadTransferCount)
+  useSSE('lead:transfer-rejected', loadTransferCount)
   const [mobileOpen, setMobileOpen] = useState(false)
   if (!user) return null
 
@@ -119,6 +128,10 @@ export default function Sidebar() {
           </NavLink>
           <NavLink to="/leads" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={closeMobile}>
             <Users size={16} /> Leads
+          </NavLink>
+          <NavLink to="/transferencias" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={closeMobile}>
+            <ArrowRightLeft size={16} /> Transferencias
+            {transferCount > 0 && <span className="nav-badge" style={{ background: '#FF6B6B' }}>{transferCount > 99 ? '99+' : transferCount}</span>}
           </NavLink>
 
           {(isGerente || isAdmin) && (

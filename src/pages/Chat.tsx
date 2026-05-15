@@ -9,7 +9,7 @@ import {
   archiveLead, createStandaloneTask, fetchLeadTasks, completeStandaloneTask, deleteStandaloneTask, completeTask, skipTask, fetchLeadConversations, type LeadConversation,
   fetchReadyMessages, type ReadyMessage,
   createLeadOrFindExisting,
-  requestLeadTransfer, acceptTransferRequest, rejectTransferRequest, fetchPendingTransferRequests, type TransferRequest,
+  requestLeadTransfer, acceptTransferRequest, rejectTransferRequest, fetchPendingTransferRequests, grabLead, type TransferRequest,
   type WhatsAppInstance, type Lead, type Message, type StageHistoryEntry, type LeadNote,
   type Funnel, type User as UserType, type Tag, type LeadCadence, type Cadence,
 } from '../lib/api'
@@ -265,44 +265,10 @@ export default function Chat() {
     setNotice({ kind: 'info', title: 'Transferencia recusada', message: 'O atendente recusou a transferencia. Fale com o gerente se precisar urgente.' })
   }, [user]))
 
-  // Carrega pendings ao montar (caso tenha entrado pedido enquanto offline)
+  // Carrega pendings ao montar (so pra atualizar state — modal aparece em /transferencias)
   useEffect(() => {
     if (!user) return
-    fetchPendingTransferRequests().then(r => {
-      const list = r.requests || []
-      setPendingTransfers(list)
-      // Se ha pendentes, mostra modal do mais recente
-      if (list.length > 0) {
-        const first = list[0]
-        setNotice({
-          kind: 'info',
-          title: list.length > 1 ? `${list.length} pedidos de transferencia pendentes` : 'Pedido de transferencia',
-          message: `${first.from_attendant_name || 'Um atendente'} quer atender o lead ${first.lead_name || first.lead_phone || '?'}. Aceitar?${list.length > 1 ? ` (${list.length - 1} pendentes apos este)` : ''}`,
-          actions: [
-            {
-              label: 'Rejeitar',
-              danger: true,
-              onClick: async () => {
-                try { await rejectTransferRequest(first.id); setPendingTransfers(prev => prev.filter(p => p.id !== first.id)) }
-                catch (e: any) { setNotice({ kind: 'error', title: 'Erro', message: e?.message || 'Falha ao rejeitar' }) }
-              },
-            },
-            {
-              label: 'Aceitar',
-              primary: true,
-              onClick: async () => {
-                try {
-                  await acceptTransferRequest(first.id)
-                  setPendingTransfers(prev => prev.filter(p => p.id !== first.id))
-                  setNotice({ kind: 'success', title: 'Transferencia feita', message: `Lead transferido pra ${first.from_attendant_name}.` })
-                  loadLeadsList()
-                } catch (e: any) { setNotice({ kind: 'error', title: 'Erro', message: e?.message || 'Falha ao aceitar' }) }
-              },
-            },
-          ],
-        })
-      }
-    }).catch(() => {})
+    fetchPendingTransferRequests().then(r => setPendingTransfers(r.requests || [])).catch(() => {})
   }, [user?.id])
 
   const handleArchiveLead = async (leadId: number, e?: { stopPropagation?: () => void }) => {
@@ -394,13 +360,11 @@ export default function Chat() {
         setNewChatInstanceId(null)
         const ownerName = e.ownerName || 'outro atendente'
         const leadId = e.leadId
-        setNotice({
-          kind: 'info',
-          title: 'Contato ja em atendimento',
-          message: `Esse telefone ja esta cadastrado com ${ownerName} da sua empresa. Voce pode pedir transferencia — ${ownerName} sera avisado e pode aceitar.`,
-          actions: leadId && accountId ? [{
+        const canGrab = !!(user as any)?.can_grab_leads || user?.role === 'super_admin' || user?.role === 'gerente'
+        const actions: NoticeAction[] = []
+        if (leadId && accountId) {
+          actions.push({
             label: 'Pedir transferencia',
-            primary: true,
             onClick: async () => {
               try {
                 await requestLeadTransfer(leadId, accountId)
@@ -409,7 +373,31 @@ export default function Chat() {
                 setNotice({ kind: 'error', title: 'Erro', message: err?.message || 'Falha ao pedir transferencia' })
               }
             },
-          }] : undefined,
+          })
+          if (canGrab) {
+            actions.push({
+              label: 'Assumir lead',
+              primary: true,
+              onClick: async () => {
+                try {
+                  await grabLead(leadId, accountId)
+                  setNotice({ kind: 'success', title: 'Lead assumido', message: 'O lead agora esta com voce.' })
+                  loadLeadsList()
+                  setSelectedLeadId(leadId)
+                } catch (err: any) {
+                  setNotice({ kind: 'error', title: 'Erro', message: err?.message || 'Falha ao assumir' })
+                }
+              },
+            })
+          }
+        }
+        setNotice({
+          kind: 'info',
+          title: 'Contato ja em atendimento',
+          message: canGrab
+            ? `Esse telefone ja esta com ${ownerName}. Voce pode pedir transferencia (${ownerName} aprova) ou assumir direto (sua permissao especial).`
+            : `Esse telefone ja esta cadastrado com ${ownerName} da sua empresa. Voce pode pedir transferencia — ${ownerName} sera avisado e pode aceitar.`,
+          actions: actions.length > 0 ? actions : undefined,
         })
       } else {
         setNotice({ kind: 'error', title: 'Erro ao criar contato', message: e.message || 'Erro desconhecido' })

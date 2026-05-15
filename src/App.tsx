@@ -27,6 +27,7 @@ import AdminClientDetail from './pages/admin/ClientDetail'
 import AdminGlobalDashboard from './pages/admin/GlobalDashboard'
 import AdminUsers from './pages/admin/Users'
 import Propostas from './pages/Propostas'
+import TransferRequests from './pages/TransferRequests'
 
 // Fix global: impede modal de fechar quando user arrasta seleção de texto
 // de dentro do input pra fora do modal (mousedown dentro, mouseup no overlay)
@@ -106,6 +107,7 @@ function AppRoutes() {
           <Route path="/tasks" element={<Tasks />} />
           <Route path="/leads" element={<Leads />} />
           <Route path="/leads/:id" element={<LeadDetail />} />
+          <Route path="/transferencias" element={<TransferRequests />} />
 
           <Route path="*" element={<Navigate to={homeRoute} />} />
         </Routes>
