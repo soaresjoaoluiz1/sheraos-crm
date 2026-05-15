@@ -360,7 +360,7 @@ export default function Chat() {
         setNewChatInstanceId(null)
         const ownerName = e.ownerName || 'outro atendente'
         const leadId = e.leadId
-        const canGrab = !!(user as any)?.can_grab_leads || user?.role === 'super_admin' || user?.role === 'gerente'
+        const canGrab = !!user?.can_grab_leads || user?.role === 'super_admin' || user?.role === 'gerente'
         const actions: NoticeAction[] = []
         if (leadId && accountId) {
           actions.push({
