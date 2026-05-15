@@ -297,7 +297,17 @@ export default function Chat() {
         setNotice({ kind: 'info', title: 'Contato ja existia', message: `Voce ja tinha conversa com ${targetLead.name || phone}. Abrindo a conversa atual.` })
       }
     } catch (e: any) {
-      setNotice({ kind: 'error', title: 'Erro ao criar contato', message: e.message || 'Erro desconhecido' })
+      if (e?.otherAttendant) {
+        setNotice({
+          kind: 'info',
+          title: 'Contato ja em atendimento',
+          message: e.ownerName
+            ? `Esse telefone ja esta cadastrado com ${e.ownerName}. Pede transferencia ao seu gerente.`
+            : 'Esse telefone ja esta cadastrado com outro atendente da sua empresa. Pede transferencia ao seu gerente.',
+        })
+      } else {
+        setNotice({ kind: 'error', title: 'Erro ao criar contato', message: e.message || 'Erro desconhecido' })
+      }
     } finally {
       setCreatingNewChat(false)
     }

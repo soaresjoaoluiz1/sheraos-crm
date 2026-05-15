@@ -114,7 +114,11 @@ export async function createLeadOrFindExisting(accountId: number, data: Partial<
   if (res.status === 409) {
     const body = await res.json().catch(() => ({}))
     if (body.existing) return { lead: body.existing as Lead, alreadyExisted: true }
-    throw new Error(body.error || 'Contato ja existe')
+    // Lead pertence a outro atendente da mesma empresa — atendente atual nao pode acessar
+    const err: any = new Error(body.error || 'Contato ja existe')
+    err.otherAttendant = !!body.otherAttendant
+    err.ownerName = body.ownerName || null
+    throw err
   }
   if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `API error: ${res.status}`) }
   const body = await res.json()

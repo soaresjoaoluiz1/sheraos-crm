@@ -118,6 +118,19 @@ router.post('/', (req, res) => {
       }
     }
     if (existing) {
+      // Se atendente nao eh dono do lead duplicado, retorna mensagem especial (sem expor dados do lead alheio)
+      if (req.user.role === 'atendente' && existing.attendant_id !== req.user.id) {
+        // Verifica tambem se ela esta atribuida via lead_instance_assignments (multi-instancia)
+        const isAssigned = db.prepare('SELECT 1 FROM lead_instance_assignments WHERE lead_id = ? AND attendant_id = ?').get(existing.id, req.user.id)
+        if (!isAssigned) {
+          const owner = existing.attendant_id ? db.prepare('SELECT name FROM users WHERE id = ?').get(existing.attendant_id) : null
+          return res.status(409).json({
+            error: owner ? `Esse telefone ja esta cadastrado com o atendente ${owner.name} da sua empresa. Pede transferencia ao gerente.` : 'Esse telefone ja esta cadastrado com outro atendente da sua empresa. Pede transferencia ao gerente.',
+            otherAttendant: true,
+            ownerName: owner?.name || null,
+          })
+        }
+      }
       return res.status(409).json({ error: 'Contato ja existe com esse telefone', existing })
     }
   }
