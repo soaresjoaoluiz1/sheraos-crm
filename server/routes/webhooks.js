@@ -606,6 +606,17 @@ router.post('/sheets/:accountSlug', (req, res) => {
     const { lead, isNew } = getOrCreateLead(account.id, phone, name, source, null)
     if (!lead) return res.status(400).json({ error: 'Falha ao criar lead (sem funil configurado?)' })
 
+    // Atualiza nome se vier mais completo (lead antigo pode estar so com telefone, ou nome incompleto)
+    // Substitui se nome novo eh nao-vazio E (nome atual eh vazio OU eh igual ao phone OU eh mais curto)
+    if (!isNew && name && name.trim()) {
+      const currentName = (lead.name || '').trim()
+      const newName = name.trim()
+      const isPhoneAsName = currentName === lead.phone || /^\d+$/.test(currentName)
+      if (!currentName || isPhoneAsName || (newName.length > currentName.length && newName.toLowerCase() !== currentName.toLowerCase())) {
+        db.prepare('UPDATE leads SET name = ? WHERE id = ?').run(newName, lead.id)
+      }
+    }
+
     // Update optional fields
     if (email) db.prepare('UPDATE leads SET email = COALESCE(email, ?) WHERE id = ?').run(email, lead.id)
     if (city) db.prepare('UPDATE leads SET city = COALESCE(city, ?) WHERE id = ?').run(city, lead.id)
