@@ -505,6 +505,27 @@ db.exec(`
   )
 `)
 
+// Pedidos de transferencia de lead entre atendentes (Emily pede o lead que esta com Deivid)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS lead_transfer_requests (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    lead_id           INTEGER NOT NULL,
+    from_attendant_id INTEGER NOT NULL,
+    to_attendant_id   INTEGER,
+    account_id        INTEGER NOT NULL,
+    status            TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','accepted','rejected','cancelled')),
+    message           TEXT,
+    created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+    responded_at      TEXT,
+    FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE CASCADE,
+    FOREIGN KEY (from_attendant_id) REFERENCES users(id),
+    FOREIGN KEY (to_attendant_id) REFERENCES users(id),
+    FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_transfer_pending ON lead_transfer_requests(to_attendant_id, status);
+  CREATE INDEX IF NOT EXISTS idx_transfer_from ON lead_transfer_requests(from_attendant_id, status);
+`)
+
 // Proposals (proposta comercial gerada pelo super_admin)
 db.exec(`
   CREATE TABLE IF NOT EXISTS proposals (

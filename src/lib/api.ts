@@ -118,6 +118,7 @@ export async function createLeadOrFindExisting(accountId: number, data: Partial<
     const err: any = new Error(body.error || 'Contato ja existe')
     err.otherAttendant = !!body.otherAttendant
     err.ownerName = body.ownerName || null
+    err.leadId = body.leadId || null
     throw err
   }
   if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `API error: ${res.status}`) }
@@ -200,6 +201,22 @@ export interface BroadcastCloneData {
   original: { total_count: number; valid_leads_now: number }
 }
 export const fetchBroadcastCloneData = (id: number, accountId: number) => apiFetch<BroadcastCloneData>(`/api/broadcasts/${id}/clone-data?account_id=${accountId}`)
+
+// Lead transfer requests (atendente pede atendimento de lead que esta com outro atendente)
+export interface TransferRequest {
+  id: number; lead_id: number; from_attendant_id: number; to_attendant_id: number | null
+  account_id: number; status: 'pending'|'accepted'|'rejected'|'cancelled'
+  message: string | null; created_at: string; responded_at: string | null
+  lead_name?: string | null; lead_phone?: string | null; from_attendant_name?: string | null
+}
+export const requestLeadTransfer = (leadId: number, accountId: number, message?: string) =>
+  apiFetch<{ request: TransferRequest; alreadyExists: boolean }>(`/api/leads/${leadId}/transfer-request?account_id=${accountId}`, { method: 'POST', body: JSON.stringify({ message }) })
+export const acceptTransferRequest = (reqId: number) =>
+  apiFetch(`/api/leads/transfer-requests/${reqId}/accept`, { method: 'POST', body: JSON.stringify({}) })
+export const rejectTransferRequest = (reqId: number) =>
+  apiFetch(`/api/leads/transfer-requests/${reqId}/reject`, { method: 'POST', body: JSON.stringify({}) })
+export const fetchPendingTransferRequests = () =>
+  apiFetch<{ requests: TransferRequest[] }>(`/api/leads/transfer-requests/pending`)
 
 // Admin: check all WhatsApp instances across all accounts (super_admin only)
 export interface InstanceCheckResult {

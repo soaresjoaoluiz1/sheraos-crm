@@ -9,6 +9,7 @@ import {
   archiveLead, createStandaloneTask, fetchLeadTasks, completeStandaloneTask, deleteStandaloneTask, completeTask, skipTask, fetchLeadConversations, type LeadConversation,
   fetchReadyMessages, type ReadyMessage,
   createLeadOrFindExisting,
+  requestLeadTransfer, acceptTransferRequest, rejectTransferRequest, fetchPendingTransferRequests, type TransferRequest,
   type WhatsAppInstance, type Lead, type Message, type StageHistoryEntry, type LeadNote,
   type Funnel, type User as UserType, type Tag, type LeadCadence, type Cadence,
 } from '../lib/api'
@@ -47,7 +48,9 @@ export default function Chat() {
   const [newChatPhone, setNewChatPhone] = useState('')
   const [newChatInstanceId, setNewChatInstanceId] = useState<number | null>(null)
   const [creatingNewChat, setCreatingNewChat] = useState(false)
-  const [notice, setNotice] = useState<{ kind: 'info' | 'error' | 'success'; title: string; message: string } | null>(null)
+  type NoticeAction = { label: string; onClick: () => void; primary?: boolean; danger?: boolean }
+  const [notice, setNotice] = useState<{ kind: 'info' | 'error' | 'success'; title: string; message: string; actions?: NoticeAction[] } | null>(null)
+  const [pendingTransfers, setPendingTransfers] = useState<TransferRequest[]>([])
   const [lead, setLead] = useState<Lead | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [history, setHistory] = useState<StageHistoryEntry[]>([])
@@ -216,6 +219,58 @@ export default function Chat() {
   }, [selectedLeadId]))
   useSSE('lead:unarchived', useCallback(() => loadLeadsList(), [loadLeadsList]))
 
+  // Pedido de transferencia recebido — filtra por mim e mostra modal de aceite
+  useSSE('lead:transfer-requested', useCallback((data: TransferRequest) => {
+    if (!user || data.to_attendant_id !== user.id) return
+    setPendingTransfers(prev => prev.some(p => p.id === data.id) ? prev : [data, ...prev])
+    setNotice({
+      kind: 'info',
+      title: 'Pedido de transferencia',
+      message: `${data.from_attendant_name || 'Um atendente'} quer atender o lead ${data.lead_name || data.lead_phone || '?'}. Aceitar?`,
+      actions: [
+        {
+          label: 'Rejeitar',
+          danger: true,
+          onClick: async () => {
+            try { await rejectTransferRequest(data.id); setPendingTransfers(prev => prev.filter(p => p.id !== data.id)) }
+            catch (e: any) { setNotice({ kind: 'error', title: 'Erro', message: e?.message || 'Falha ao rejeitar' }) }
+          },
+        },
+        {
+          label: 'Aceitar',
+          primary: true,
+          onClick: async () => {
+            try {
+              await acceptTransferRequest(data.id)
+              setPendingTransfers(prev => prev.filter(p => p.id !== data.id))
+              setNotice({ kind: 'success', title: 'Transferencia feita', message: `Lead transferido pra ${data.from_attendant_name}.` })
+              loadLeadsList()
+            } catch (e: any) { setNotice({ kind: 'error', title: 'Erro', message: e?.message || 'Falha ao aceitar' }) }
+          },
+        },
+      ],
+    })
+  }, [user, loadLeadsList]))
+
+  // Pedido aceito — pra quem pediu, atualiza lista e avisa
+  useSSE('lead:transfer-accepted', useCallback((data: any) => {
+    if (!user || data.newAttendantId !== user.id) return
+    loadLeadsList()
+    setNotice({ kind: 'success', title: 'Transferencia aprovada', message: `O lead ja esta com voce. Pode comecar o atendimento.` })
+  }, [user, loadLeadsList]))
+
+  // Pedido rejeitado — pra quem pediu
+  useSSE('lead:transfer-rejected', useCallback((data: any) => {
+    if (!user || data.fromUserId !== user.id) return
+    setNotice({ kind: 'info', title: 'Transferencia recusada', message: 'O atendente recusou a transferencia. Fale com o gerente se precisar urgente.' })
+  }, [user]))
+
+  // Carrega pendings ao montar (caso tenha entrado pedido enquanto offline)
+  useEffect(() => {
+    if (!user) return
+    fetchPendingTransferRequests().then(r => setPendingTransfers(r.requests || [])).catch(() => {})
+  }, [user?.id])
+
   const handleArchiveLead = async (leadId: number, e?: { stopPropagation?: () => void }) => {
     e?.stopPropagation?.()
     if (!confirm('Arquivar este lead? Ele some do chat e do pipeline, mas o historico fica salvo.')) return
@@ -298,12 +353,24 @@ export default function Chat() {
       }
     } catch (e: any) {
       if (e?.otherAttendant) {
+        const ownerName = e.ownerName || 'outro atendente'
+        const leadId = e.leadId
         setNotice({
           kind: 'info',
           title: 'Contato ja em atendimento',
-          message: e.ownerName
-            ? `Esse telefone ja esta cadastrado com ${e.ownerName}. Pede transferencia ao seu gerente.`
-            : 'Esse telefone ja esta cadastrado com outro atendente da sua empresa. Pede transferencia ao seu gerente.',
+          message: `Esse telefone ja esta cadastrado com ${ownerName} da sua empresa. Voce pode pedir transferencia — ${ownerName} sera avisado e pode aceitar.`,
+          actions: leadId && accountId ? [{
+            label: 'Pedir transferencia',
+            primary: true,
+            onClick: async () => {
+              try {
+                await requestLeadTransfer(leadId, accountId)
+                setNotice({ kind: 'success', title: 'Pedido enviado', message: `${ownerName} foi avisado(a). Quando aceitar, o lead vira seu automaticamente.` })
+              } catch (err: any) {
+                setNotice({ kind: 'error', title: 'Erro', message: err?.message || 'Falha ao pedir transferencia' })
+              }
+            },
+          }] : undefined,
         })
       } else {
         setNotice({ kind: 'error', title: 'Erro ao criar contato', message: e.message || 'Erro desconhecido' })
@@ -1225,7 +1292,22 @@ export default function Chat() {
             </h2>
             <p style={{ fontSize: 13, color: '#C8C2D8', marginTop: 8, lineHeight: 1.5 }}>{notice.message}</p>
             <div className="modal-actions">
-              <button className="btn btn-primary" onClick={() => setNotice(null)} autoFocus>OK</button>
+              {notice.actions && notice.actions.length > 0 ? (
+                <>
+                  <button className="btn btn-secondary" onClick={() => setNotice(null)}>Fechar</button>
+                  {notice.actions.map((a, i) => (
+                    <button
+                      key={i}
+                      className={`btn ${a.danger ? 'btn-danger' : a.primary ? 'btn-primary' : 'btn-secondary'}`}
+                      onClick={() => { a.onClick(); setNotice(null) }}
+                    >
+                      {a.label}
+                    </button>
+                  ))}
+                </>
+              ) : (
+                <button className="btn btn-primary" onClick={() => setNotice(null)} autoFocus>OK</button>
+              )}
             </div>
           </div>
         </div>
