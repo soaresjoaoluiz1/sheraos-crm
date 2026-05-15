@@ -353,6 +353,11 @@ export default function Chat() {
       }
     } catch (e: any) {
       if (e?.otherAttendant) {
+        // Fecha o modal de Novo Chat ANTES de mostrar o notice, senao ele cobre
+        setShowNewChat(false)
+        setNewChatName('')
+        setNewChatPhone('')
+        setNewChatInstanceId(null)
         const ownerName = e.ownerName || 'outro atendente'
         const leadId = e.leadId
         setNotice({
