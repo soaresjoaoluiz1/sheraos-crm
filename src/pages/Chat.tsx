@@ -15,7 +15,7 @@ import {
 import EditTaskModal from '../components/EditTaskModal'
 import {
   MessageCircle, Search, Send, Phone, User, Edit3, Save, X, Plus,
-  StickyNote, Tag as TagIcon, GitBranch, Smartphone, ListOrdered, ChevronRight, Check, Clock, Archive, ListTodo, ChevronDown, ChevronUp, Trash2, Paperclip, FileText, MessageSquarePlus,
+  StickyNote, Tag as TagIcon, GitBranch, Smartphone, ListOrdered, ChevronRight, Check, Clock, Archive, ListTodo, ChevronDown, ChevronUp, Trash2, Paperclip, FileText, MessageSquarePlus, Copy,
 } from 'lucide-react'
 import MessageMedia from '../components/MessageMedia'
 import { applyMessageVars } from '../lib/messageVars'
@@ -33,7 +33,7 @@ function timeAgo(dateStr: string) {
 
 export default function Chat() {
   const { user } = useAuth()
-  const { accountId } = useAccount()
+  const { accountId, accounts } = useAccount()
   const [instances, setInstances] = useState<WhatsAppInstance[]>([])
   const [selectedInstance, setSelectedInstance] = useState<number | 'all'>('all')
   const [leads, setLeads] = useState<Lead[]>([])
@@ -222,6 +222,53 @@ export default function Chat() {
     setLeads(prev => prev.filter(l => l.id !== leadId))
     if (selectedLeadId === leadId) setSelectedLeadId(null)
     try { await archiveLead(leadId) } catch { loadLeadsList() }
+  }
+
+  // Formata conversa como texto plano otimizado pra analise por LLM (ChatGPT/Claude)
+  const formatConversationForLLM = (msgs: Message[]): string => {
+    if (!lead) return ''
+    const lines: string[] = []
+    const phone = lead.phone || 's/ tel'
+    const leadName = lead.name || phone
+    const companyName = (accounts.find(a => a.id === accountId)?.name || 'Empresa').toUpperCase()
+    lines.push(companyName)
+    lines.push(`Conversa com ${leadName} (${phone})`)
+    const attendantName = attendants.find(a => a.id === lead.attendant_id)?.name
+    if (attendantName) lines.push(`Atendente responsavel: ${attendantName}`)
+    lines.push(`Total: ${msgs.length} mensagens`)
+    lines.push('')
+    for (const m of msgs) {
+      const d = parseSqlDate(m.created_at)
+      const ts = isNaN(d.getTime()) ? '?' : `${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+      let sender: string
+      if (m.direction === 'inbound') {
+        sender = leadName
+      } else {
+        // Nome da instancia WhatsApp que enviou (ex: "Ramon", "Central ASK")
+        const inst = m.instance_id ? instances.find(i => i.id === m.instance_id)?.instance_name : null
+        sender = inst || companyName
+      }
+      const content = (m.content || '').trim().replace(/\n+/g, '\n')
+      lines.push(`${sender} enviou (${ts})`)
+      lines.push(content)
+      lines.push('')
+    }
+    return lines.join('\n').trim()
+  }
+
+  const handleCopyConversation = async () => {
+    if (!lead) return
+    const text = formatConversationForLLM(visibleMessages)
+    if (!text || visibleMessages.length === 0) {
+      setNotice({ kind: 'info', title: 'Conversa vazia', message: 'Nao ha mensagens pra copiar.' })
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(text)
+      setNotice({ kind: 'success', title: 'Conversa copiada', message: `${visibleMessages.length} mensagem${visibleMessages.length !== 1 ? 's' : ''} copiada${visibleMessages.length !== 1 ? 's' : ''}. Cole no ChatGPT/Claude pra analise.` })
+    } catch (e: any) {
+      setNotice({ kind: 'error', title: 'Erro ao copiar', message: e?.message || 'Browser bloqueou acesso ao clipboard (precisa HTTPS)' })
+    }
   }
 
   const connectedInstances = useMemo(() => instances.filter(i => i.status === 'connected'), [instances])
@@ -534,6 +581,11 @@ export default function Chat() {
                   {lead.phone && <div style={{ fontSize: 11, color: '#9B96B0', display: 'flex', alignItems: 'center', gap: 4 }}><Phone size={10} />{lead.phone}</div>}
                 </div>
                 {lead.instance_name && <span style={{ fontSize: 10, color: '#34C759', display: 'flex', alignItems: 'center', gap: 4 }}><Smartphone size={10} />{lead.instance_name}</span>}
+                {user?.role === 'super_admin' && (
+                  <button className="btn btn-secondary btn-sm" title="Copiar conversa (pra analise por LLM)" onClick={handleCopyConversation} style={{ padding: '4px 8px' }}>
+                    <Copy size={12} />
+                  </button>
+                )}
                 <button className="btn btn-secondary btn-sm" title="Arquivar" onClick={() => handleArchiveLead(lead.id)} style={{ padding: '4px 8px' }}>
                   <Archive size={12} />
                 </button>
