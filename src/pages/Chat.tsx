@@ -268,7 +268,41 @@ export default function Chat() {
   // Carrega pendings ao montar (caso tenha entrado pedido enquanto offline)
   useEffect(() => {
     if (!user) return
-    fetchPendingTransferRequests().then(r => setPendingTransfers(r.requests || [])).catch(() => {})
+    fetchPendingTransferRequests().then(r => {
+      const list = r.requests || []
+      setPendingTransfers(list)
+      // Se ha pendentes, mostra modal do mais recente
+      if (list.length > 0) {
+        const first = list[0]
+        setNotice({
+          kind: 'info',
+          title: list.length > 1 ? `${list.length} pedidos de transferencia pendentes` : 'Pedido de transferencia',
+          message: `${first.from_attendant_name || 'Um atendente'} quer atender o lead ${first.lead_name || first.lead_phone || '?'}. Aceitar?${list.length > 1 ? ` (${list.length - 1} pendentes apos este)` : ''}`,
+          actions: [
+            {
+              label: 'Rejeitar',
+              danger: true,
+              onClick: async () => {
+                try { await rejectTransferRequest(first.id); setPendingTransfers(prev => prev.filter(p => p.id !== first.id)) }
+                catch (e: any) { setNotice({ kind: 'error', title: 'Erro', message: e?.message || 'Falha ao rejeitar' }) }
+              },
+            },
+            {
+              label: 'Aceitar',
+              primary: true,
+              onClick: async () => {
+                try {
+                  await acceptTransferRequest(first.id)
+                  setPendingTransfers(prev => prev.filter(p => p.id !== first.id))
+                  setNotice({ kind: 'success', title: 'Transferencia feita', message: `Lead transferido pra ${first.from_attendant_name}.` })
+                  loadLeadsList()
+                } catch (e: any) { setNotice({ kind: 'error', title: 'Erro', message: e?.message || 'Falha ao aceitar' }) }
+              },
+            },
+          ],
+        })
+      }
+    }).catch(() => {})
   }, [user?.id])
 
   const handleArchiveLead = async (leadId: number, e?: { stopPropagation?: () => void }) => {
