@@ -72,13 +72,21 @@ router.put('/:id', (req, res) => {
   if (is_active !== undefined) { sets.push('is_active = ?'); params.push(is_active ? 1 : 0) }
   if (password) { sets.push('password = ?'); params.push(bcrypt.hashSync(password, 10)) }
   if (primary_instance_id !== undefined) { sets.push('primary_instance_id = ?'); params.push(primary_instance_id || null) }
+  // can_manage_proposals so super_admin altera, mas ignora se valor nao mudou (evita 403 desnecessario)
   if (can_manage_proposals !== undefined) {
-    if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Apenas admin pode alterar permissao de propostas' })
-    sets.push('can_manage_proposals = ?'); params.push(can_manage_proposals ? 1 : 0)
+    const newVal = can_manage_proposals ? 1 : 0
+    if (newVal !== (user.can_manage_proposals || 0)) {
+      if (req.user.role !== 'super_admin') return res.status(403).json({ error: 'Apenas admin pode alterar permissao de propostas' })
+      sets.push('can_manage_proposals = ?'); params.push(newVal)
+    }
   }
+  // can_grab_leads gerente/admin pode, ignora se nao mudou
   if (can_grab_leads !== undefined) {
-    if (!['super_admin','gerente'].includes(req.user.role)) return res.status(403).json({ error: 'Sem permissao pra alterar' })
-    sets.push('can_grab_leads = ?'); params.push(can_grab_leads ? 1 : 0)
+    const newVal = can_grab_leads ? 1 : 0
+    if (newVal !== (user.can_grab_leads || 0)) {
+      if (!['super_admin','gerente'].includes(req.user.role)) return res.status(403).json({ error: 'Sem permissao pra alterar can_grab_leads' })
+      sets.push('can_grab_leads = ?'); params.push(newVal)
+    }
   }
   if (sets.length === 0) return res.status(400).json({ error: 'Nada pra atualizar' })
   sets.push("updated_at = datetime('now')")
