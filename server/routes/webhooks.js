@@ -33,19 +33,32 @@ function normalizePhone(p) {
   return p // can't normalize safely — return as-is
 }
 
+// Gera chave canonica de comparacao: DDD + 8 digitos finais (sem 55, sem 9 inicial de celular)
+// Cobre todos formatos: "5547991351835", "47991351835", "4791351835" -> "4791351835"
+function phoneCompareKey(p) {
+  let d = String(p || '').replace(/[^\d]/g, '')
+  if (!d) return ''
+  if (d.startsWith('55') && (d.length === 12 || d.length === 13)) d = d.slice(2)
+  if (d.length === 11 && d[2] === '9') d = d.slice(0, 2) + d.slice(3)
+  return d.length === 10 ? d : d.slice(-10) // fallback: ultimos 10 se formato desconhecido
+}
+
 function getOrCreateLead(accountId, phone, name, source, waJid, instanceId) {
   phone = normalizePhone(phone)
-  // Procura lead existente (priorizando NAO arquivado; se so achar arquivado, retorna mesmo assim mas SEM desarquivar)
   let lead = null
   if (waJid) lead = db.prepare('SELECT * FROM leads WHERE account_id = ? AND wa_remote_jid = ? ORDER BY is_archived ASC, created_at DESC LIMIT 1').get(accountId, waJid)
   if (!lead && phone) {
-    // Match flexivel: compara phone exato OU pelos ultimos 11 digitos (DDD+9+8 = unico, ignora prefixo pais 55)
-    const last11 = phone.length >= 11 ? phone.slice(-11) : phone
-    lead = db.prepare(`
-      SELECT * FROM leads
-      WHERE account_id = ? AND (phone = ? OR substr(phone, -11) = ?)
-      ORDER BY is_archived ASC, created_at DESC LIMIT 1
-    `).get(accountId, phone, last11)
+    // 1) match exato (rapido, usa index)
+    lead = db.prepare('SELECT * FROM leads WHERE account_id = ? AND phone = ? ORDER BY is_archived ASC, created_at DESC LIMIT 1').get(accountId, phone)
+    // 2) fallback: busca candidatos por sufixo 8d e compara via phoneCompareKey
+    if (!lead) {
+      const key = phoneCompareKey(phone)
+      if (key) {
+        const last8 = key.slice(-8)
+        const candidates = db.prepare(`SELECT * FROM leads WHERE account_id = ? AND phone LIKE ? ORDER BY is_archived ASC, created_at DESC`).all(accountId, '%' + last8)
+        lead = candidates.find(c => phoneCompareKey(c.phone) === key) || null
+      }
+    }
   }
 
   if (lead) {
