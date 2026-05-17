@@ -102,7 +102,7 @@ app.get('/api/events', async (req, res) => {
   let user
   try {
     const jwtMod = await import('jsonwebtoken')
-    user = jwtMod.default.verify(token, process.env.JWT_SECRET || 'dros-crm-secret-2026')
+    user = jwtMod.default.verify(token, process.env.JWT_SECRET || 'sheraos-crm-secret-2026')
   } catch { return res.status(401).end() }
 
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' })
@@ -131,11 +131,11 @@ if (fs.existsSync(distPath)) {
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
     res.sendFile(resolve(distPath, 'index.html'))
   })
-  console.log('[Dros CRM] Serving frontend from /crm/')
+  console.log('[Sheraos CRM] Serving frontend from /crm/')
 }
 
 app.listen(PORT, () => {
-  console.log(`[Dros CRM API] Running on http://localhost:${PORT}`)
+  console.log(`[Sheraos CRM API] Running on http://localhost:${PORT}`)
   startScheduler()
   // Retoma disparos que estavam enviando quando o servidor caiu
   setTimeout(() => recoverPendingBroadcasts(), 2000)

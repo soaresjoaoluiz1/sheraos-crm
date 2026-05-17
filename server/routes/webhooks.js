@@ -538,7 +538,7 @@ router.post('/meta-leads/:accountSlug', async (req, res) => {
 
 // Meta webhook verification
 router.get('/meta-leads/:accountSlug', (req, res) => {
-  const verifyToken = process.env.META_VERIFY_TOKEN || 'dros-crm-verify'
+  const verifyToken = process.env.META_VERIFY_TOKEN || 'sheraos-crm-verify'
   if (req.query['hub.verify_token'] === verifyToken && req.query['hub.mode'] === 'subscribe') {
     return res.send(req.query['hub.challenge'])
   }

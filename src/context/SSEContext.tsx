@@ -15,7 +15,7 @@ export function SSEProvider({ children }: { children: ReactNode }) {
   const esRef = useRef<EventSource | null>(null)
 
   useEffect(() => {
-    const token = localStorage.getItem('dros_crm_token')
+    const token = localStorage.getItem('sheraos_crm_token')
     if (!token) return
 
     const base = import.meta.env.BASE_URL.replace(/\/$/, '')

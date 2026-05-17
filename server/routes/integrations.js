@@ -46,7 +46,7 @@ router.get('/whatsapp', requireRole('super_admin', 'gerente'), (req, res) => {
 
 // Helper: register webhook on Evolution for a given instance
 async function registerEvolutionWebhook(baseUrl, apiKey, instanceName, accountSlug) {
-  const webhookUrl = `https://drosagencia.com.br/crm/api/webhooks/evolution/${accountSlug}`
+  const webhookUrl = `https://sheraos.com.br/crm/api/webhooks/evolution/${accountSlug}`
   try {
     await fetch(`${baseUrl}/webhook/set/${encodeURIComponent(instanceName)}`, {
       method: 'POST',
@@ -229,7 +229,7 @@ router.post('/whatsapp/:id/setup-webhook', requireRole('super_admin', 'gerente')
   if (!instance) return
   const account = db.prepare('SELECT slug FROM accounts WHERE id = ?').get(instance.account_id)
   if (!account?.slug) return res.status(404).json({ error: 'Conta nao encontrada' })
-  const webhookUrl = `https://drosagencia.com.br/crm/api/webhooks/evolution/${account.slug}`
+  const webhookUrl = `https://sheraos.com.br/crm/api/webhooks/evolution/${account.slug}`
   try {
     await registerEvolutionWebhook(instance.api_url, instance.api_key, instance.instance_name, account.slug)
     res.json({ ok: true, webhookUrl })

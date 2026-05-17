@@ -93,9 +93,9 @@ export default function Cadences() {
             </div>
             <div style={{ marginTop: 16, padding: 12, background: 'rgba(255,179,0,0.06)', border: '1px solid rgba(255,179,0,0.2)', borderRadius: 8, fontSize: 11, color: '#C8C4D4', lineHeight: 1.6 }}>
               <strong style={{ color: '#FFB300' }}>Exemplo:</strong><br />
-              <em>"Oi, {'{{primeiro_nome}}'}! Aqui e o {'{{atendente_nome}}'} da Dros. Vi que voce e de {'{{cidade}}'}, certo?"</em><br />
+              <em>"Oi, {'{{primeiro_nome}}'}! Aqui e o {'{{atendente_nome}}'} da Sheraos. Vi que voce e de {'{{cidade}}'}, certo?"</em><br />
               Com lead "Daniel Paulo" de Porto Alegre + Hemily atendendo, vira:<br />
-              "Oi, Daniel! Aqui e a Hemily da Dros. Vi que voce e de Porto Alegre, certo?"
+              "Oi, Daniel! Aqui e a Hemily da Sheraos. Vi que voce e de Porto Alegre, certo?"
             </div>
             <div className="modal-actions"><button className="btn btn-secondary" onClick={() => setShowVars(false)}>Fechar</button></div>
           </div>

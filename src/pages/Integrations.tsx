@@ -386,8 +386,8 @@ export default function Integrations() {
             <div style={{ marginBottom: 16 }}>
               <label style={{ fontSize: 11, color: '#9B96B0', display: 'block', marginBottom: 4 }}>URL do Webhook (cole no Apps Script)</label>
               <div style={{ display: 'flex', gap: 6 }}>
-                <input className="input" readOnly value={`https://drosagencia.com.br/crm/api/webhooks/sheets/${accountSlug}`} style={{ fontSize: 11 }} />
-                <button className="btn btn-secondary btn-sm" onClick={() => { navigator.clipboard.writeText(`https://drosagencia.com.br/crm/api/webhooks/sheets/${accountSlug}`); setSheetsCopied(true); setTimeout(() => setSheetsCopied(false), 2000) }}>
+                <input className="input" readOnly value={`https://sheraos.com.br/crm/api/webhooks/sheets/${accountSlug}`} style={{ fontSize: 11 }} />
+                <button className="btn btn-secondary btn-sm" onClick={() => { navigator.clipboard.writeText(`https://sheraos.com.br/crm/api/webhooks/sheets/${accountSlug}`); setSheetsCopied(true); setTimeout(() => setSheetsCopied(false), 2000) }}>
                   {sheetsCopied ? <><Check size={12} /> Copiado</> : <><Copy size={12} /> Copiar</>}
                 </button>
               </div>
@@ -434,7 +434,7 @@ export default function Integrations() {
                   : `SpreadsheetApp.getActiveSheet()`
                 const script = `// Cole este script no Apps Script da sua planilha
 // Funciona com planilhas do Facebook Ads e qualquer formato
-const WEBHOOK_URL = 'https://drosagencia.com.br/crm/api/webhooks/sheets/${accountSlug}';
+const WEBHOOK_URL = 'https://sheraos.com.br/crm/api/webhooks/sheets/${accountSlug}';
 const SHEET_NAME = ${trimmedTab ? `'${trimmedTab.replace(/'/g, "\\'")}'` : `''`}; // deixe vazio pra usar a aba ativa
 const HEADER_ROW = 1;
 var SENT_COL = null; // coluna "enviado" (criada automaticamente)

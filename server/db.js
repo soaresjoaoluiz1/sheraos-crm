@@ -351,7 +351,7 @@ addColumnIfNotExists('accounts', 'evolution_api_key', 'TEXT')
 
 // Defaults centralizados da Evolution API (ja preenche em todas contas)
 export const DEFAULT_EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://127.0.0.1:8080'
-export const DEFAULT_EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || 'dros-evo-key-2026'
+export const DEFAULT_EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || 'sheraos-evo-key-2026'
 
 // Backfill: aplica defaults em contas que ainda nao tem credenciais salvas
 db.prepare("UPDATE accounts SET evolution_api_url = ? WHERE evolution_api_url IS NULL OR evolution_api_url = ''").run(DEFAULT_EVOLUTION_API_URL)
@@ -551,12 +551,12 @@ db.exec(`
 `)
 
 // Seed super_admin if not exists
-const adminExists = db.prepare('SELECT id FROM users WHERE email = ?').get('admin@drosagencia.com.br')
+const adminExists = db.prepare('SELECT id FROM users WHERE email = ?').get('admin@sheraos.com')
 if (!adminExists) {
   db.prepare(`
     INSERT INTO users (name, email, password, role, account_id) VALUES (?, ?, ?, 'super_admin', NULL)
-  `).run('Dros Admin', 'admin@drosagencia.com.br', bcrypt.hashSync('dros2026', 10))
-  console.log('[DB] Super admin created: admin@drosagencia.com.br')
+  `).run('Sheraos Admin', 'admin@sheraos.com', bcrypt.hashSync(process.env.INITIAL_ADMIN_PASSWORD || 'sheraos2026', 10))
+  console.log('[DB] Super admin created: admin@sheraos.com')
 }
 
 console.log('[DB] SQLite ready at', dbPath)

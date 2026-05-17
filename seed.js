@@ -11,7 +11,7 @@ async function api(path, method = 'GET', body = null, token = null) {
 
 async function run() {
   // Login as admin
-  const { token } = await api('/api/auth/login', 'POST', { email: 'admin@drosagencia.com.br', password: 'dros2026' })
+  const { token } = await api('/api/auth/login', 'POST', { email: 'admin@sheraos.com', password: 'sheraos2026' })
   const post = (path, body) => api(path, 'POST', body, token)
   const put = (path, body) => api(path, 'PUT', body, token)
   const get = (path) => api(path, 'GET', null, token)
@@ -117,7 +117,7 @@ async function run() {
   console.log('BG Imoveis: 40 leads, 3 atendentes')
   console.log('Kellermann: 25 leads, 2 atendentes')
   console.log('\nLogins:')
-  console.log('Admin:     admin@drosagencia.com.br / dros2026')
+  console.log('Admin:     admin@sheraos.com / sheraos2026')
   console.log('Gerente:   carlos@bg.com / test123')
   console.log('Gerente:   maria@keller.com / test123')
   console.log('Atendente: brenda@bg.com / test123')

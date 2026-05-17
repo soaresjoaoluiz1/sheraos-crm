@@ -1,4 +1,4 @@
-const getToken = () => localStorage.getItem('dros_crm_token')
+const getToken = () => localStorage.getItem('sheraos_crm_token')
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, '')
 
 export async function apiFetch<T = any>(path: string, opts: RequestInit = {}): Promise<T> {
@@ -7,7 +7,7 @@ export async function apiFetch<T = any>(path: string, opts: RequestInit = {}): P
     ...opts,
     headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json', ...opts.headers },
   })
-  if (res.status === 401) { localStorage.removeItem('dros_crm_token'); window.location.href = `${BASE}/login`; throw new Error('Unauthorized') }
+  if (res.status === 401) { localStorage.removeItem('sheraos_crm_token'); window.location.href = `${BASE}/login`; throw new Error('Unauthorized') }
   if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `API error: ${res.status}`) }
   return res.json()
 }
@@ -110,7 +110,7 @@ export async function createLeadOrFindExisting(accountId: number, data: Partial<
     headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   })
-  if (res.status === 401) { localStorage.removeItem('dros_crm_token'); window.location.href = `${BASE}/login`; throw new Error('Unauthorized') }
+  if (res.status === 401) { localStorage.removeItem('sheraos_crm_token'); window.location.href = `${BASE}/login`; throw new Error('Unauthorized') }
   if (res.status === 409) {
     const body = await res.json().catch(() => ({}))
     if (body.existing) return { lead: body.existing as Lead, alreadyExisted: true }
