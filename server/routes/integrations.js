@@ -46,7 +46,7 @@ router.get('/whatsapp', requireRole('super_admin', 'gerente'), (req, res) => {
 
 // Helper: register webhook on Evolution for a given instance
 async function registerEvolutionWebhook(baseUrl, apiKey, instanceName, accountSlug) {
-  const webhookUrl = `https://sheraos.com.br/crm/api/webhooks/evolution/${accountSlug}`
+  const webhookUrl = `https://drosagencia.com.br/crm/api/webhooks/evolution/${accountSlug}`
   try {
     await fetch(`${baseUrl}/webhook/set/${encodeURIComponent(instanceName)}`, {
       method: 'POST',
@@ -229,7 +229,7 @@ router.post('/whatsapp/:id/setup-webhook', requireRole('super_admin', 'gerente')
   if (!instance) return
   const account = db.prepare('SELECT slug FROM accounts WHERE id = ?').get(instance.account_id)
   if (!account?.slug) return res.status(404).json({ error: 'Conta nao encontrada' })
-  const webhookUrl = `https://sheraos.com.br/crm/api/webhooks/evolution/${account.slug}`
+  const webhookUrl = `https://drosagencia.com.br/crm/api/webhooks/evolution/${account.slug}`
   try {
     await registerEvolutionWebhook(instance.api_url, instance.api_key, instance.instance_name, account.slug)
     res.json({ ok: true, webhookUrl })
@@ -298,6 +298,72 @@ router.post('/whatsapp/:id/test', requireRole('super_admin', 'gerente'), async (
     db.prepare("UPDATE whatsapp_instances SET status = 'disconnected' WHERE id = ?").run(instance.id)
     res.json({ success: false, error: err.message })
   }
+})
+
+// ─── Auto-mensagens por instancia ─────────────────────────────────
+// GET: carrega config atual da instancia (atendente tb le pra mostrar status na sidebar)
+router.get('/whatsapp/:id/auto-messages', (req, res) => {
+  const instance = getOwnedInstance(req, res)
+  if (!instance) return
+  const cfg = db.prepare('SELECT * FROM instance_auto_messages WHERE instance_id = ?').get(instance.id)
+  res.json({ config: cfg || { instance_id: instance.id, greeting_enabled: 0, away_enabled: 0, away_mode: 'manual' } })
+})
+
+// PUT: salva config (upsert)
+router.put('/whatsapp/:id/auto-messages', requireRole('super_admin', 'gerente'), (req, res) => {
+  const instance = getOwnedInstance(req, res)
+  if (!instance) return
+  const {
+    greeting_enabled = 0, greeting_text = null,
+    away_enabled = 0, away_text = null, away_schedule_json = null, away_cooldown_hours = 4,
+  } = req.body || {}
+  // Modo manual descontinuado — sempre salva como 'schedule'
+  const away_mode = 'schedule'
+  const away_manual_active = 0
+
+  // Valida JSON schedule
+  let scheduleStr = null
+  if (away_schedule_json) {
+    try {
+      if (typeof away_schedule_json === 'string') { JSON.parse(away_schedule_json); scheduleStr = away_schedule_json }
+      else scheduleStr = JSON.stringify(away_schedule_json)
+    } catch { return res.status(400).json({ error: 'away_schedule_json invalido' }) }
+  }
+
+  const existing = db.prepare('SELECT id FROM instance_auto_messages WHERE instance_id = ?').get(instance.id)
+  if (existing) {
+    db.prepare(`
+      UPDATE instance_auto_messages SET
+        greeting_enabled = ?, greeting_text = ?,
+        away_enabled = ?, away_mode = ?, away_manual_active = ?, away_text = ?, away_schedule_json = ?, away_cooldown_hours = ?,
+        updated_at = datetime('now')
+      WHERE instance_id = ?
+    `).run(
+      greeting_enabled ? 1 : 0, greeting_text,
+      away_enabled ? 1 : 0, away_mode || 'manual', away_manual_active ? 1 : 0, away_text, scheduleStr, parseInt(away_cooldown_hours) || 4,
+      instance.id
+    )
+  } else {
+    db.prepare(`
+      INSERT INTO instance_auto_messages (
+        instance_id, greeting_enabled, greeting_text,
+        away_enabled, away_mode, away_manual_active, away_text, away_schedule_json, away_cooldown_hours
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      instance.id,
+      greeting_enabled ? 1 : 0, greeting_text,
+      away_enabled ? 1 : 0, away_mode || 'manual', away_manual_active ? 1 : 0, away_text, scheduleStr, parseInt(away_cooldown_hours) || 4,
+    )
+  }
+  const cfg = db.prepare('SELECT * FROM instance_auto_messages WHERE instance_id = ?').get(instance.id)
+  res.json({ config: cfg })
+})
+
+// Status da integracao Google Sheets — retorna timestamp do ultimo lead recebido
+router.get('/sheets-status', (req, res) => {
+  if (!req.accountId) return res.status(400).json({ error: 'account_id required' })
+  const row = db.prepare('SELECT last_sheets_lead_at FROM accounts WHERE id = ?').get(req.accountId)
+  res.json({ last_lead_at: row?.last_sheets_lead_at || null })
 })
 
 export default router

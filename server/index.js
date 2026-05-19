@@ -14,6 +14,7 @@ import accountRoutes from './routes/accounts.js'
 import userRoutes from './routes/users.js'
 import funnelRoutes from './routes/funnels.js'
 import leadRoutes from './routes/leads.js'
+import tagMappingRoutes from './routes/tag-mapping.js'
 import messageRoutes from './routes/messages.js'
 import dashboardRoutes from './routes/dashboard.js'
 import webhookRoutes from './routes/webhooks.js'
@@ -59,6 +60,7 @@ app.use('/api/accounts', authenticate, accountRoutes)
 app.use('/api/users', authenticate, userRoutes)
 app.use('/api/funnels', authenticate, scopeToAccount, funnelRoutes)
 app.use('/api/leads', authenticate, scopeToAccount, leadRoutes)
+app.use('/api/tag-mapping', authenticate, scopeToAccount, tagMappingRoutes)
 app.use('/api/messages', authenticate, scopeToAccount, messageRoutes)
 app.use('/api/dashboard', authenticate, scopeToAccount, dashboardRoutes)
 app.use('/api/integrations', authenticate, scopeToAccount, integrationRoutes)
@@ -102,7 +104,7 @@ app.get('/api/events', async (req, res) => {
   let user
   try {
     const jwtMod = await import('jsonwebtoken')
-    user = jwtMod.default.verify(token, process.env.JWT_SECRET || 'sheraos-crm-secret-2026')
+    user = jwtMod.default.verify(token, process.env.JWT_SECRET || 'sheraos-crm-secret')
   } catch { return res.status(401).end() }
 
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' })

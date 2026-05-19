@@ -224,6 +224,42 @@ export const cancelTransferRequest = (reqId: number) =>
 export const grabLead = (leadId: number, accountId: number) =>
   apiFetch<{ ok: boolean; leadId: number }>(`/api/leads/${leadId}/grab?account_id=${accountId}`, { method: 'POST', body: JSON.stringify({}) })
 
+// Auto-mensagens por instancia (saudacao, ausencia, inatividade)
+export interface InstanceAutoMessageConfig {
+  instance_id: number
+  greeting_enabled?: number
+  greeting_text?: string | null
+  away_enabled?: number
+  away_mode?: 'manual' | 'schedule'
+  away_manual_active?: number
+  away_text?: string | null
+  away_schedule_json?: string | null
+  away_cooldown_hours?: number
+}
+export const fetchInstanceAutoMessages = (instanceId: number, accountId: number) =>
+  apiFetch<{ config: InstanceAutoMessageConfig }>(`/api/integrations/whatsapp/${instanceId}/auto-messages?account_id=${accountId}`)
+export const saveInstanceAutoMessages = (instanceId: number, accountId: number, config: Partial<InstanceAutoMessageConfig>) =>
+  apiFetch<{ config: InstanceAutoMessageConfig }>(`/api/integrations/whatsapp/${instanceId}/auto-messages?account_id=${accountId}`, { method: 'PUT', body: JSON.stringify(config) })
+
+// Mapeamento tag → instancia (leads de form)
+export interface TagInstanceMapping {
+  id: number; tag_id: number; tag_name: string; tag_color: string
+  instance_id: number; instance_name: string
+  attendant_id: number | null; attendant_name: string | null
+}
+export const fetchTagInstanceMappings = (accountId: number) =>
+  apiFetch<{ mappings: TagInstanceMapping[] }>(`/api/tag-mapping/list?account_id=${accountId}`)
+export const upsertTagInstanceMapping = (accountId: number, data: { tag_id: number; instance_id: number; attendant_id?: number | null }) =>
+  apiFetch(`/api/tag-mapping?account_id=${accountId}`, { method: 'PUT', body: JSON.stringify(data) })
+export const deleteTagInstanceMapping = (accountId: number, tagId: number) =>
+  apiFetch(`/api/tag-mapping/${tagId}?account_id=${accountId}`, { method: 'DELETE' })
+export const fetchDefaultFormInstance = (accountId: number) =>
+  apiFetch<{ instance_id: number | null }>(`/api/tag-mapping/default-form-instance?account_id=${accountId}`)
+export const setDefaultFormInstance = (accountId: number, instanceId: number | null) =>
+  apiFetch(`/api/tag-mapping/default-form-instance?account_id=${accountId}`, { method: 'PUT', body: JSON.stringify({ instance_id: instanceId }) })
+export const fetchSheetsStatus = (accountId: number) =>
+  apiFetch<{ last_lead_at: string | null }>(`/api/integrations/sheets-status?account_id=${accountId}`)
+
 // Admin: check all WhatsApp instances across all accounts (super_admin only)
 export interface InstanceCheckResult {
   id: number; account: string; instance: string; state: string; action: string; error?: string

@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken'
 
-const JWT_SECRET = process.env.JWT_SECRET || 'sheraos-crm-secret-2026'
+const JWT_SECRET = process.env.JWT_SECRET || 'sheraos-crm-secret'
 
 // Verify JWT and attach user to request
 export function authenticate(req, res, next) {

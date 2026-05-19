@@ -5,9 +5,24 @@ import {
   checkWhatsAppStatus, refreshWhatsAppQR, disconnectWhatsApp, deleteWhatsAppInstance,
   fetchEvolutionConfig, saveEvolutionConfig, setupWhatsAppWebhook, restartWhatsAppInstance, syncWhatsAppNow, setInstanceAttendant, fetchUsers, apiFetch,
   updateMetaCapi, testMetaCapi,
-  type WhatsAppInstance, type User as UserType, type Account,
+  fetchTags, fetchTagInstanceMappings, upsertTagInstanceMapping, deleteTagInstanceMapping,
+  fetchDefaultFormInstance, setDefaultFormInstance, fetchSheetsStatus,
+  type WhatsAppInstance, type User as UserType, type Account, type Tag, type TagInstanceMapping,
 } from '../lib/api'
-import { Plug, Plus, Wifi, WifiOff, Loader, Trash2, QrCode, Power, PowerOff, RefreshCw, Smartphone, Save, Check, Settings, FileSpreadsheet, Copy, Webhook, RotateCw, Download, User, Eye, EyeOff, Activity, AlertTriangle } from 'lucide-react'
+import { Plug, Plus, Wifi, WifiOff, Loader, Trash2, QrCode, Power, PowerOff, RefreshCw, Smartphone, Save, Check, Settings, FileSpreadsheet, Copy, Webhook, RotateCw, Download, User, Eye, EyeOff, Activity, AlertTriangle, MessageSquare, Link as LinkIcon, GitBranch } from 'lucide-react'
+import InstanceAutoMessagesModal from '../components/InstanceAutoMessagesModal'
+import { parseSqlDate } from '../lib/dates'
+
+function sheetsTimeAgo(s: string | null) {
+  if (!s) return null
+  const d = parseSqlDate(s)
+  const mins = Math.max(0, Math.floor((Date.now() - d.getTime()) / 60000))
+  if (mins < 1) return 'agora'
+  if (mins < 60) return `há ${mins}min`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `há ${hrs}h`
+  return `há ${Math.floor(hrs / 24)}d`
+}
 
 export default function Integrations() {
   const { accountId } = useAccount()
@@ -176,6 +191,75 @@ export default function Integrations() {
   }
 
   const [restarting, setRestarting] = useState<number | null>(null)
+  const [autoMsgInstance, setAutoMsgInstance] = useState<WhatsAppInstance | null>(null)
+  const [sheetsLastAt, setSheetsLastAt] = useState<string | null>(null)
+
+  // Roteamento de leads de formulario (tag → instancia)
+  const [routingMappings, setRoutingMappings] = useState<TagInstanceMapping[]>([])
+  const [routingDefaultId, setRoutingDefaultId] = useState<number | null>(null)
+  const [routingTags, setRoutingTags] = useState<Tag[]>([])
+  const [routingEdit, setRoutingEdit] = useState<{ tag_id: string; instance_id: string; attendant_id: string; isNew: boolean } | null>(null)
+  const [routingSaving, setRoutingSaving] = useState(false)
+
+  const loadRouting = useCallback(async () => {
+    if (!accountId) return
+    try {
+      const [m, def, ts] = await Promise.all([
+        fetchTagInstanceMappings(accountId).then(r => r.mappings).catch(() => []),
+        fetchDefaultFormInstance(accountId).then(r => r.instance_id).catch(() => null),
+        fetchTags(accountId).catch(() => []),
+      ])
+      setRoutingMappings(m); setRoutingDefaultId(def); setRoutingTags(ts)
+    } catch {}
+  }, [accountId])
+
+  useEffect(() => { loadRouting() }, [loadRouting])
+
+  useEffect(() => {
+    if (!accountId) return
+    fetchSheetsStatus(accountId).then(r => setSheetsLastAt(r.last_lead_at)).catch(() => {})
+  }, [accountId])
+
+  const handleChangeDefaultRouting = async (instanceId: number | null) => {
+    if (!accountId) return
+    try { await setDefaultFormInstance(accountId, instanceId); setRoutingDefaultId(instanceId) }
+    catch (e: any) { alert(e.message || 'Erro') }
+  }
+
+  const startRoutingEdit = (existing?: TagInstanceMapping) => {
+    if (existing) {
+      setRoutingEdit({
+        tag_id: String(existing.tag_id),
+        instance_id: String(existing.instance_id),
+        attendant_id: existing.attendant_id ? String(existing.attendant_id) : '',
+        isNew: false,
+      })
+    } else {
+      setRoutingEdit({ tag_id: '', instance_id: '', attendant_id: '', isNew: true })
+    }
+  }
+
+  const handleSaveRouting = async () => {
+    if (!accountId || !routingEdit || !routingEdit.tag_id || !routingEdit.instance_id) return
+    setRoutingSaving(true)
+    try {
+      await upsertTagInstanceMapping(accountId, {
+        tag_id: Number(routingEdit.tag_id),
+        instance_id: Number(routingEdit.instance_id),
+        attendant_id: routingEdit.attendant_id ? Number(routingEdit.attendant_id) : null,
+      })
+      setRoutingEdit(null)
+      await loadRouting()
+    } catch (e: any) { alert(e.message || 'Erro ao salvar regra') }
+    setRoutingSaving(false)
+  }
+
+  const handleDeleteRouting = async (tagId: number) => {
+    if (!accountId) return
+    if (!confirm('Remover essa regra?')) return
+    try { await deleteTagInstanceMapping(accountId, tagId); await loadRouting() }
+    catch (e: any) { alert(e.message || 'Erro') }
+  }
   const handleRestart = async (inst: WhatsAppInstance) => {
     if (!accountId) return
     if (!confirm(`Reiniciar a sessao do WhatsApp "${inst.instance_name}"? Use isso quando a instancia parecer conectada mas nao receber mensagens.`)) return
@@ -348,6 +432,13 @@ export default function Integrations() {
                         >
                           {restarting === inst.id ? <Loader size={12} className="spinning" /> : <RotateCw size={12} />} Reiniciar sessao
                         </button>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => setAutoMsgInstance(inst)}
+                          title="Configurar saudacao, ausencia e inatividade"
+                        >
+                          <MessageSquare size={12} /> Auto-mensagens
+                        </button>
                         <button className="btn btn-secondary btn-sm" onClick={() => handleDisconnect(inst)}><PowerOff size={12} /> Desconectar</button>
                       </>
                     )}
@@ -374,11 +465,184 @@ export default function Integrations() {
         </div>
       )}
 
+      {/* Roteamento de leads de formulario (tag → instancia) */}
+      {evoConfigured && (() => {
+        const connectedInsts = instances.filter(i => i.status === 'connected')
+        const attendants = users.filter(u => (u.role === 'atendente' || u.role === 'gerente') && u.is_active)
+        if (connectedInsts.length === 0) return null
+        return (
+          <section className="dash-section" style={{ marginTop: 24 }}>
+            <div className="section-title"><GitBranch size={14} /> Roteamento de leads (formulários)</div>
+            <div className="card">
+              <p style={{ fontSize: 12, color: '#9B96B0', marginBottom: 16 }}>
+                Leads que chegam via Google Sheets, Meta Lead Form ou site não tem WhatsApp na origem.
+                Configure pra qual número essas conversas vão.
+              </p>
+
+              {/* Default — fallback */}
+              <div style={{ background: 'rgba(255,255,255,0.03)', padding: 12, borderRadius: 8, marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <Smartphone size={13} style={{ color: '#FFB300' }} />
+                  <strong style={{ fontSize: 13 }}>Número padrão</strong>
+                </div>
+                <p style={{ fontSize: 11, color: '#9B96B0', marginBottom: 8 }}>
+                  Todos os leads de formulário vão pra esse número, exceto os que tiverem regra específica por tag abaixo.
+                </p>
+                <select
+                  className="select"
+                  value={routingDefaultId ?? ''}
+                  onChange={e => handleChangeDefaultRouting(e.target.value ? Number(e.target.value) : null)}
+                  style={{ minWidth: 280, fontSize: 12 }}
+                >
+                  <option value="">— nenhuma (lead fica sem instância) —</option>
+                  {connectedInsts.map(i => (
+                    <option key={i.id} value={i.id}>{i.instance_name}{i.phone_number ? ` (${i.phone_number})` : ''}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Regras por tag */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <strong style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <LinkIcon size={12} /> Regras especiais por tag
+                  </strong>
+                  <button className="btn btn-primary btn-sm" onClick={() => startRoutingEdit()} disabled={routingTags.length === 0}>
+                    <Plus size={12} /> Nova regra
+                  </button>
+                </div>
+                <p style={{ fontSize: 11, color: '#9B96B0', marginBottom: 8 }}>
+                  Quando uma regra bater com a tag do lead, ela tem prioridade sobre o número padrão.
+                </p>
+
+                {routingTags.length === 0 ? (
+                  <p style={{ fontSize: 11, color: '#9B96B0', textAlign: 'center', padding: 16 }}>
+                    Nenhuma tag criada na conta. Crie tags em <strong>Tags</strong> primeiro.
+                  </p>
+                ) : routingMappings.length === 0 ? (
+                  <div style={{ fontSize: 12, color: '#6B6580', textAlign: 'center', padding: 16, background: 'rgba(255,255,255,0.02)', borderRadius: 6 }}>
+                    Nenhuma regra configurada. Leads de formulário usam o número padrão acima.
+                  </div>
+                ) : (
+                  <div className="table-card">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Tag</th>
+                          <th>Instância</th>
+                          <th>Atendente</th>
+                          <th className="right">Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {routingMappings.map(m => (
+                          <tr key={m.id}>
+                            <td>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', background: `${m.tag_color}25`, color: m.tag_color, borderRadius: 4, fontSize: 12, fontWeight: 600 }}>
+                                <span style={{ width: 6, height: 6, borderRadius: '50%', background: m.tag_color }} />
+                                {m.tag_name}
+                              </span>
+                            </td>
+                            <td style={{ fontSize: 12 }}><Smartphone size={11} style={{ display: 'inline', marginRight: 4, color: '#34C759' }} />{m.instance_name}</td>
+                            <td style={{ fontSize: 12 }}>{m.attendant_name || <span style={{ color: '#6B6580' }}>— (roleta)</span>}</td>
+                            <td className="right">
+                              <button className="btn btn-secondary btn-sm" style={{ fontSize: 10 }} onClick={() => startRoutingEdit(m)}>Editar</button>
+                              <button className="btn btn-secondary btn-sm" style={{ fontSize: 10, color: '#FF6B6B', marginLeft: 4 }} onClick={() => handleDeleteRouting(m.tag_id)}><Trash2 size={10} /></button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+        )
+      })()}
+
+      {/* Modal de criar/editar regra de roteamento */}
+      {routingEdit && (
+        <div className="modal-overlay" onClick={() => setRoutingEdit(null)}>
+          <div className="modal" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
+            <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <LinkIcon size={16} style={{ color: '#FFB300' }} /> {routingEdit.isNew ? 'Nova regra' : 'Editar regra'}
+            </h2>
+            <p style={{ fontSize: 12, color: '#9B96B0', marginTop: 4, marginBottom: 12 }}>
+              Quando lead de formulário receber a tag escolhida, vai pra esta instância (e atendente, se definido).
+            </p>
+            <div className="form-group">
+              <label>Tag *</label>
+              <select
+                className="select"
+                value={routingEdit.tag_id}
+                onChange={e => setRoutingEdit(p => p ? { ...p, tag_id: e.target.value } : null)}
+                disabled={!routingEdit.isNew}
+              >
+                <option value="">— escolha —</option>
+                {routingTags
+                  .filter(t => routingEdit.isNew ? !routingMappings.some(m => m.tag_id === t.id) : true)
+                  .map(t => <option key={t.id} value={t.id}>{t.name}</option>)
+                }
+              </select>
+              {!routingEdit.isNew && <p style={{ fontSize: 10, color: '#6B6580', marginTop: 4 }}>Tag não editável — pra trocar de tag, remove e cria nova.</p>}
+            </div>
+            <div className="form-group">
+              <label>Instância WhatsApp *</label>
+              <select
+                className="select"
+                value={routingEdit.instance_id}
+                onChange={e => setRoutingEdit(p => p ? { ...p, instance_id: e.target.value } : null)}
+              >
+                <option value="">— escolha —</option>
+                {instances.filter(i => i.status === 'connected').map(i => (
+                  <option key={i.id} value={i.id}>{i.instance_name}{i.phone_number ? ` (${i.phone_number})` : ''}</option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group">
+              <label>Atendente padrão (opcional)</label>
+              <select
+                className="select"
+                value={routingEdit.attendant_id}
+                onChange={e => setRoutingEdit(p => p ? { ...p, attendant_id: e.target.value } : null)}
+              >
+                <option value="">— sem atendente fixo (usa roleta) —</option>
+                {users.filter(u => (u.role === 'atendente' || u.role === 'gerente') && u.is_active).map(u => (
+                  <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                ))}
+              </select>
+            </div>
+            <div className="modal-actions">
+              <button className="btn btn-secondary" onClick={() => setRoutingEdit(null)} disabled={routingSaving}>Cancelar</button>
+              <button className="btn btn-primary" onClick={handleSaveRouting} disabled={routingSaving || !routingEdit.tag_id || !routingEdit.instance_id}>
+                <Save size={12} /> {routingSaving ? 'Salvando...' : 'Salvar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Google Sheets Integration */}
       {accountSlug && (
         <section className="dash-section" style={{ marginTop: 24 }}>
           <div className="section-title"><FileSpreadsheet size={14} /> Integracao Google Sheets</div>
           <div className="card">
+            {/* Status da integracao */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 6, background: sheetsLastAt ? 'rgba(52,199,89,0.08)' : 'rgba(255,255,255,0.03)', border: `1px solid ${sheetsLastAt ? 'rgba(52,199,89,0.25)' : 'rgba(255,255,255,0.06)'}`, marginBottom: 12, fontSize: 12 }}>
+              {sheetsLastAt ? (
+                <>
+                  <Check size={14} style={{ color: '#34C759' }} />
+                  <strong style={{ color: '#34C759' }}>Conectada</strong>
+                  <span style={{ color: '#9B96B0' }}>· Último lead recebido {sheetsTimeAgo(sheetsLastAt)} ({parseSqlDate(sheetsLastAt).toLocaleString('pt-BR')})</span>
+                </>
+              ) : (
+                <>
+                  <AlertTriangle size={14} style={{ color: '#9B96B0' }} />
+                  <span style={{ color: '#9B96B0' }}>Aguardando primeiro lead — siga as instruções abaixo pra configurar.</span>
+                </>
+              )}
+            </div>
             <p style={{ fontSize: 12, color: '#9B96B0', marginBottom: 12 }}>
               Conecte uma planilha do Google Sheets ao CRM. Leads adicionados na planilha sao criados automaticamente no sistema.
             </p>
@@ -386,8 +650,8 @@ export default function Integrations() {
             <div style={{ marginBottom: 16 }}>
               <label style={{ fontSize: 11, color: '#9B96B0', display: 'block', marginBottom: 4 }}>URL do Webhook (cole no Apps Script)</label>
               <div style={{ display: 'flex', gap: 6 }}>
-                <input className="input" readOnly value={`https://sheraos.com.br/crm/api/webhooks/sheets/${accountSlug}`} style={{ fontSize: 11 }} />
-                <button className="btn btn-secondary btn-sm" onClick={() => { navigator.clipboard.writeText(`https://sheraos.com.br/crm/api/webhooks/sheets/${accountSlug}`); setSheetsCopied(true); setTimeout(() => setSheetsCopied(false), 2000) }}>
+                <input className="input" readOnly value={`https://drosagencia.com.br/crm/api/webhooks/sheets/${accountSlug}`} style={{ fontSize: 11 }} />
+                <button className="btn btn-secondary btn-sm" onClick={() => { navigator.clipboard.writeText(`https://drosagencia.com.br/crm/api/webhooks/sheets/${accountSlug}`); setSheetsCopied(true); setTimeout(() => setSheetsCopied(false), 2000) }}>
                   {sheetsCopied ? <><Check size={12} /> Copiado</> : <><Copy size={12} /> Copiar</>}
                 </button>
               </div>
@@ -434,7 +698,7 @@ export default function Integrations() {
                   : `SpreadsheetApp.getActiveSheet()`
                 const script = `// Cole este script no Apps Script da sua planilha
 // Funciona com planilhas do Facebook Ads e qualquer formato
-const WEBHOOK_URL = 'https://sheraos.com.br/crm/api/webhooks/sheets/${accountSlug}';
+const WEBHOOK_URL = 'https://drosagencia.com.br/crm/api/webhooks/sheets/${accountSlug}';
 const SHEET_NAME = ${trimmedTab ? `'${trimmedTab.replace(/'/g, "\\'")}'` : `''`}; // deixe vazio pra usar a aba ativa
 const HEADER_ROW = 1;
 var SENT_COL = null; // coluna "enviado" (criada automaticamente)
@@ -677,6 +941,15 @@ function onChange(e) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Auto-Messages Modal */}
+      {autoMsgInstance && accountId && (
+        <InstanceAutoMessagesModal
+          instance={autoMsgInstance}
+          accountId={accountId}
+          onClose={() => setAutoMsgInstance(null)}
+        />
       )}
     </div>
   )

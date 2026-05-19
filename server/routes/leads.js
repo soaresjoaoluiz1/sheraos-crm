@@ -660,6 +660,9 @@ router.delete('/tags/:tagId', requireRole('super_admin', 'gerente'), (req, res) 
   res.json({ ok: true })
 })
 
+// (rotas de tag-mapping movidas pra /api/tag-mapping em routes/tag-mapping.js
+//  por causa de conflito com /:id e /tags/:tagId neste mesmo router)
+
 // =============================================
 // OPT-IN / OPT-OUT (WhatsApp broadcast consent)
 // =============================================

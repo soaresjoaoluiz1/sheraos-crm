@@ -17,10 +17,12 @@ import EditTaskModal from '../components/EditTaskModal'
 import {
   MessageCircle, Search, Send, Phone, User, Edit3, Save, X, Plus,
   StickyNote, Tag as TagIcon, GitBranch, Smartphone, ListOrdered, ChevronRight, Check, Clock, Archive, ListTodo, ChevronDown, ChevronUp, Trash2, Paperclip, FileText, MessageSquarePlus, Copy,
+  Menu as MenuIcon, MessagesSquare, Info as InfoIcon, History as HistoryIcon, ChevronLeft,
 } from 'lucide-react'
 import MessageMedia from '../components/MessageMedia'
 import { applyMessageVars } from '../lib/messageVars'
 import { parseSqlDate, formatTime } from '../lib/dates'
+import { useIsMobile } from '../hooks/useIsMobile'
 
 function timeAgo(dateStr: string) {
   const diff = Date.now() - parseSqlDate(dateStr).getTime()
@@ -51,6 +53,26 @@ export default function Chat() {
   type NoticeAction = { label: string; onClick: () => void; primary?: boolean; danger?: boolean }
   const [notice, setNotice] = useState<{ kind: 'info' | 'error' | 'success'; title: string; message: string; actions?: NoticeAction[] } | null>(null)
   const [pendingTransfers, setPendingTransfers] = useState<TransferRequest[]>([])
+
+  // Mobile single-pane com bottom nav de 5 tabs
+  const isMobile = useIsMobile()
+  const [mobileTab, setMobileTab] = useState<'conversas' | 'chat' | 'info' | 'history'>('conversas')
+  // Quando seleciona lead em mobile, auto-vai pra tab Chat (UX igual WhatsApp)
+  const selectLead = (id: number | null) => {
+    setSelectedLeadId(id)
+    if (isMobile && id !== null) setMobileTab('chat')
+  }
+  // Quando vai pra Info/Historico via bottom nav, sincroniza com a rightTab interna
+  const switchMobileTab = (tab: 'conversas' | 'chat' | 'info' | 'history') => {
+    setMobileTab(tab)
+    if (tab === 'info') setRightTab('info')
+    if (tab === 'history') setRightTab('history')
+  }
+  // Pra "Menu" abrir a sidebar — reusa o hamburger button da Sidebar via custom event
+  const openSidebarMenu = () => {
+    const btn = document.querySelector('.hamburger-btn') as HTMLButtonElement | null
+    if (btn) btn.click()
+  }
   const [lead, setLead] = useState<Lead | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [history, setHistory] = useState<StageHistoryEntry[]>([])
@@ -422,10 +444,14 @@ export default function Chat() {
 
   const handleSendMsg = async () => {
     if (!msgText.trim() || !lead || !accountId) return
+    // Bloqueia envio se nao ha instancia escolhida (lead novo sem aba ativa)
+    const override = sendInstanceOverride || activeConvInstance || undefined
+    if (!override) {
+      setNotice({ kind: 'error', title: 'Escolha uma instancia', message: 'Clique em "Enviar via" acima do input pra escolher de qual WhatsApp essa mensagem vai sair.' })
+      return
+    }
     setSending(true)
     try {
-      // Tab ativa = instancia que vai enviar (override manual sobreescreve)
-      const override = sendInstanceOverride || activeConvInstance || undefined
       const result = await sendMessage(lead.id, accountId, msgText, override)
       setMessages(prev => [...prev, result.message])
       setMsgText('')
@@ -565,7 +591,7 @@ export default function Chat() {
   const availableTags = lead ? tags.filter(t => !lead.tags?.some(lt => lt.id === t.id)) : []
 
   return (
-    <div className="chat-page">
+    <div className={isMobile ? `chat-page chat-mobile-active mobile-tab-${mobileTab}` : 'chat-page'}>
       {/* Top bar: instance selector */}
       <div className="chat-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -629,7 +655,7 @@ export default function Chat() {
               const active = l.id === selectedLeadId
               const stage = allStages.find(s => s.id === l.stage_id)
               return (
-                <div key={l.id} className={`chat-contact-item ${active ? 'active' : ''}`} onClick={() => setSelectedLeadId(l.id)} style={{ position: 'relative' }}>
+                <div key={l.id} className={`chat-contact-item ${active ? 'active' : ''}`} onClick={() => selectLead(l.id)} style={{ position: 'relative' }}>
                   <div className="chat-contact-avatar" style={{ background: stage ? `${stage.color}25` : '#FFB30025', overflow: 'hidden' }}>
                     {l.profile_pic_url ? (
                       <img src={l.profile_pic_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
@@ -673,6 +699,9 @@ export default function Chat() {
           ) : (
             <>
               <div className="chat-conversation-header">
+                <button className="chat-mobile-back" onClick={() => setMobileTab('conversas')} title="Voltar">
+                  <ChevronLeft size={16} />
+                </button>
                 <div className="chat-contact-avatar" style={{ background: `${currentStage?.color || '#FFB300'}25`, overflow: 'hidden' }}>
                   {lead.profile_pic_url ? (
                     <img src={lead.profile_pic_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
@@ -739,24 +768,35 @@ export default function Chat() {
                 ))}
                 <div ref={chatEndRef} />
               </div>
-              {resolvedSendInstance && (
-                <div style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#9B96B0', borderTop: '1px solid rgba(255,255,255,0.04)', position: 'relative' }}>
-                  <Smartphone size={11} style={{ color: '#FFB300' }} />
-                  <span>Respondendo por:</span>
-                  <button onClick={() => setShowSendInstance(s => !s)} style={{ background: 'none', border: 'none', color: '#FFB300', fontWeight: 600, cursor: 'pointer', padding: 0, fontSize: 11 }}>
-                    {resolvedSendInstance.instance_name} ▾
-                  </button>
-                  {showSendInstance && (
-                    <div style={{ position: 'absolute', bottom: '100%', left: 12, marginBottom: 4, background: '#1a1625', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 6, padding: 4, minWidth: 220, zIndex: 10, boxShadow: '0 4px 14px rgba(0,0,0,0.4)' }}>
-                      {instances.filter(i => i.status === 'connected').map(i => (
-                        <button key={i.id} onClick={() => { setSendInstanceOverride(i.id); setShowSendInstance(false) }} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', background: i.id === resolvedSendInstance.id ? 'rgba(255,179,0,0.12)' : 'transparent', color: i.id === resolvedSendInstance.id ? '#FFB300' : '#fff', border: 'none', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>
-                          {i.instance_name}{i.id === resolvedSendInstance.id ? ' ✓' : ''}
-                        </button>
-                      ))}
+              {/* Dropdown 'Enviar via' — sempre visivel quando ha instancias conectadas */}
+              {(() => {
+                const connected = instances.filter(i => i.status === 'connected')
+                if (connected.length === 0) {
+                  return (
+                    <div style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#FF6B6B', borderTop: '1px solid rgba(255,107,107,0.2)', background: 'rgba(255,107,107,0.05)' }}>
+                      <Smartphone size={11} /> Nenhuma instancia conectada — nao da pra enviar
                     </div>
-                  )}
-                </div>
-              )}
+                  )
+                }
+                return (
+                  <div style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#9B96B0', borderTop: '1px solid rgba(255,255,255,0.04)', background: resolvedSendInstance ? 'transparent' : 'rgba(255,179,0,0.05)', position: 'relative' }}>
+                    <Smartphone size={11} style={{ color: resolvedSendInstance ? '#FFB300' : '#FBBC04' }} />
+                    <span>Enviar via:</span>
+                    <button onClick={() => setShowSendInstance(s => !s)} style={{ background: 'none', border: 'none', color: resolvedSendInstance ? '#FFB300' : '#FBBC04', fontWeight: 600, cursor: 'pointer', padding: 0, fontSize: 11 }}>
+                      {resolvedSendInstance ? resolvedSendInstance.instance_name : '— escolha uma instancia —'} ▾
+                    </button>
+                    {showSendInstance && (
+                      <div style={{ position: 'absolute', bottom: '100%', left: 12, marginBottom: 4, background: '#1a1625', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 6, padding: 4, minWidth: 240, zIndex: 10, boxShadow: '0 4px 14px rgba(0,0,0,0.4)' }}>
+                        {connected.map(i => (
+                          <button key={i.id} onClick={() => { setSendInstanceOverride(i.id); setShowSendInstance(false) }} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', background: i.id === resolvedSendInstance?.id ? 'rgba(255,179,0,0.12)' : 'transparent', color: i.id === resolvedSendInstance?.id ? '#FFB300' : '#fff', border: 'none', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>
+                            {i.instance_name}{i.phone_number ? <span style={{ color: '#6B6580', marginLeft: 6 }}>({i.phone_number})</span> : ''}{i.id === resolvedSendInstance?.id ? ' ✓' : ''}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
               <div className="chat-input">
                 <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={e => handlePickFile(e.target.files?.[0] || null)} accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.txt,.csv" />
                 <button
@@ -882,7 +922,7 @@ export default function Chat() {
                     </div>
                   )}
                 </div>
-                <button className="btn btn-primary btn-icon" onClick={handleSendMsg} disabled={sending || !msgText.trim()}><Send size={16} /></button>
+                <button className="btn btn-primary btn-icon" onClick={handleSendMsg} disabled={sending || !msgText.trim() || !resolvedSendInstance} title={!resolvedSendInstance ? 'Escolha uma instancia pra enviar' : ''}><Send size={16} /></button>
               </div>
               {attachFile && (
                 <div className="modal-overlay" onClick={handleCancelAttach}>
@@ -1401,6 +1441,50 @@ export default function Chat() {
             </div>
           </div>
         </div>
+      )}
+
+      {isMobile && (
+        <nav className="chat-mobile-bottom-nav">
+          <button className="chat-mobile-tab" onClick={openSidebarMenu} title="Menu">
+            <MenuIcon size={18} />
+            <span>Menu</span>
+          </button>
+          <button
+            className={`chat-mobile-tab ${mobileTab === 'conversas' ? 'active' : ''}`}
+            onClick={() => switchMobileTab('conversas')}
+            title="Conversas"
+          >
+            <MessageCircle size={18} />
+            <span>Conversas</span>
+          </button>
+          <button
+            className={`chat-mobile-tab ${mobileTab === 'chat' ? 'active' : ''}`}
+            onClick={() => switchMobileTab('chat')}
+            disabled={!lead}
+            title="Chat"
+          >
+            <MessagesSquare size={18} />
+            <span>Chat</span>
+          </button>
+          <button
+            className={`chat-mobile-tab ${mobileTab === 'info' ? 'active' : ''}`}
+            onClick={() => switchMobileTab('info')}
+            disabled={!lead}
+            title="Info"
+          >
+            <InfoIcon size={18} />
+            <span>Info</span>
+          </button>
+          <button
+            className={`chat-mobile-tab ${mobileTab === 'history' ? 'active' : ''}`}
+            onClick={() => switchMobileTab('history')}
+            disabled={!lead}
+            title="Histórico"
+          >
+            <HistoryIcon size={18} />
+            <span>Histórico</span>
+          </button>
+        </nav>
       )}
     </div>
   )

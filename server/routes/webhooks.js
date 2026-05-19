@@ -3,6 +3,7 @@ import fetch from 'node-fetch'
 import db from '../db.js'
 import { broadcastSSE } from '../sse.js'
 import { triggerCapiForStageChange } from '../services/metaCapi.js'
+import { getInstanceConfig, wasAutoMsgSentRecently, sendAutoMessage, shouldSendAway } from '../services/autoMessages.js'
 
 const router = Router()
 
@@ -392,6 +393,48 @@ router.post('/evolution/:accountSlug', (req, res) => {
       triggerCapiForStageChange(lead.id, lead.stage_id, null)
     }
 
+    // Auto-mensagens: SAUDACAO (so lead novo) + AUSENCIA (toda msg inbound)
+    // Se nada configurado, NAO altera o fluxo
+    if (!fromMe && waInstance) {
+      try {
+        const autoCfg = getInstanceConfig(waInstance.id)
+        if (autoCfg) {
+          // 1) SAUDACAO (so lead novo, anti-flood 24h)
+          if (isNew && autoCfg.greeting_enabled && autoCfg.greeting_text) {
+            if (!wasAutoMsgSentRecently(lead.id, 'greeting', 24)) {
+              setTimeout(() => {
+                sendAutoMessage({
+                  leadId: lead.id,
+                  instanceId: waInstance.id,
+                  type: 'greeting',
+                  text: autoCfg.greeting_text,
+                  accountId: account.id,
+                }).catch(e => console.error('[AutoMsg greeting] async:', e?.message))
+              }, 2000)
+            }
+          }
+          // 2) AUSENCIA (manual ou horario, anti-flood configuravel)
+          if (autoCfg.away_text && shouldSendAway(autoCfg, new Date())) {
+            const cooldown = autoCfg.away_cooldown_hours || 4
+            if (!wasAutoMsgSentRecently(lead.id, 'away', cooldown)) {
+              // Delay menor (1s) pra ausencia parecer responsiva
+              setTimeout(() => {
+                sendAutoMessage({
+                  leadId: lead.id,
+                  instanceId: waInstance.id,
+                  type: 'away',
+                  text: autoCfg.away_text,
+                  accountId: account.id,
+                }).catch(e => console.error('[AutoMsg away] async:', e?.message))
+              }, 1000)
+            }
+          }
+        }
+      } catch (e) {
+        console.error('[AutoMsg] erro no hook:', e?.message)
+      }
+    }
+
     // Fetch profile picture in background (no await)
     if (waInstance && (isNew || !lead.profile_pic_url)) {
       fetchAndSaveProfilePic(waInstance, phone, lead.id)
@@ -538,7 +581,7 @@ router.post('/meta-leads/:accountSlug', async (req, res) => {
 
 // Meta webhook verification
 router.get('/meta-leads/:accountSlug', (req, res) => {
-  const verifyToken = process.env.META_VERIFY_TOKEN || 'sheraos-crm-verify'
+  const verifyToken = process.env.META_VERIFY_TOKEN || 'dros-crm-verify'
   if (req.query['hub.verify_token'] === verifyToken && req.query['hub.mode'] === 'subscribe') {
     return res.send(req.query['hub.challenge'])
   }
@@ -644,6 +687,22 @@ router.post('/sheets/:accountSlug', (req, res) => {
     if (empresa) db.prepare('UPDATE leads SET empresa = COALESCE(empresa, ?) WHERE id = ?').run(empresa, lead.id)
     if (cpf_cnpj) db.prepare('UPDATE leads SET cpf_cnpj = COALESCE(cpf_cnpj, ?) WHERE id = ?').run(cpf_cnpj, lead.id)
     if (instagram) db.prepare('UPDATE leads SET instagram = COALESCE(instagram, ?) WHERE id = ?').run(instagram, lead.id)
+
+    // Auto-detect: lead veio de anuncio? Marca trabalha_anuncio=1 se houver sinal claro
+    // (fbclid, ad_id, campaign_id, gclid, ou source/utm indicam paid)
+    const sourceStr = String(source || '').toLowerCase()
+    const utmMedStr = String(body.utm_medium || '').toLowerCase()
+    const utmSrcStr = String(body.utm_source || '').toLowerCase()
+    const isFromAd = !!(
+      body.fbclid || body.gclid || body.ad_id || body.campaign_id ||
+      sourceStr.includes('form') || sourceStr.includes('fb') || sourceStr.includes('meta') || sourceStr.includes('ad') ||
+      utmMedStr.includes('paid') || utmMedStr.includes('cpc') ||
+      utmSrcStr.includes('fb') || utmSrcStr.includes('google') || utmSrcStr.includes('meta')
+    )
+    if (isFromAd) {
+      db.prepare('UPDATE leads SET trabalha_anuncio = 1 WHERE id = ? AND (trabalha_anuncio IS NULL OR trabalha_anuncio = 0)').run(lead.id)
+    }
+
     // source_detail: combina o source_detail explicito + utms + page_url quando vierem
     const detailExtras = []
     if (source_detail) detailExtras.push(source_detail)
@@ -710,6 +769,7 @@ router.post('/sheets/:accountSlug', (req, res) => {
     // Tags: aceita array ou string separada por virgula. Cria a tag se nao existir.
     const tagsRaw = body.tags || body.tag || ''
     const tagList = Array.isArray(tagsRaw) ? tagsRaw : String(tagsRaw).split(',').map(t => t.trim()).filter(Boolean)
+    const appliedTagIds = []
     for (const tagName of tagList) {
       let tag = db.prepare('SELECT id FROM tags WHERE account_id = ? AND LOWER(name) = LOWER(?)').get(account.id, tagName)
       if (!tag) {
@@ -717,6 +777,34 @@ router.post('/sheets/:accountSlug', (req, res) => {
         tag = { id: r.lastInsertRowid }
       }
       db.prepare('INSERT OR IGNORE INTO lead_tags (lead_id, tag_id) VALUES (?, ?)').run(lead.id, tag.id)
+      appliedTagIds.push(tag.id)
+    }
+
+    // Mapeamento tag → instancia (so se lead nao tem instance_id ainda)
+    // Primeira tag que tem mapping vence. Fallback: account.default_form_instance_id
+    // SO ATIVA se a conta cadastrou mapping ou default_form_instance_id — caso contrario nao mexe em nada (fluxo antigo intacto)
+    if (!lead.instance_id && appliedTagIds.length > 0) {
+      for (const tagId of appliedTagIds) {
+        const mapping = db.prepare('SELECT instance_id, attendant_id FROM tag_instance_mapping WHERE account_id = ? AND tag_id = ?').get(account.id, tagId)
+        if (mapping) {
+          db.prepare("UPDATE leads SET instance_id = ?, last_instance_id = ?, updated_at = datetime('now') WHERE id = ?").run(mapping.instance_id, mapping.instance_id, lead.id)
+          lead.instance_id = mapping.instance_id
+          lead.last_instance_id = mapping.instance_id
+          if (mapping.attendant_id && !lead.attendant_id) {
+            db.prepare('UPDATE leads SET attendant_id = ? WHERE id = ?').run(mapping.attendant_id, lead.id)
+            lead.attendant_id = mapping.attendant_id
+          }
+          db.prepare('INSERT OR IGNORE INTO lead_instance_assignments (lead_id, instance_id, attendant_id) VALUES (?, ?, ?)').run(lead.id, mapping.instance_id, mapping.attendant_id || null)
+          break
+        }
+      }
+    }
+    // Fallback: instancia padrao da conta pra leads de form
+    if (!lead.instance_id && account.default_form_instance_id) {
+      db.prepare("UPDATE leads SET instance_id = ?, last_instance_id = ?, updated_at = datetime('now') WHERE id = ?").run(account.default_form_instance_id, account.default_form_instance_id, lead.id)
+      lead.instance_id = account.default_form_instance_id
+      lead.last_instance_id = account.default_form_instance_id
+      db.prepare('INSERT OR IGNORE INTO lead_instance_assignments (lead_id, instance_id, attendant_id) VALUES (?, ?, ?)').run(lead.id, account.default_form_instance_id, lead.attendant_id || null)
     }
 
     // Remove tags: aceita array ou string. Util pra correcao em massa.
@@ -746,6 +834,8 @@ router.post('/sheets/:accountSlug', (req, res) => {
       triggerCapiForStageChange(lead.id, lead.stage_id, null, req)
     }
 
+    // Marca timestamp do ultimo lead recebido (pra UI mostrar status de integração)
+    try { db.prepare("UPDATE accounts SET last_sheets_lead_at = datetime('now') WHERE id = ?").run(account.id) } catch {}
     console.log(`[Webhook Sheets] ${isNew ? 'New' : 'Existing'} lead: ${name || phone} → account ${account.name} fbp=${!!body.fbp} fbc=${!!fbcVal} event_id=${body.event_id || 'none'}`)
     res.json({ ok: true, leadId: lead.id, isNew })
   } catch (err) {
