@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import { AccountProvider } from './context/AccountContext'
 import { SSEProvider } from './context/SSEContext'
 import Sidebar from './components/Sidebar'
+import DisconnectedInstancesAlert from './components/DisconnectedInstancesAlert'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Pipeline from './pages/Pipeline'
@@ -27,6 +28,7 @@ import AdminClientDetail from './pages/admin/ClientDetail'
 import AdminGlobalDashboard from './pages/admin/GlobalDashboard'
 import AdminUsers from './pages/admin/Users'
 import Propostas from './pages/Propostas'
+import Contratos from './pages/Contratos'
 import TransferRequests from './pages/TransferRequests'
 
 // Fix global: impede modal de fechar quando user arrasta seleção de texto
@@ -64,11 +66,13 @@ function AppRoutes() {
   const isAdmin = user.role === 'super_admin'
   const isGerente = user.role === 'gerente'
   const canManageProposals = isAdmin || (user as any).can_manage_proposals === 1
+  const canManageContracts = isAdmin || (user as any).can_manage_contracts === 1
   const homeRoute = isAdmin ? '/admin/dashboard' : isGerente ? '/dashboard' : '/pipeline'
 
   return (
     <AccountProvider>
     <SSEProvider>
+    <DisconnectedInstancesAlert />
     <div className="app-layout">
       <Sidebar />
       <main className="main-content">
@@ -84,6 +88,7 @@ function AppRoutes() {
             <Route path="/admin/users" element={<AdminUsers />} />
           </>}
           {canManageProposals && <Route path="/admin/propostas" element={<Propostas />} />}
+          {canManageContracts && <Route path="/contratos" element={<Contratos />} />}
 
           {/* Gerente + Admin routes */}
           {(isGerente || isAdmin) && <>

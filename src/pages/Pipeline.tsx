@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, type MouseEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAccount } from '../context/AccountContext'
 import AccountSelector from '../components/AccountSelector'
+import FilterDropdown, { type FilterValue } from '../components/FilterDropdown'
 import { useSSE } from '../context/SSEContext'
 import { fetchFunnels, fetchLeads, fetchTags, fetchUsers, moveLeadStage, fetchPipelineMetrics, archiveLead, type Funnel, type Lead, type PipelineMetric, type Tag, type User } from '../lib/api'
 import { Phone, MessageCircle, User, Clock, ChevronDown, ChevronRight, ArrowRight, Smartphone, Archive } from 'lucide-react'
@@ -40,9 +41,9 @@ export default function Pipeline() {
   const [expandedStages, setExpandedStages] = useState<Set<number>>(new Set())
   const [moveLeadId, setMoveLeadId] = useState<number | null>(null)
   const [tags, setTags] = useState<Tag[]>([])
-  const [tagFilter, setTagFilter] = useState<number | ''>('')
+  const [tagFilter, setTagFilter] = useState<FilterValue[]>([])
   const [users, setUsers] = useState<User[]>([])
-  const [attendantFilter, setAttendantFilter] = useState<number | ''>('')
+  const [attendantFilter, setAttendantFilter] = useState<FilterValue[]>([])
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [expandedColumns, setExpandedColumns] = useState<Set<number>>(new Set())
@@ -78,8 +79,20 @@ export default function Pipeline() {
   useEffect(() => { if (accountId) fetchUsers(accountId).then(setUsers).catch(() => {}) }, [accountId])
 
   const filteredLeads = leads.filter(l => {
-    if (tagFilter && !l.tags?.some(t => t.id === tagFilter)) return false
-    if (attendantFilter && l.attendant_id !== attendantFilter) return false
+    if (tagFilter.length > 0) {
+      const wantsUntagged = tagFilter.includes('untagged')
+      const wantedTagIds = tagFilter.filter((v): v is number => typeof v === 'number')
+      const hasNoTags = !l.tags || l.tags.length === 0
+      const hasWantedTag = l.tags?.some(t => wantedTagIds.includes(t.id)) || false
+      if (!((wantsUntagged && hasNoTags) || hasWantedTag)) return false
+    }
+    if (attendantFilter.length > 0) {
+      const wantsNoAttendant = attendantFilter.includes('none')
+      const wantedAttIds = attendantFilter.filter((v): v is number => typeof v === 'number')
+      const isNone = !l.attendant_id
+      const matches = l.attendant_id != null && wantedAttIds.includes(l.attendant_id)
+      if (!((wantsNoAttendant && isNone) || matches)) return false
+    }
     if (dateFrom) {
       const created = new Date(l.created_at).getTime()
       if (created < new Date(dateFrom + 'T00:00:00').getTime()) return false
@@ -241,18 +254,30 @@ export default function Pipeline() {
               {funnels.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
             </select>
           )}
-          <select className="select" style={{ width: 140 }} value={tagFilter} onChange={e => setTagFilter(e.target.value ? +e.target.value : '')}>
-            <option value="">Todas as tags</option>
-            {tags.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </select>
-          <select className="select" style={{ width: 160 }} value={attendantFilter} onChange={e => setAttendantFilter(e.target.value ? +e.target.value : '')}>
-            <option value="">Todos atendentes</option>
-            {users.filter(u => u.is_active).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-          </select>
+          <FilterDropdown
+            label="tags"
+            width={150}
+            options={[
+              { value: 'untagged', label: '(Sem tag)' },
+              ...tags.map(t => ({ value: t.id, label: t.name })),
+            ]}
+            selected={tagFilter}
+            onChange={setTagFilter}
+          />
+          <FilterDropdown
+            label="atendentes"
+            width={170}
+            options={[
+              { value: 'none', label: '(Sem atendente)' },
+              ...users.filter(u => u.is_active).map(u => ({ value: u.id, label: u.name })),
+            ]}
+            selected={attendantFilter}
+            onChange={setAttendantFilter}
+          />
           <input type="date" className="input" style={{ width: 140 }} value={dateFrom} onChange={e => setDateFrom(e.target.value)} title="Data inicial (criacao)" />
           <input type="date" className="input" style={{ width: 140 }} value={dateTo} onChange={e => setDateTo(e.target.value)} title="Data final (criacao)" />
-          {(tagFilter || attendantFilter || dateFrom || dateTo) && (
-            <button className="btn btn-secondary btn-sm" onClick={() => { setTagFilter(''); setAttendantFilter(''); setDateFrom(''); setDateTo('') }}>
+          {(tagFilter.length > 0 || attendantFilter.length > 0 || dateFrom || dateTo) && (
+            <button className="btn btn-secondary btn-sm" onClick={() => { setTagFilter([]); setAttendantFilter([]); setDateFrom(''); setDateTo('') }}>
               Limpar filtros
             </button>
           )}
