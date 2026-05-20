@@ -334,6 +334,7 @@ db.exec(`
 // ─── Schema migrations (add columns safely) ─────────────────────
 function addColumnIfNotExists(table, column, type) {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all()
+  if (cols.length === 0) return  // tabela ainda nao existe (sera criada depois em CREATE TABLE IF NOT EXISTS)
   if (!cols.some(c => c.name === column)) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`)
     console.log(`[DB] Added column ${table}.${column}`)
