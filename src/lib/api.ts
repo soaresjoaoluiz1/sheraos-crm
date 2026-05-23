@@ -20,7 +20,7 @@ export function pctChange(c: number, p: number) { if (p === 0) return c > 0 ? 10
 // Types
 // =============================================
 
-export interface Account { id: number; name: string; slug: string; logo_url: string | null; is_active: number; created_at: string; lead_count?: number; user_count?: number; cnpj?: string | null; razao_social?: string | null; segmento?: string | null; website?: string | null; instagram?: string | null; whatsapp_comercial?: string | null; valor_mensal?: number | null; contrato_inicio?: string | null; cidade?: string | null; estado?: string | null; observacoes?: string | null; trabalha_anuncio?: number; investimento_anuncios?: number | null; meta_pixel_id?: string | null; meta_capi_token?: string | null; meta_capi_test_event_code?: string | null; meta_capi_enabled?: number }
+export interface Account { id: number; name: string; slug: string; logo_url: string | null; is_active: number; created_at: string; lead_count?: number; user_count?: number; cnpj?: string | null; razao_social?: string | null; segmento?: string | null; website?: string | null; instagram?: string | null; whatsapp_comercial?: string | null; valor_mensal?: number | null; contrato_inicio?: string | null; cidade?: string | null; estado?: string | null; observacoes?: string | null; trabalha_anuncio?: number; investimento_anuncios?: number | null; meta_pixel_id?: string | null; meta_capi_token?: string | null; meta_capi_test_event_code?: string | null; meta_capi_enabled?: number; ai_agents_enabled?: number }
 export interface User { id: number; account_id: number | null; account_name?: string | null; name: string; email: string; role: string; is_active: number; primary_instance_id?: number | null; can_manage_proposals?: number; can_manage_contracts?: number; can_grab_leads?: number; created_at: string }
 export interface FunnelStage { id: number; funnel_id: number; name: string; position: number; color: string; is_conversion: number; is_terminal: number; auto_keywords: string | null; meta_event_name?: string | null }
 export interface Funnel { id: number; account_id: number; name: string; is_default: number; is_active: number; stages: FunnelStage[] }
@@ -52,12 +52,13 @@ export interface DashboardStats {
   daily: { date: string; count: number }[]
 }
 export interface AgentStat { id: number; name: string; is_active: number; leads_period: number; leads_total: number; conversions: number }
-export interface WhatsAppInstance { id: number; account_id: number; instance_name: string; api_url: string; api_key: string; status: string; phone_number: string | null; qr_code: string | null; default_attendant_id: number | null }
+export interface WhatsAppInstance { id: number; account_id: number; instance_name: string; api_url: string; api_key: string; status: string; phone_number: string | null; qr_code: string | null; default_attendant_id: number | null; lead_intake_mode?: 'open' | 'restricted' }
 export interface Broadcast {
   id: number; account_id?: number; name: string; message_template: string; message_variations?: string | null
   status: string; sent_count: number; failed_count: number; total_count: number
   delay_seconds?: number; instance_id?: number | null; instance_name?: string | null; instance_status?: string | null
   paused_at?: string | null; paused_reason?: string | null
+  scheduled_at?: string | null
   started_at?: string | null; completed_at?: string | null; created_at: string; created_by_name?: string | null
 }
 export interface BroadcastRecipient {
@@ -133,6 +134,8 @@ export const assignLead = (id: number, attendantId: number | null) => apiFetch(`
 export const refreshProfilePic = (id: number) => apiFetch<{ profile_pic_url: string | null }>(`/api/leads/${id}/refresh-profile-pic`, { method: 'POST' })
 export const archiveLead = (id: number) => apiFetch<{ lead: Lead }>(`/api/leads/${id}/archive`, { method: 'PATCH' }).then(d => d.lead)
 export const unarchiveLead = (id: number) => apiFetch<{ lead: Lead }>(`/api/leads/${id}/unarchive`, { method: 'PATCH' }).then(d => d.lead)
+export const blockLead = (id: number) => apiFetch<{ lead: Lead }>(`/api/leads/${id}/block`, { method: 'POST' }).then(d => d.lead)
+export const unblockLead = (id: number) => apiFetch<{ lead: Lead }>(`/api/leads/${id}/unblock`, { method: 'POST' }).then(d => d.lead)
 export const fetchArchivedCount = (accountId: number) => apiFetch<{ count: number; withActivity: number }>(`/api/leads/archived-count?account_id=${accountId}`)
 export interface LeadConversation { instance_id: number; instance_name: string; status: string; attendant_id: number | null; attendant_name: string | null; msg_count: number; last_msg_at: string | null }
 export const fetchLeadConversations = (leadId: number, accountId: number) => apiFetch<{ conversations: LeadConversation[] }>(`/api/leads/${leadId}/conversations?account_id=${accountId}`).then(d => d.conversations)
@@ -151,6 +154,7 @@ export interface Proposal {
   num_videos: number; num_images: number;
   valor: number; contrato_meses: number;
   observacoes: string | null;
+  has_comissao: number; comissao_percent: number;
   created_by: number | null; created_by_name?: string;
   created_at: string; updated_at: string;
 }
@@ -160,6 +164,7 @@ export interface ProposalInput {
   num_videos?: number; num_images?: number;
   valor: number; contrato_meses: number;
   observacoes?: string;
+  has_comissao?: boolean; comissao_percent?: number;
 }
 export const fetchProposals = () => apiFetch<{ proposals: Proposal[] }>('/api/proposals').then(d => d.proposals)
 export const createProposal = (data: ProposalInput) => apiFetch<{ proposal: Proposal }>('/api/proposals', { method: 'POST', body: JSON.stringify(data) }).then(d => d.proposal)
@@ -217,7 +222,7 @@ export const fetchEvolutionConfig = (accountId: number) => apiFetch<EvolutionCon
 export const saveEvolutionConfig = (accountId: number, data: EvolutionConfig) => apiFetch(`/api/integrations/evolution-config?account_id=${accountId}`, { method: 'PUT', body: JSON.stringify(data) })
 
 export const fetchWhatsAppInstances = (accountId: number) => apiFetch<{ instances: WhatsAppInstance[] }>(`/api/integrations/whatsapp?account_id=${accountId}`).then(d => d.instances)
-export const createWhatsAppInstance = (accountId: number, data: { instance_name: string }) => apiFetch<{ instance: WhatsAppInstance }>(`/api/integrations/whatsapp?account_id=${accountId}`, { method: 'POST', body: JSON.stringify(data) }).then(d => d.instance)
+export const createWhatsAppInstance = (accountId: number, data: { instance_name: string; lead_intake_mode?: 'open' | 'restricted' }) => apiFetch<{ instance: WhatsAppInstance }>(`/api/integrations/whatsapp?account_id=${accountId}`, { method: 'POST', body: JSON.stringify(data) }).then(d => d.instance)
 export const connectWhatsAppInstance = (id: number, accountId: number) => apiFetch<{ instance: WhatsAppInstance }>(`/api/integrations/whatsapp/${id}/connect?account_id=${accountId}`, { method: 'POST' }).then(d => d.instance)
 export const checkWhatsAppStatus = (id: number, accountId: number) => apiFetch<{ instance: WhatsAppInstance; state: string }>(`/api/integrations/whatsapp/${id}/status?account_id=${accountId}`)
 export const refreshWhatsAppQR = (id: number, accountId: number) => apiFetch<{ instance: WhatsAppInstance }>(`/api/integrations/whatsapp/${id}/qrcode?account_id=${accountId}`, { method: 'POST' }).then(d => d.instance)
@@ -226,15 +231,17 @@ export const deleteWhatsAppInstance = (id: number, accountId: number) => apiFetc
 export const setupWhatsAppWebhook = (id: number, accountId: number) => apiFetch<{ ok: boolean; webhookUrl: string }>(`/api/integrations/whatsapp/${id}/setup-webhook?account_id=${accountId}`, { method: 'POST' })
 export const restartWhatsAppInstance = (id: number, accountId: number) => apiFetch<{ ok: boolean }>(`/api/integrations/whatsapp/${id}/restart?account_id=${accountId}`, { method: 'POST' })
 export const setInstanceAttendant = (id: number, accountId: number, attendantId: number | null) => apiFetch<{ instance: WhatsAppInstance }>(`/api/integrations/whatsapp/${id}/attendant?account_id=${accountId}`, { method: 'PUT', body: JSON.stringify({ attendant_id: attendantId }) })
+export const setInstanceMode = (id: number, accountId: number, mode: 'open' | 'restricted') => apiFetch<{ instance: WhatsAppInstance }>(`/api/integrations/whatsapp/${id}/mode?account_id=${accountId}`, { method: 'PUT', body: JSON.stringify({ mode }) })
 export const syncWhatsAppNow = (accountId: number) => apiFetch<{ ok: boolean }>(`/api/integrations/whatsapp/sync-now?account_id=${accountId}`, { method: 'POST' })
 export const testWhatsAppConnection = (id: number, accountId: number) => apiFetch<{ success: boolean; status: string }>(`/api/integrations/whatsapp/${id}/test?account_id=${accountId}`, { method: 'POST' })
 
 // Broadcasts
 export const fetchBroadcasts = (accountId: number) => apiFetch<{ broadcasts: Broadcast[] }>(`/api/broadcasts?account_id=${accountId}`).then(d => d.broadcasts)
 export const fetchBroadcast = (id: number, accountId: number) => apiFetch<{ broadcast: Broadcast; recipients: BroadcastRecipient[] }>(`/api/broadcasts/${id}?account_id=${accountId}`)
-export const createBroadcast = (accountId: number, data: { name: string; message_template: string; message_variations?: string[]; delay_seconds?: number; lead_ids: number[]; instance_id: number }) => apiFetch(`/api/broadcasts?account_id=${accountId}`, { method: 'POST', body: JSON.stringify(data) })
+export const createBroadcast = (accountId: number, data: { name: string; message_template: string; message_variations?: string[]; delay_seconds?: number; lead_ids: number[]; instance_id: number; scheduled_at?: string | null }) => apiFetch(`/api/broadcasts?account_id=${accountId}`, { method: 'POST', body: JSON.stringify(data) })
 export const sendBroadcast = (id: number, accountId: number) => apiFetch(`/api/broadcasts/${id}/send?account_id=${accountId}`, { method: 'POST' })
 export const resumeBroadcast = (id: number, accountId: number) => apiFetch(`/api/broadcasts/${id}/resume?account_id=${accountId}`, { method: 'POST' })
+export const cancelScheduledBroadcast = (id: number, accountId: number) => apiFetch<{ broadcast: Broadcast }>(`/api/broadcasts/${id}/cancel-schedule?account_id=${accountId}`, { method: 'POST' })
 export const deleteBroadcast = (id: number, accountId: number) => apiFetch(`/api/broadcasts/${id}?account_id=${accountId}`, { method: 'DELETE' })
 export interface BroadcastCloneData {
   clone: { name: string; message_template: string; message_variations: string[]; media_url: string | null; delay_seconds: number; instance_id: number | null; leads: Lead[] }
@@ -269,6 +276,7 @@ export interface InstanceAutoMessageConfig {
   instance_id: number
   greeting_enabled?: number
   greeting_text?: string | null
+  greeting_cooldown_hours?: number
   away_enabled?: number
   away_mode?: 'manual' | 'schedule'
   away_manual_active?: number
@@ -349,6 +357,169 @@ export const assignLeadCadence = (cadenceId: number, accountId: number, leadId: 
 export const advanceLeadCadence = (lcId: number, accountId: number) => apiFetch(`/api/cadences/lead-cadence/${lcId}/advance?account_id=${accountId}`, { method: 'PUT' })
 export const removeLeadCadence = (lcId: number, accountId: number) => apiFetch(`/api/cadences/lead-cadence/${lcId}?account_id=${accountId}`, { method: 'DELETE' })
 export const fetchLeadCadence = (leadId: number, accountId: number) => apiFetch<{ leadCadence: LeadCadence | null }>(`/api/cadences/lead/${leadId}?account_id=${accountId}`).then(d => d.leadCadence)
+
+// =============================================
+// Follow-ups (cadencias automaticas — envio sozinho via scheduler)
+// =============================================
+export interface FollowUpStep {
+  id?: number; follow_up_id?: number; position?: number;
+  delay_minutes: number; message_template: string;
+  schedule_mode?: 'relative' | 'absolute';
+  scheduled_at?: string | null;
+}
+export interface FollowUp {
+  id: number; account_id: number; name: string; description: string | null;
+  instance_id: number; instance_name?: string | null; instance_status?: string | null;
+  stop_on_reply: number; is_active: number;
+  type?: 'sequence' | 'inactivity';
+  inactivity_stage_id?: number | null;
+  inactivity_days?: number;
+  variation_delay_seconds?: number;
+  steps?: FollowUpStep[]; steps_count?: number; active_leads?: number;
+  created_by: number | null; created_by_name?: string | null;
+  created_at: string; updated_at: string;
+}
+export interface LeadFollowUp {
+  id: number; lead_id: number; follow_up_id: number;
+  follow_up_name?: string; instance_id?: number; instance_name?: string | null;
+  stop_on_reply?: number;
+  current_step_id: number | null; current_position?: number; current_message?: string | null;
+  total_steps?: number;
+  status: 'active' | 'paused' | 'completed' | 'cancelled';
+  next_run_at: string | null;
+  last_executed_at: string | null;
+  paused_at: string | null; paused_reason: string | null;
+  started_at: string;
+}
+
+export const fetchFollowUps = (accountId: number) => apiFetch<{ follow_ups: FollowUp[] }>(`/api/follow-ups?account_id=${accountId}`).then(d => d.follow_ups)
+export const fetchFollowUp = (id: number, accountId: number) => apiFetch<{ follow_up: FollowUp }>(`/api/follow-ups/${id}?account_id=${accountId}`).then(d => d.follow_up)
+export const createFollowUp = (accountId: number, data: { name: string; description?: string; instance_id: number; stop_on_reply: boolean; steps: FollowUpStep[] }) =>
+  apiFetch<{ follow_up: FollowUp }>(`/api/follow-ups?account_id=${accountId}`, { method: 'POST', body: JSON.stringify(data) }).then(d => d.follow_up)
+export const updateFollowUp = (id: number, accountId: number, data: Partial<FollowUp> & { steps?: FollowUpStep[] }) =>
+  apiFetch<{ follow_up: FollowUp }>(`/api/follow-ups/${id}?account_id=${accountId}`, { method: 'PUT', body: JSON.stringify(data) }).then(d => d.follow_up)
+export const deleteFollowUp = (id: number, accountId: number, force = false) =>
+  apiFetch(`/api/follow-ups/${id}?account_id=${accountId}${force ? '&force=1' : ''}`, { method: 'DELETE' })
+export const assignFollowUp = (followUpId: number, accountId: number, leadId: number) =>
+  apiFetch<{ lead_follow_up: LeadFollowUp }>(`/api/follow-ups/${followUpId}/assign?account_id=${accountId}`, { method: 'POST', body: JSON.stringify({ lead_id: leadId }) }).then(d => d.lead_follow_up)
+export const pauseLeadFollowUp = (lfuId: number, accountId: number) =>
+  apiFetch(`/api/follow-ups/lead/${lfuId}/pause?account_id=${accountId}`, { method: 'POST' })
+export const resumeLeadFollowUp = (lfuId: number, accountId: number) =>
+  apiFetch(`/api/follow-ups/lead/${lfuId}/resume?account_id=${accountId}`, { method: 'POST' })
+export const cancelLeadFollowUp = (lfuId: number, accountId: number) =>
+  apiFetch(`/api/follow-ups/lead/${lfuId}/cancel?account_id=${accountId}`, { method: 'POST' })
+export const fetchLeadFollowUp = (leadId: number, accountId: number) =>
+  apiFetch<{ lead_follow_up: LeadFollowUp | null }>(`/api/follow-ups/lead/${leadId}?account_id=${accountId}`).then(d => d.lead_follow_up)
+
+// =============================================
+// AI Agents (Haiku 4.5)
+// =============================================
+export type AgentActivationMode = 'default_attendant' | 'roulette' | 'conditional' | 'manual'
+export type AgentHandoffReason = 'qualified' | 'keyword' | 'unknown' | 'max_messages' | 'audio_received'
+
+export interface AgentHandoffRule {
+  agent_id?: number
+  reason: AgentHandoffReason
+  target_type: 'roulette' | 'specific_user'
+  target_user_id: number | null
+  fallback_to_roulette: number
+  move_to_stage_id: number | null
+  add_tag_id: number | null
+  target_user_name?: string
+  stage_name?: string
+  tag_name?: string
+}
+
+export interface AgentStage { id: number; name: string; color: string; funnel_id: number; funnel_name: string }
+export interface AgentInstance { id: number; instance_name: string; status: string }
+
+export interface Agent {
+  id: number
+  account_id: number
+  user_id: number
+  name: string
+  is_active: number
+  identifies_as_bot: number
+  persona: string | null
+  knowledge_base: string | null
+  never_mention: string | null
+  qualification_criteria: string | null
+  required_fields: string | null  // JSON
+  required_fields_arr?: string[]
+  responds_to_audio: number
+  audio_decline_message: string
+  max_messages_before_handoff: number
+  handoff_keywords: string
+  activation_mode: AgentActivationMode
+  required_tag_id: number | null
+  monthly_token_limit: number
+  tokens_used_this_month: number
+  current_month: string | null
+  created_at: string
+  updated_at: string
+  // Joined
+  bot_user_name?: string
+  stages_count?: number
+  instances_count?: number
+  stages?: AgentStage[]
+  instances?: AgentInstance[]
+  handoff_rules?: AgentHandoffRule[]
+}
+
+export interface AgentInput {
+  name: string
+  persona?: string
+  knowledge_base?: string
+  never_mention?: string
+  qualification_criteria?: string
+  required_fields?: string[]
+  responds_to_audio?: boolean
+  audio_decline_message?: string
+  max_messages_before_handoff?: number
+  handoff_keywords?: string
+  activation_mode?: AgentActivationMode
+  required_tag_id?: number | null
+  monthly_token_limit?: number
+  identifies_as_bot?: boolean
+  is_active?: boolean
+  stage_ids?: number[]
+  instance_ids?: number[]
+  handoff_rules?: Omit<AgentHandoffRule, 'agent_id'>[]
+}
+
+export interface AgentUsage {
+  monthly_limit: number
+  tokens_used_this_month: number
+  cost_usd_this_month: number
+  current_month: string | null
+  recent_log: Array<{
+    id: number; agent_id: number; lead_id: number | null; lead_name: string | null
+    input_tokens: number; output_tokens: number
+    cache_read_tokens: number; cache_creation_tokens: number
+    cost_usd: number; created_at: string
+  }>
+}
+
+export const fetchAgents = (accountId: number) =>
+  apiFetch<{ feature_enabled: boolean; agents: Agent[] }>(`/api/agents?account_id=${accountId}`)
+
+export const fetchAgent = (id: number, accountId: number) =>
+  apiFetch<{ agent: Agent }>(`/api/agents/${id}?account_id=${accountId}`).then(d => d.agent)
+
+export const createAgent = (accountId: number, data: AgentInput) =>
+  apiFetch<{ agent: Agent }>(`/api/agents?account_id=${accountId}`, { method: 'POST', body: JSON.stringify(data) }).then(d => d.agent)
+
+export const updateAgent = (id: number, accountId: number, data: Partial<AgentInput>) =>
+  apiFetch<{ agent: Agent }>(`/api/agents/${id}?account_id=${accountId}`, { method: 'PUT', body: JSON.stringify(data) }).then(d => d.agent)
+
+export const deleteAgent = (id: number, accountId: number) =>
+  apiFetch(`/api/agents/${id}?account_id=${accountId}`, { method: 'DELETE' })
+
+export const fetchAgentUsage = (id: number, accountId: number) =>
+  apiFetch<AgentUsage>(`/api/agents/${id}/usage?account_id=${accountId}`)
+
+export const testAgent = (id: number, accountId: number, message: string, history: Array<{ role: 'user' | 'assistant'; content: string }> = []) =>
+  apiFetch<{ response: string; usage: { input: number; output: number; cacheRead: number; cacheCreation: number; total: number }; cost_usd: number; stop_reason: string }>(`/api/agents/${id}/test?account_id=${accountId}`, { method: 'POST', body: JSON.stringify({ message, history }) })
 
 // =============================================
 // Tasks (cadence steps that need execution)

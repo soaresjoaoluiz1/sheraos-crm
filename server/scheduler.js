@@ -1,11 +1,13 @@
 import fetch from 'node-fetch'
 import db from './db.js'
 import { broadcastSSE } from './sse.js'
-import { resumeBroadcastIfPaused } from './routes/broadcasts.js'
+import { resumeBroadcastIfPaused, runBroadcastLoop } from './routes/broadcasts.js'
+import { sendFollowUpMessage, resumeFollowUpsIfPaused } from './services/followUpSender.js'
+import { processInactivityFollowUps } from './services/inactivityScanner.js'
 import { triggerCapiForStageChange } from './services/metaCapi.js'
 
-// Runs every 5 minutes
-const INTERVAL_MS = 5 * 60 * 1000
+// Roda a cada 1min — precisao do agendamento <= 60s. Custo desprezivel (1 SELECT/min).
+const INTERVAL_MS = 60 * 1000
 
 // ─── Check WhatsApp instances + auto-reconnect ─────────────────
 async function checkWhatsAppInstances() {
@@ -35,9 +37,10 @@ async function checkWhatsAppInstances() {
       if (newStatus !== inst.status) {
         db.prepare("UPDATE whatsapp_instances SET status = ?, updated_at = datetime('now') WHERE id = ?").run(newStatus, inst.id)
         console.log(`[Health] ${inst.instance_name}: ${inst.status} → ${newStatus}`)
-        // Se reconectou, retoma broadcasts pausados desta instancia
+        // Se reconectou, retoma broadcasts e follow-ups pausados desta instancia
         if (newStatus === 'connected' && inst.status !== 'connected') {
           try { resumeBroadcastIfPaused(inst.id) } catch (e) { console.error('[Health] Resume broadcast error:', e.message) }
+          try { resumeFollowUpsIfPaused(inst.id) } catch (e) { console.error('[Health] Resume follow-up error:', e.message) }
         }
       }
 
@@ -117,55 +120,25 @@ async function processCadences() {
 // sendCadenceMessage REMOVED — all sending is manual only via Chat/Tasks buttons
 
 // ─── Execute scheduled broadcasts ────────────────────────────────
+// Quando scheduled_at <= now, marca como 'sending' e chama runBroadcastLoop real (mesmo loop do envio manual:
+// jitter, pause/recovery, variacoes, SSE progress). Garante que agendado != qualidade inferior.
 async function processScheduledBroadcasts() {
   const due = db.prepare(`
-    SELECT * FROM broadcasts
+    SELECT id, name, instance_id, account_id FROM broadcasts
     WHERE status = 'scheduled' AND scheduled_at IS NOT NULL AND datetime(scheduled_at) <= datetime('now')
   `).all()
 
   for (const b of due) {
-    console.log(`[Scheduler] Triggering broadcast #${b.id}: ${b.name}`)
-    // Mark as sending and kick off background send (same logic as manual)
-    db.prepare("UPDATE broadcasts SET status = 'sending' WHERE id = ?").run(b.id)
-    sendBroadcastInBackground(b.id).catch(err => console.error('[Scheduler] Broadcast failed:', err.message))
-  }
-}
-
-async function sendBroadcastInBackground(broadcastId) {
-  const broadcast = db.prepare('SELECT * FROM broadcasts WHERE id = ?').get(broadcastId)
-  if (!broadcast) return
-  const instance = db.prepare("SELECT * FROM whatsapp_instances WHERE account_id = ? AND status = 'connected' LIMIT 1").get(broadcast.account_id)
-  if (!instance) {
-    db.prepare("UPDATE broadcasts SET status = 'failed' WHERE id = ?").run(broadcastId)
-    return
-  }
-  const recipients = db.prepare("SELECT * FROM broadcast_recipients WHERE broadcast_id = ? AND status = 'pending'").all(broadcastId)
-  let sent = 0, failed = 0
-  for (const r of recipients) {
-    try {
-      const lead = db.prepare('SELECT name FROM leads WHERE id = ?').get(r.lead_id)
-      const text = broadcast.message_template.replace(/\{\{name\}\}/g, lead?.name || 'Cliente')
-      const sendRes = await fetch(`${instance.api_url}/message/sendText/${instance.instance_name}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', apikey: instance.api_key },
-        body: JSON.stringify({ number: r.phone, text }),
-      })
-      const data = await sendRes.json()
-      if (data.key?.id) {
-        db.prepare("UPDATE broadcast_recipients SET status = 'sent', wa_msg_id = ?, sent_at = datetime('now') WHERE id = ?").run(data.key.id, r.id)
-        sent++
-      } else {
-        db.prepare("UPDATE broadcast_recipients SET status = 'failed', error = ? WHERE id = ?").run(JSON.stringify(data), r.id)
-        failed++
-      }
-      await new Promise(resolve => setTimeout(resolve, 1500))
-    } catch (err) {
-      db.prepare("UPDATE broadcast_recipients SET status = 'failed', error = ? WHERE id = ?").run(err.message, r.id)
-      failed++
+    // Confere se a instancia ta conectada — se nao, deixa scheduled mesmo (proximo tick tenta de novo)
+    const instance = db.prepare("SELECT status, instance_name FROM whatsapp_instances WHERE id = ?").get(b.instance_id)
+    if (!instance || instance.status !== 'connected') {
+      console.log(`[Scheduler] Broadcast #${b.id} (${b.name}) — instancia ${instance?.instance_name || b.instance_id} desconectada, aguardando proximo tick`)
+      continue
     }
+    console.log(`[Scheduler] Disparando broadcast agendado #${b.id}: ${b.name}`)
+    db.prepare("UPDATE broadcasts SET status = 'sending', started_at = datetime('now') WHERE id = ?").run(b.id)
+    runBroadcastLoop(b.id).catch(err => console.error('[Scheduler] Broadcast loop error:', err.message))
   }
-  db.prepare("UPDATE broadcasts SET status = 'completed', sent_count = ?, failed_count = ?, completed_at = datetime('now') WHERE id = ?").run(sent, failed, broadcastId)
-  broadcastSSE(broadcast.account_id, 'broadcast:completed', { id: broadcastId, sent, failed })
 }
 
 // ─── Polling backup: fetch missed messages from Evolution ────────
@@ -246,9 +219,15 @@ async function pollMissedMessages() {
         const dedupJid = isLid ? `${phone}@lid` : `${phone}@s.whatsapp.net`
         let lead = db.prepare('SELECT * FROM leads WHERE account_id = ? AND (wa_remote_jid = ? OR phone = ?) ORDER BY is_archived ASC, created_at DESC LIMIT 1').get(inst.acc_id, dedupJid, phone)
 
+        // Gate: se ja achou lead bloqueado, ignora msg
+        if (lead && lead.is_blocked) {
+          console.log(`[Polling] Msg ignorada — lead ${lead.id} bloqueado`)
+          continue
+        }
+
         // For @lid: also try matching by pushName (same person, different ID)
         if (!lead && isLid && pushName) {
-          lead = db.prepare('SELECT * FROM leads WHERE account_id = ? AND name = ? ORDER BY is_archived ASC, created_at DESC LIMIT 1').get(inst.acc_id, pushName)
+          lead = db.prepare('SELECT * FROM leads WHERE account_id = ? AND name = ? AND is_blocked = 0 ORDER BY is_archived ASC, created_at DESC LIMIT 1').get(inst.acc_id, pushName)
           if (lead) {
             db.prepare("UPDATE leads SET wa_remote_jid = ?, updated_at = datetime('now') WHERE id = ?").run(dedupJid, lead.id)
           }
@@ -262,6 +241,13 @@ async function pollMissedMessages() {
         }
 
         if (!lead) {
+          // ─── GATE: instancia em modo RESTRITO so processa leads ja cadastrados (form/sheets/Novo chat).
+          // Mesmo gate do webhook (server/routes/webhooks.js getOrCreateLead). Polling tb precisa respeitar.
+          if (inst.lead_intake_mode === 'restricted') {
+            console.log(`[Polling] Msg ignorada — instancia ${inst.instance_name} em modo restrito (lead novo nao criado)`)
+            continue
+          }
+
           // Create new lead
           const funnel = db.prepare('SELECT id FROM funnels WHERE account_id = ? AND is_default = 1 AND is_active = 1').get(inst.acc_id)
           if (!funnel) continue
@@ -343,6 +329,21 @@ function cleanupStaleQRCodes() {
   `).run()
 }
 
+// ─── Follow-ups due ─────────────────────────────────────────────
+async function processFollowUps() {
+  const due = db.prepare(`
+    SELECT id FROM lead_follow_ups
+    WHERE status='active' AND next_run_at IS NOT NULL AND datetime(next_run_at) <= datetime('now')
+    ORDER BY next_run_at ASC
+    LIMIT 50
+  `).all()
+  if (due.length === 0) return
+  console.log(`[FollowUp] Processando ${due.length} follow-up(s) due`)
+  for (const r of due) {
+    sendFollowUpMessage(r.id).catch(err => console.error(`[FollowUp] Erro envio id=${r.id}:`, err.message))
+  }
+}
+
 // ─── Main tick (every 5 min) ─────────────────────────────────────
 async function tick() {
   try {
@@ -350,6 +351,8 @@ async function tick() {
       checkWhatsAppInstances(),
       processCadences(),
       processScheduledBroadcasts(),
+      processFollowUps(),
+      processInactivityFollowUps(),
     ])
     cleanupStaleQRCodes()
     // Re-register webhooks every tick to prevent stale webhooks

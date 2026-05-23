@@ -27,6 +27,8 @@ import launchRoutes from './routes/launches.js'
 import taskRoutes from './routes/tasks.js'
 import proposalRoutes, { publicProposalHandler } from './routes/proposals.js'
 import contractRoutes from './routes/contracts.js'
+import followUpRoutes from './routes/follow-ups.js'
+import agentRoutes from './routes/agents.js'
 import adminRoutes from './routes/admin.js'
 import { authenticate, scopeToAccount } from './middleware/auth.js'
 import { addSSEClient, removeSSEClient } from './sse.js'
@@ -73,6 +75,8 @@ app.use('/api/launches', authenticate, scopeToAccount, launchRoutes)
 app.use('/api/tasks', authenticate, scopeToAccount, taskRoutes)
 app.use('/api/proposals', authenticate, proposalRoutes)
 app.use('/api/contracts', authenticate, contractRoutes)
+app.use('/api/follow-ups', authenticate, scopeToAccount, followUpRoutes)
+app.use('/api/agents', authenticate, scopeToAccount, agentRoutes)
 app.use('/api/admin', authenticate, adminRoutes)
 
 // Settings: distribution rules
