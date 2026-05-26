@@ -1,8 +1,11 @@
 import { Router } from 'express'
+import bcrypt from 'bcryptjs'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import db from '../db.js'
+import db, { DEFAULT_EVOLUTION_API_URL, DEFAULT_EVOLUTION_API_KEY } from '../db.js'
+import { requireRole } from '../middleware/auth.js'
+import { createHubClient } from '../services/hubClient.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -66,16 +69,19 @@ function renderTemplate(c) {
   // Inscrição estadual opcional
   conditional('TEM_IE', !!(c.inscricao_estadual && String(c.inscricao_estadual).trim()))
 
+  // Helper pra normalizar dados da empresa em CAIXA ALTA (visual no contrato impresso)
+  const upper = (v) => String(v || '').toUpperCase()
+
   const replacements = {
     NUMERO: c.numero || '',
-    RAZAO_SOCIAL: c.razao_social || '',
-    CNPJ: c.cnpj || '',
-    INSCRICAO_ESTADUAL: c.inscricao_estadual || '',
-    ENDERECO_LOGRADOURO: c.endereco_logradouro || '',
-    ENDERECO_BAIRRO: c.endereco_bairro || '',
-    ENDERECO_CEP: c.endereco_cep || '',
-    ENDERECO_CIDADE: c.endereco_cidade || '',
-    ENDERECO_ESTADO: c.endereco_estado || '',
+    RAZAO_SOCIAL: upper(c.razao_social),
+    CNPJ: upper(c.cnpj),
+    INSCRICAO_ESTADUAL: upper(c.inscricao_estadual),
+    ENDERECO_LOGRADOURO: upper(c.endereco_logradouro),
+    ENDERECO_BAIRRO: upper(c.endereco_bairro),
+    ENDERECO_CEP: upper(c.endereco_cep),
+    ENDERECO_CIDADE: upper(c.endereco_cidade),
+    ENDERECO_ESTADO: upper(c.endereco_estado),
     FEE_MENSAL: formatBRL(c.fee_mensal),
     COMISSAO_PERCENT: String(c.comissao_percent || 0).replace('.', ','),
     VIGENCIA_MESES: String(c.vigencia_meses || 3),
@@ -252,6 +258,159 @@ router.delete('/:id', (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Contrato nao encontrado' })
   db.prepare('DELETE FROM contracts WHERE id = ?').run(req.params.id)
   res.json({ ok: true })
+})
+
+// ─── POST /:id/approve — Aprova contrato e cria conta + gerente no CRM ───
+// Email gerado: <slug-razao-social>@drosagencia.com.br
+// Senha: dros2026
+router.post('/:id/approve', requireRole('super_admin', 'gerente'), async (req, res) => {
+  const contract = db.prepare('SELECT * FROM contracts WHERE id = ?').get(req.params.id)
+  if (!contract) return res.status(404).json({ error: 'Contrato nao encontrado' })
+  if (contract.approved_at) return res.status(400).json({ error: 'Contrato ja aprovado em ' + contract.approved_at })
+  if (!contract.razao_social || !contract.razao_social.trim()) {
+    return res.status(400).json({ error: 'Razao Social obrigatoria pra aprovar contrato' })
+  }
+
+  // Resolve email: usa o que o usuario mandou OU gera default (primeira palavra slugificada)
+  const slugify = (s) => String(s || '').toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')  // remove acentos
+    .replace(/[^a-z0-9]+/g, '')
+
+  let email
+  if (req.body.email && typeof req.body.email === 'string' && req.body.email.trim()) {
+    email = req.body.email.trim().toLowerCase()
+    // Valida formato basico
+    if (!/^[a-z0-9._-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(email)) {
+      return res.status(400).json({ error: 'Email invalido' })
+    }
+    if (db.prepare('SELECT id FROM users WHERE email = ?').get(email)) {
+      return res.status(400).json({ error: 'Email ja em uso. Escolha outro.' })
+    }
+  } else {
+    // Default: primeira palavra slugificada (max 20 chars)
+    const firstWord = String(contract.razao_social || '').trim().split(/\s+/)[0] || ''
+    const emailPrefix = slugify(firstWord).substring(0, 20)
+    if (!emailPrefix) return res.status(400).json({ error: 'Razao Social invalida (sem caracteres alfanumericos)' })
+    email = `${emailPrefix}@drosagencia.com.br`
+    let suffix = 2
+    while (db.prepare('SELECT id FROM users WHERE email = ?').get(email)) {
+      email = `${emailPrefix}${suffix}@drosagencia.com.br`
+      suffix++
+      if (suffix > 99) return res.status(500).json({ error: 'Nao foi possivel gerar email unico' })
+    }
+  }
+
+  // Gera slug da conta
+  const accountSlug = String(contract.razao_social || '').toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+  let finalSlug = accountSlug
+  let slugSuffix = 2
+  while (db.prepare('SELECT id FROM accounts WHERE slug = ?').get(finalSlug)) {
+    finalSlug = `${accountSlug}-${slugSuffix}`
+    slugSuffix++
+  }
+
+  const password = 'dros2026'
+  const passwordHash = bcrypt.hashSync(password, 10)
+
+  // Transacao: cria account + funil default + user gerente + atualiza contract
+  const result = db.transaction(() => {
+    // 1. Conta
+    const acc = db.prepare(`
+      INSERT INTO accounts (name, slug, cnpj, razao_social, cidade, estado, valor_mensal, contrato_inicio, evolution_api_url, evolution_api_key)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      contract.razao_social.trim(),
+      finalSlug,
+      contract.cnpj || null,
+      contract.razao_social,
+      contract.endereco_cidade || null,
+      contract.endereco_estado || null,
+      contract.fee_mensal || null,
+      contract.data_inicio || null,
+      DEFAULT_EVOLUTION_API_URL,
+      DEFAULT_EVOLUTION_API_KEY,
+    )
+    const accountId = acc.lastInsertRowid
+
+    // 2. Funil default (mesmas etapas que accounts.js POST)
+    const funnelRes = db.prepare('INSERT INTO funnels (account_id, name, is_default) VALUES (?, ?, 1)').run(accountId, 'Funil Principal')
+    const funnelId = funnelRes.lastInsertRowid
+    const stages = [
+      { name: 'Novo Lead', position: 0, color: '#FFB300' },
+      { name: 'Em Atendimento', position: 1, color: '#5DADE2' },
+      { name: 'Qualificado', position: 2, color: '#9B59B6' },
+      { name: 'Visita Agendada', position: 3, color: '#FFAA83' },
+      { name: 'Proposta', position: 4, color: '#FF6B8A' },
+      { name: 'Venda', position: 5, color: '#34C759', is_conversion: 1, is_terminal: 1 },
+      { name: 'Perdido', position: 6, color: '#FF6B6B', is_terminal: 1 },
+    ]
+    const stageStmt = db.prepare('INSERT INTO funnel_stages (funnel_id, name, position, color, is_conversion, is_terminal) VALUES (?, ?, ?, ?, ?, ?)')
+    for (const s of stages) stageStmt.run(funnelId, s.name, s.position, s.color, s.is_conversion || 0, s.is_terminal || 0)
+
+    // 3. User gerente
+    db.prepare(`
+      INSERT INTO users (account_id, name, email, password, role, is_active)
+      VALUES (?, ?, ?, ?, 'gerente', 1)
+    `).run(accountId, contract.razao_social.trim(), email, passwordHash)
+
+    // 4. Atualiza contract com refs
+    db.prepare(`
+      UPDATE contracts
+      SET approved_at = datetime('now'), approved_by = ?, account_id = ?, approved_email = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).run(req.user.id, accountId, email, contract.id)
+
+    return { accountId, email, password }
+  })()
+
+  // Best-effort: tambem cria cliente no HUB (best effort — se falhar, CRM ja foi criado OK)
+  let hubResult = { ok: false, reason: 'nao_tentado' }
+  try {
+    hubResult = await createHubClient(contract, result.email, result.password)
+    if (hubResult.ok && hubResult.client?.id) {
+      db.prepare("UPDATE contracts SET hub_client_id = ?, updated_at = datetime('now') WHERE id = ?")
+        .run(hubResult.client.id, contract.id)
+    }
+  } catch (e) {
+    console.error('[Contract Approve] HUB create catch:', e.message)
+    hubResult = { ok: false, reason: e.message }
+  }
+
+  const updated = db.prepare('SELECT * FROM contracts WHERE id = ?').get(contract.id)
+  res.json({
+    contract: updated,
+    credentials: {
+      email: result.email,
+      password: result.password,
+      account_id: result.accountId,
+    },
+    hub: hubResult.ok
+      ? { created: true, client_id: hubResult.client?.id, client_name: hubResult.client?.name }
+      : { created: false, reason: hubResult.reason },
+    message: hubResult.ok
+      ? 'Contrato aprovado. Cliente criado no CRM e no HUB.'
+      : 'Contrato aprovado. Cliente criado no CRM (HUB falhou: ' + (hubResult.reason || 'desconhecido') + ' — pode tentar reaprovar via endpoint de re-sync).',
+  })
+})
+
+// POST /:id/sync-hub — retry cria no HUB se o approve original falhou la
+router.post('/:id/sync-hub', requireRole('super_admin', 'gerente'), async (req, res) => {
+  const contract = db.prepare('SELECT * FROM contracts WHERE id = ?').get(req.params.id)
+  if (!contract) return res.status(404).json({ error: 'Contrato nao encontrado' })
+  if (!contract.approved_at) return res.status(400).json({ error: 'Contrato nao foi aprovado ainda' })
+  if (contract.hub_client_id) return res.status(400).json({ error: 'Contrato ja sincronizado com HUB (client_id=' + contract.hub_client_id + ')' })
+  if (!contract.approved_email) return res.status(400).json({ error: 'Email do gerente nao encontrado no contrato' })
+
+  const password = 'dros2026'  // padrao usado na aprovacao original
+  const hubResult = await createHubClient(contract, contract.approved_email, password)
+  if (hubResult.ok && hubResult.client?.id) {
+    db.prepare("UPDATE contracts SET hub_client_id = ?, updated_at = datetime('now') WHERE id = ?")
+      .run(hubResult.client.id, contract.id)
+    return res.json({ ok: true, client_id: hubResult.client.id, message: 'Cliente criado no HUB' })
+  }
+  res.status(500).json({ ok: false, reason: hubResult.reason })
 })
 
 export default router

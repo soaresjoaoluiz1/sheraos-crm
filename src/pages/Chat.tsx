@@ -613,7 +613,29 @@ export default function Chat() {
   }
 
   const handleStageChange = async (stageId: number) => { if (lead) { await moveLeadStage(lead.id, stageId); loadLead(); loadLeadsList() } }
-  const handleAssign = async (attId: number | null) => { if (lead) { await assignLead(lead.id, attId); loadLead() } }
+  // Assign com modal de confirmacao + checkbox 'enviar 1a msg'
+  const [assignModal, setAssignModal] = useState<{ attId: number; userName: string } | null>(null)
+  const [assignNotify, setAssignNotify] = useState(false)
+  const [assignSaving, setAssignSaving] = useState(false)
+  const handleAssign = async (attId: number | null) => {
+    if (!lead) return
+    if (attId == null) { await assignLead(lead.id, null); loadLead(); return }
+    if (attId === lead.attendant_id) return
+    const u = (users || []).find((x: any) => x.id === attId)
+    setAssignNotify(false)
+    setAssignModal({ attId, userName: u?.name || `User ${attId}` })
+  }
+  const confirmAssign = async () => {
+    if (!lead || !assignModal) return
+    setAssignSaving(true)
+    try {
+      await assignLead(lead.id, assignModal.attId, assignNotify)
+      setAssignModal(null); loadLead()
+    } catch (e: any) {
+      alert('Erro: ' + (e?.message || 'desconhecido'))
+    }
+    setAssignSaving(false)
+  }
   const handleAddTag = async (tagId: number) => { if (lead) { await addLeadTag(lead.id, tagId); loadLead(); setShowTagMenu(false) } }
   const handleRemoveTag = async (tagId: number) => { if (lead) { await removeLeadTag(lead.id, tagId); loadLead() } }
   const handleAdvanceCadence = async () => { if (leadCadence && accountId) { await advanceLeadCadence(leadCadence.id, accountId); loadLead() } }
@@ -884,10 +906,10 @@ export default function Chat() {
                       {resolvedSendInstance ? resolvedSendInstance.instance_name : '— escolha uma instancia —'} ▾
                     </button>
                     {showSendInstance && (
-                      <div style={{ position: 'absolute', bottom: '100%', left: 12, marginBottom: 4, background: '#1a1625', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 6, padding: 4, minWidth: 240, zIndex: 10, boxShadow: '0 4px 14px rgba(0,0,0,0.4)' }}>
+                      <div style={{ position: 'absolute', bottom: '100%', left: 12, marginBottom: 4, background: 'var(--bg-card)', border: '1px solid var(--border-medium)', borderRadius: 6, padding: 4, minWidth: 240, zIndex: 10, boxShadow: 'var(--shadow-md)' }}>
                         {connected.map(i => (
-                          <button key={i.id} onClick={() => { setSendInstanceOverride(i.id); setShowSendInstance(false) }} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', background: i.id === resolvedSendInstance?.id ? 'rgba(255,179,0,0.12)' : 'transparent', color: i.id === resolvedSendInstance?.id ? '#FFB300' : '#fff', border: 'none', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>
-                            {i.instance_name}{i.phone_number ? <span style={{ color: '#6B6580', marginLeft: 6 }}>({i.phone_number})</span> : ''}{i.id === resolvedSendInstance?.id ? ' ✓' : ''}
+                          <button key={i.id} onClick={() => { setSendInstanceOverride(i.id); setShowSendInstance(false) }} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', background: i.id === resolvedSendInstance?.id ? 'rgba(255,179,0,0.12)' : 'transparent', color: i.id === resolvedSendInstance?.id ? 'var(--accent)' : 'var(--text-primary)', border: 'none', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>
+                            {i.instance_name}{i.phone_number ? <span style={{ color: 'var(--text-muted)', marginLeft: 6 }}>({i.phone_number})</span> : ''}{i.id === resolvedSendInstance?.id ? ' ✓' : ''}
                           </button>
                         ))}
                       </div>
@@ -968,22 +990,22 @@ export default function Chat() {
                   {showReadyMsgs && (
                     <div style={{
                       position: 'absolute', bottom: '100%', left: 0, right: 0,
-                      background: '#16102A', border: '1px solid rgba(255,255,255,0.08)',
+                      background: 'var(--bg-card)', border: '1px solid var(--border-medium)',
                       borderRadius: 8, marginBottom: 6, maxHeight: 360, overflowY: 'auto',
-                      zIndex: 100, boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                      zIndex: 100, boxShadow: 'var(--shadow-lg)',
                     }}>
-                      <div style={{ padding: '8px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)', fontSize: 11, color: '#9B96B0', display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <FileText size={12} style={{ color: '#FFB300' }} />
-                        Mensagens prontas {readyMsgFilter && <span style={{ color: '#FFB300' }}>· "{readyMsgFilter}"</span>}
+                      <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border-subtle)', fontSize: 11, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <FileText size={12} style={{ color: 'var(--accent)' }} />
+                        Mensagens prontas {readyMsgFilter && <span style={{ color: 'var(--accent)' }}>· "{readyMsgFilter}"</span>}
                       </div>
                       {filteredReadyMsgs.length === 0 ? (
                         readyMessages.length === 0 ? (
-                          <div style={{ padding: 20, fontSize: 12, color: '#9B96B0', textAlign: 'center' }}>
+                          <div style={{ padding: 20, fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
                             Nenhuma mensagem cadastrada.<br/>
-                            <a href={`${import.meta.env.BASE_URL || ''}ready-messages`} style={{ color: '#FFB300', textDecoration: 'underline' }}>Criar mensagens prontas →</a>
+                            <a href={`${import.meta.env.BASE_URL || ''}ready-messages`} style={{ color: 'var(--accent)', textDecoration: 'underline' }}>Criar mensagens prontas →</a>
                           </div>
                         ) : (
-                          <div style={{ padding: 20, fontSize: 12, color: '#9B96B0', textAlign: 'center' }}>
+                          <div style={{ padding: 20, fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
                             Nenhuma mensagem com "{readyMsgFilter}"
                           </div>
                         )
@@ -999,22 +1021,22 @@ export default function Chat() {
                                 width: '100%', textAlign: 'left', padding: '10px 12px',
                                 background: i === readyMsgIdx ? 'rgba(255,179,0,0.12)' : 'transparent',
                                 border: 'none', cursor: 'pointer', display: 'block',
-                                borderBottom: '1px solid rgba(255,255,255,0.04)',
+                                borderBottom: '1px solid var(--border-subtle)',
                               }}
                             >
-                              <div style={{ fontSize: 12, fontWeight: 600, color: i === readyMsgIdx ? '#FFB300' : '#F0EDF5', display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <div style={{ fontSize: 12, fontWeight: 600, color: i === readyMsgIdx ? 'var(--accent)' : 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
                                 {m.title}
-                                {isCurrent && <span style={{ fontSize: 9, color: '#34C759', fontWeight: 500 }}>· nesta etapa</span>}
-                                {m.stage_name && !isCurrent && <span style={{ fontSize: 9, color: m.stage_color || '#9B96B0', fontWeight: 500 }}>· {m.stage_name}</span>}
+                                {isCurrent && <span style={{ fontSize: 9, color: 'var(--positive)', fontWeight: 500 }}>· nesta etapa</span>}
+                                {m.stage_name && !isCurrent && <span style={{ fontSize: 9, color: m.stage_color || 'var(--text-muted)', fontWeight: 500 }}>· {m.stage_name}</span>}
                               </div>
-                              <div style={{ fontSize: 11, color: '#9B96B0', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                 {m.content.substring(0, 90)}{m.content.length > 90 ? '...' : ''}
                               </div>
                             </button>
                           )
                         })
                       )}
-                      <div style={{ padding: '6px 12px', borderTop: '1px solid rgba(255,255,255,0.06)', fontSize: 10, color: '#6B6580' }}>
+                      <div style={{ padding: '6px 12px', borderTop: '1px solid var(--border-subtle)', fontSize: 10, color: 'var(--text-subtle)' }}>
                         ↑↓ navegar · Enter selecionar · Esc cancelar
                       </div>
                     </div>
@@ -1193,7 +1215,7 @@ export default function Chat() {
                             {availableTags.length > 0 && (
                               <>
                                 {availableTags.map(t => (
-                                  <button key={t.id} onClick={() => handleAddTag(t.id)} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', border: 'none', background: 'none', color: '#fff', fontSize: 11, cursor: 'pointer', width: '100%', textAlign: 'left' }}>
+                                  <button key={t.id} onClick={() => handleAddTag(t.id)} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', border: 'none', background: 'none', color: 'var(--text-primary)', fontSize: 11, cursor: 'pointer', width: '100%', textAlign: 'left' }}>
                                     <span style={{ width: 6, height: 6, borderRadius: '50%', background: t.color }} />{t.name}
                                   </button>
                                 ))}
@@ -1232,10 +1254,10 @@ export default function Chat() {
                         <button className="btn btn-secondary btn-sm" onClick={() => { setCadenceCollapsed(false); setShowCadenceMenu(!showCadenceMenu) }} style={{ padding: '2px 8px', fontSize: 10 }}>{leadCadence ? 'Trocar' : 'Atribuir'}</button>
                         {showCadenceMenu && (
                           <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'var(--bg-card)', border: '1px solid var(--border-medium)', borderRadius: 8, padding: 4, zIndex: 50, minWidth: 180, maxHeight: 220, overflowY: 'auto' }}>
-                            {cadences.length === 0 && <div style={{ padding: 8, fontSize: 11, color: '#9B96B0' }}>Nenhuma cadencia. Crie em /cadences</div>}
+                            {cadences.length === 0 && <div style={{ padding: 8, fontSize: 11, color: 'var(--text-muted)' }}>Nenhuma cadencia. Crie em /cadences</div>}
                             {cadences.map(c => (
-                              <button key={c.id} onClick={() => handleAssignCadence(c.id)} style={{ display: 'block', padding: '6px 10px', border: 'none', background: 'none', color: '#fff', fontSize: 11, cursor: 'pointer', borderRadius: 4, width: '100%', textAlign: 'left' }}>
-                                {c.name} <span style={{ color: '#6B6580' }}>({c.attempts.length} etapas)</span>
+                              <button key={c.id} onClick={() => handleAssignCadence(c.id)} style={{ display: 'block', padding: '6px 10px', border: 'none', background: 'none', color: 'var(--text-primary)', fontSize: 11, cursor: 'pointer', borderRadius: 4, width: '100%', textAlign: 'left' }}>
+                                {c.name} <span style={{ color: 'var(--text-muted)' }}>({c.attempts.length} etapas)</span>
                               </button>
                             ))}
                           </div>
@@ -1296,10 +1318,10 @@ export default function Chat() {
                         </button>
                         {showFollowUpMenu && (
                           <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'var(--bg-card)', border: '1px solid var(--border-medium)', borderRadius: 8, padding: 4, zIndex: 50, minWidth: 220, maxHeight: 220, overflowY: 'auto' }}>
-                            {followUps.length === 0 && <div style={{ padding: 8, fontSize: 11, color: '#9B96B0' }}>Nenhum follow-up. Crie em /follow-ups</div>}
+                            {followUps.length === 0 && <div style={{ padding: 8, fontSize: 11, color: 'var(--text-muted)' }}>Nenhum follow-up. Crie em /follow-ups</div>}
                             {followUps.filter(f => f.is_active && (f.type || 'sequence') === 'sequence').map(f => (
-                              <button key={f.id} onClick={() => handleAssignFollowUp(f.id)} style={{ display: 'block', padding: '6px 10px', border: 'none', background: 'none', color: '#fff', fontSize: 11, cursor: 'pointer', borderRadius: 4, width: '100%', textAlign: 'left' }}>
-                                {f.name} <span style={{ color: '#6B6580' }}>({f.steps_count} etapas · {f.instance_name})</span>
+                              <button key={f.id} onClick={() => handleAssignFollowUp(f.id)} style={{ display: 'block', padding: '6px 10px', border: 'none', background: 'none', color: 'var(--text-primary)', fontSize: 11, cursor: 'pointer', borderRadius: 4, width: '100%', textAlign: 'left' }}>
+                                {f.name} <span style={{ color: 'var(--text-muted)' }}>({f.steps_count} etapas · {f.instance_name})</span>
                               </button>
                             ))}
                           </div>
@@ -1683,6 +1705,43 @@ export default function Chat() {
             <span>Histórico</span>
           </button>
         </nav>
+      )}
+
+      {/* Modal de atribuicao de atendente — pergunta se quer enviar 1a msg automatica */}
+      {assignModal && (
+        <div className="modal-overlay" onClick={() => !assignSaving && setAssignModal(null)}>
+          <div className="modal" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
+            <h2 style={{ marginBottom: 8 }}>Atribuir lead pra atendente</h2>
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
+              Novo atendente: <strong>{assignModal.userName}</strong>
+            </p>
+
+            <div className="form-group">
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={assignNotify}
+                  onChange={e => setAssignNotify(e.target.checked)}
+                  style={{ marginTop: 3 }}
+                />
+                <span style={{ fontSize: 13 }}>
+                  <strong>Enviar mensagem inicial automática do novo atendente</strong>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.5 }}>
+                    Se marcado: o sistema envia a msg de boas-vindas da instância do vendedor pro lead.
+                    <br /><strong>A notificação ao vendedor é enviada de qualquer jeito</strong> (mesmo desmarcado).
+                  </div>
+                </span>
+              </label>
+            </div>
+
+            <div className="modal-actions" style={{ marginTop: 16 }}>
+              <button className="btn btn-secondary" onClick={() => setAssignModal(null)} disabled={assignSaving}>Cancelar</button>
+              <button className="btn btn-primary" onClick={confirmAssign} disabled={assignSaving}>
+                {assignSaving ? 'Atribuindo...' : 'Confirmar atribuição'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

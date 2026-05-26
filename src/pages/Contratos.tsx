@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { fetchContracts, createContract, updateContract, deleteContract, type Contract, type ContractInput } from '../lib/api'
-import { FileSignature, Plus, Edit3, Trash2, Download } from 'lucide-react'
+import { fetchContracts, createContract, updateContract, deleteContract, approveContract, syncContractHub, type Contract, type ContractInput } from '../lib/api'
+import { FileSignature, Plus, Edit3, Trash2, Download, CheckCircle2, RefreshCw } from 'lucide-react'
 
 const today = () => new Date().toISOString().slice(0, 10)
 
@@ -61,6 +61,11 @@ export default function Contratos() {
   const [modalMode, setModalMode] = useState<'new' | number | null>(null)
   const [form, setForm] = useState<ContractInput>(BLANK)
   const [saving, setSaving] = useState(false)
+  // Modal de aprovacao
+  const [approveModal, setApproveModal] = useState<{ contract: Contract; email: string } | null>(null)
+  const [approving, setApproving] = useState(false)
+  // Modal de sucesso pós-aprovacao
+  const [credentialsModal, setCredentialsModal] = useState<{ email: string; password: string; razao: string; hub?: { created: boolean; client_id?: number; reason?: string } } | null>(null)
 
   const isEditing = typeof modalMode === 'number'
 
@@ -140,6 +145,66 @@ export default function Contratos() {
     catch (e: any) { alert('Erro: ' + e.message) }
   }
 
+  const openApprove = (c: Contract) => {
+    if (c.approved_at) { alert('Contrato ja aprovado'); return }
+    // Sugere email = primeira palavra slugificada
+    const firstWord = (c.razao_social || '').trim().split(/\s+/)[0] || ''
+    const slug = firstWord.toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9]+/g, '')
+      .substring(0, 20)
+    const defaultEmail = slug ? `${slug}@drosagencia.com.br` : ''
+    setApproveModal({ contract: c, email: defaultEmail })
+  }
+
+  const [syncHubModal, setSyncHubModal] = useState<Contract | null>(null)
+  const [syncingHub, setSyncingHub] = useState(false)
+  const [syncResultModal, setSyncResultModal] = useState<{ ok: boolean; clientId?: number; reason?: string; razao: string } | null>(null)
+
+  const confirmSyncHub = async () => {
+    if (!syncHubModal) return
+    setSyncingHub(true)
+    try {
+      const r = await syncContractHub(syncHubModal.id)
+      setSyncResultModal({
+        ok: !!r.ok,
+        clientId: r.client_id,
+        reason: r.reason,
+        razao: syncHubModal.razao_social,
+      })
+      setSyncHubModal(null)
+      if (r.ok) load()
+    } catch (e: any) {
+      setSyncResultModal({
+        ok: false,
+        reason: e?.message || 'erro desconhecido',
+        razao: syncHubModal.razao_social,
+      })
+      setSyncHubModal(null)
+    }
+    setSyncingHub(false)
+  }
+
+  const handleApprove = async () => {
+    if (!approveModal) return
+    if (!approveModal.email.trim()) { alert('Email obrigatório'); return }
+    setApproving(true)
+    try {
+      const result = await approveContract(approveModal.contract.id, approveModal.email.trim())
+      setCredentialsModal({
+        email: result.credentials.email,
+        password: result.credentials.password,
+        razao: approveModal.contract.razao_social,
+        hub: result.hub,
+      })
+      setApproveModal(null)
+      load()
+    } catch (e: any) {
+      alert('Erro ao aprovar: ' + (e?.message || 'desconhecido'))
+    }
+    setApproving(false)
+  }
+
   const handleDownload = async (c: Contract) => {
     // Endpoint exige JWT — window.open direto perde o header.
     // Faz fetch autenticado, abre nova aba com about:blank, escreve o HTML e dispara print.
@@ -184,6 +249,7 @@ export default function Contratos() {
             <thead>
               <tr>
                 <th>Numero</th>
+                <th>Status</th>
                 <th>Razao Social</th>
                 <th>CNPJ</th>
                 <th>Fee</th>
@@ -197,6 +263,17 @@ export default function Contratos() {
               {contracts.map(c => (
                 <tr key={c.id}>
                   <td><span className="strong">{c.numero}</span></td>
+                  <td>
+                    {c.approved_at ? (
+                      <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: 'rgba(52,199,89,0.15)', color: '#34C759', fontWeight: 600 }}>
+                        ✅ Aprovado
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: 'rgba(155,150,176,0.15)', color: '#9B96B0' }}>
+                        Rascunho
+                      </span>
+                    )}
+                  </td>
                   <td>{c.razao_social}</td>
                   <td style={{ fontSize: 11, color: 'var(--text-muted)' }}>{c.cnpj}</td>
                   <td>{formatBRL(c.fee_mensal)}</td>
@@ -204,6 +281,21 @@ export default function Contratos() {
                   <td>{c.vigencia_meses}m</td>
                   <td style={{ fontSize: 11, color: 'var(--text-muted)' }}>{c.created_by_name || '—'}</td>
                   <td style={{ textAlign: 'right' }}>
+                    {!c.approved_at && (
+                      <button className="btn btn-primary btn-sm" onClick={() => openApprove(c)} title="Aprovar contrato (cria cliente no CRM)" style={{ marginRight: 4, background: '#34C759', borderColor: '#2BA84A' }}>
+                        <CheckCircle2 size={12} /> Aprovar
+                      </button>
+                    )}
+                    {c.approved_at && !c.hub_client_id && (
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => setSyncHubModal(c)}
+                        title="Contrato aprovado no CRM mas nao criado no HUB. Clique pra criar agora."
+                        style={{ marginRight: 4, background: 'rgba(255,179,0,0.15)', borderColor: 'rgba(255,179,0,0.4)', color: '#FFB300' }}
+                      >
+                        <RefreshCw size={12} /> Sync HUB
+                      </button>
+                    )}
                     <button className="btn btn-secondary btn-sm" onClick={() => handleDownload(c)} title="Baixar PDF" style={{ marginRight: 4 }}>
                       <Download size={12} />
                     </button>
@@ -413,6 +505,166 @@ export default function Contratos() {
               <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
                 {saving ? 'Salvando...' : (isEditing ? 'Salvar Alteracoes' : 'Criar Contrato')}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de aprovacao */}
+      {approveModal && (
+        <div className="modal-overlay" onClick={() => !approving && setApproveModal(null)}>
+          <div className="modal" style={{ maxWidth: 520 }} onClick={e => e.stopPropagation()}>
+            <h2 style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#34C759', marginBottom: 4 }}>
+              <CheckCircle2 size={20} /> Aprovar contrato
+            </h2>
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
+              <strong>{approveModal.contract.numero}</strong> · {approveModal.contract.razao_social}
+            </p>
+
+            <div style={{ padding: 12, background: 'rgba(52,199,89,0.08)', border: '1px solid rgba(52,199,89,0.2)', borderRadius: 8, marginBottom: 16, fontSize: 12, lineHeight: 1.6 }}>
+              Isso vai <strong>criar um cliente no CRM</strong> com:
+              <ul style={{ margin: '8px 0 0 18px', padding: 0 }}>
+                <li>Conta: <strong>{approveModal.contract.razao_social}</strong></li>
+                <li>Usuário <strong>gerente</strong></li>
+                <li>Senha: <code style={{ background: 'rgba(0,0,0,0.3)', padding: '1px 5px', borderRadius: 3 }}>dros2026</code></li>
+              </ul>
+              <div style={{ marginTop: 8, color: '#FFB300' }}>⚠ Não pode desfazer pelo botão (precisa apagar conta manualmente).</div>
+            </div>
+
+            <div className="form-group">
+              <label>Email do gerente *</label>
+              <input
+                className="input"
+                type="email"
+                value={approveModal.email}
+                onChange={e => setApproveModal({ ...approveModal, email: e.target.value })}
+                placeholder="cliente@drosagencia.com.br"
+                autoFocus
+                onKeyDown={e => { if (e.key === 'Enter' && !approving) handleApprove() }}
+              />
+              <small style={{ color: 'var(--text-muted)', fontSize: 11 }}>
+                Edite se quiser. Sistema bloqueia se email já estiver em uso.
+              </small>
+            </div>
+
+            <div className="modal-actions" style={{ marginTop: 20 }}>
+              <button className="btn btn-secondary" onClick={() => setApproveModal(null)} disabled={approving}>Cancelar</button>
+              <button className="btn btn-primary" onClick={handleApprove} disabled={approving || !approveModal.email.trim()} style={{ background: '#34C759', borderColor: '#2BA84A' }}>
+                {approving ? 'Aprovando...' : '✓ Aprovar e criar cliente'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de sucesso com credenciais */}
+      {credentialsModal && (
+        <div className="modal-overlay" onClick={() => setCredentialsModal(null)}>
+          <div className="modal" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
+            <h2 style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#34C759', marginBottom: 4 }}>
+              <CheckCircle2 size={20} /> Cliente criado!
+            </h2>
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
+              {credentialsModal.razao}
+            </p>
+
+            <div style={{ padding: 16, background: 'rgba(52,199,89,0.08)', border: '1px solid rgba(52,199,89,0.3)', borderRadius: 8, marginBottom: 16 }}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Email de acesso</div>
+              <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 12, fontFamily: 'monospace' }}>{credentialsModal.email}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Senha</div>
+              <div style={{ fontSize: 15, fontWeight: 600, fontFamily: 'monospace' }}>{credentialsModal.password}</div>
+            </div>
+
+            {/* Status sistemas integrados */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, padding: 10, background: 'rgba(52,199,89,0.08)', border: '1px solid rgba(52,199,89,0.25)', borderRadius: 6, fontSize: 12 }}>
+                ✅ <strong>CRM:</strong> conta criada
+              </div>
+              <div style={{ flex: 1, padding: 10, background: credentialsModal.hub?.created ? 'rgba(52,199,89,0.08)' : 'rgba(255,179,0,0.08)', border: `1px solid ${credentialsModal.hub?.created ? 'rgba(52,199,89,0.25)' : 'rgba(255,179,0,0.25)'}`, borderRadius: 6, fontSize: 12 }}>
+                {credentialsModal.hub?.created
+                  ? <>✅ <strong>HUB:</strong> cliente criado (id={credentialsModal.hub.client_id})</>
+                  : <>⚠ <strong>HUB:</strong> não criado{credentialsModal.hub?.reason ? ` (${credentialsModal.hub.reason})` : ''}<div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>Pode re-tentar via "Re-sync HUB" depois</div></>
+                }
+              </div>
+            </div>
+
+            <div style={{ fontSize: 12, color: '#FFB300', marginBottom: 16 }}>
+              📋 Copie e envie pro cliente. Senha pode ser trocada por ele depois.
+            </div>
+
+            <div className="modal-actions">
+              <button className="btn btn-secondary" onClick={() => {
+                navigator.clipboard?.writeText(`Email: ${credentialsModal.email}\nSenha: ${credentialsModal.password}`)
+              }}>📋 Copiar</button>
+              <button className="btn btn-primary" onClick={() => setCredentialsModal(null)}>Fechar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de confirmacao Sync HUB */}
+      {syncHubModal && (
+        <div className="modal-overlay" onClick={() => !syncingHub && setSyncHubModal(null)}>
+          <div className="modal" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
+            <h2 style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <RefreshCw size={20} style={{ color: '#FFB300' }} /> Sincronizar com HUB
+            </h2>
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
+              <strong>{syncHubModal.numero}</strong> · {syncHubModal.razao_social}
+            </p>
+
+            <div style={{ padding: 12, background: 'rgba(255,179,0,0.08)', border: '1px solid rgba(255,179,0,0.25)', borderRadius: 8, marginBottom: 16, fontSize: 13, lineHeight: 1.6 }}>
+              Vai criar o cliente <strong>no HUB</strong> com os mesmos dados que ja foram gerados no CRM:
+              <ul style={{ margin: '8px 0 0 18px', padding: 0, fontSize: 12 }}>
+                <li>Email: <code style={{ background: 'rgba(0,0,0,0.3)', padding: '1px 5px', borderRadius: 3 }}>{syncHubModal.approved_email || '(usa o do CRM)'}</code></li>
+                <li>Senha: <code style={{ background: 'rgba(0,0,0,0.3)', padding: '1px 5px', borderRadius: 3 }}>dros2026</code></li>
+                <li>Razão Social, CNPJ, cidade/estado, fee mensal, data início</li>
+              </ul>
+            </div>
+
+            <div className="modal-actions">
+              <button className="btn btn-secondary" onClick={() => setSyncHubModal(null)} disabled={syncingHub}>Cancelar</button>
+              <button className="btn btn-primary" onClick={confirmSyncHub} disabled={syncingHub} style={{ background: '#FFB300', borderColor: '#E0A000' }}>
+                {syncingHub ? 'Sincronizando...' : 'Confirmar sync'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de resultado pos-sync */}
+      {syncResultModal && (
+        <div className="modal-overlay" onClick={() => setSyncResultModal(null)}>
+          <div className="modal" style={{ maxWidth: 460 }} onClick={e => e.stopPropagation()}>
+            {syncResultModal.ok ? (
+              <>
+                <h2 style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#34C759', marginBottom: 4 }}>
+                  <CheckCircle2 size={20} /> Cliente criado no HUB!
+                </h2>
+                <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>{syncResultModal.razao}</p>
+                <div style={{ padding: 14, background: 'rgba(52,199,89,0.08)', border: '1px solid rgba(52,199,89,0.25)', borderRadius: 8, marginBottom: 16, fontSize: 13 }}>
+                  ✅ HUB Client ID: <strong>{syncResultModal.clientId}</strong>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                    O cliente já pode acessar o HUB com as mesmas credenciais do CRM.
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#FF6B6B', marginBottom: 4 }}>
+                  ⚠ Falha ao sincronizar
+                </h2>
+                <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>{syncResultModal.razao}</p>
+                <div style={{ padding: 14, background: 'rgba(255,107,107,0.08)', border: '1px solid rgba(255,107,107,0.25)', borderRadius: 8, marginBottom: 16, fontSize: 13 }}>
+                  HUB rejeitou: <strong>{syncResultModal.reason}</strong>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6, lineHeight: 1.5 }}>
+                    Possíveis causas: HUB offline, credenciais erradas no .env, email já existe no HUB, ou validação rejeitou os dados.
+                  </div>
+                </div>
+              </>
+            )}
+            <div className="modal-actions">
+              <button className="btn btn-primary" onClick={() => setSyncResultModal(null)}>Fechar</button>
             </div>
           </div>
         </div>

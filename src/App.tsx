@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { AccountProvider } from './context/AccountContext'
 import { SSEProvider } from './context/SSEContext'
+import { ThemeProvider } from './context/ThemeContext'
 import Sidebar from './components/Sidebar'
 import DisconnectedInstancesAlert from './components/DisconnectedInstancesAlert'
 import Login from './pages/Login'
@@ -99,7 +100,6 @@ function AppRoutes() {
             <Route path="/messages/:id" element={<BroadcastDetail />} />
             <Route path="/team" element={<Team />} />
             <Route path="/funnels" element={<Funnels />} />
-            <Route path="/integrations" element={<Integrations />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/cadences" element={<Cadences />} />
             <Route path="/follow-ups" element={<FollowUps />} />
@@ -111,6 +111,7 @@ function AppRoutes() {
           </>}
 
           {/* All authenticated users */}
+          <Route path="/integrations" element={<Integrations />} />
           <Route path="/pipeline" element={<Pipeline />} />
           <Route path="/chat" element={<Chat />} />
           <Route path="/tasks" element={<Tasks />} />
@@ -130,9 +131,11 @@ function AppRoutes() {
 export default function App() {
   return (
     <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-      <AuthProvider>
-        <AppRoutes />
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <AppRoutes />
+        </AuthProvider>
+      </ThemeProvider>
     </BrowserRouter>
   )
 }
