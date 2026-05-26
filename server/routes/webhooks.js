@@ -5,6 +5,7 @@ import { broadcastSSE } from '../sse.js'
 import { triggerCapiForStageChange } from '../services/metaCapi.js'
 import { getInstanceConfig, wasAutoMsgSentRecently, sendAutoMessage, shouldSendAway } from '../services/autoMessages.js'
 import { processInboundMessage } from '../services/aiAgent.js'
+import { pickFromRoulette } from '../services/roulette.js'
 
 const router = Router()
 
@@ -110,24 +111,7 @@ function getOrCreateLead(accountId, phone, name, source, waJid, instanceId) {
   if (!firstStage) return { lead: null, isNew: false }
 
   // Distribution: prefer instance.default_attendant_id, fallback to round-robin/manual
-  let attendantId = null
-  if (instanceId) {
-    const inst = db.prepare('SELECT default_attendant_id FROM whatsapp_instances WHERE id = ?').get(instanceId)
-    if (inst?.default_attendant_id) attendantId = inst.default_attendant_id
-  }
-  if (!attendantId) {
-    const rule = db.prepare('SELECT * FROM distribution_rules WHERE account_id = ? AND funnel_id = ?').get(accountId, funnel.id)
-    if (rule && rule.type === 'round_robin' && rule.active_attendants) {
-      try {
-        const attendants = JSON.parse(rule.active_attendants)
-        if (attendants.length > 0) {
-          const idx = rule.last_assigned_index % attendants.length
-          attendantId = attendants[idx]
-          db.prepare("UPDATE distribution_rules SET last_assigned_index = ?, updated_at = datetime('now') WHERE id = ?").run(rule.last_assigned_index + 1, rule.id)
-        }
-      } catch {}
-    }
-  }
+  const attendantId = pickFromRoulette(accountId, instanceId)
 
   const result = db.prepare(`
     INSERT INTO leads (account_id, funnel_id, stage_id, attendant_id, name, phone, source, wa_remote_jid, instance_id, opted_in_at)
@@ -542,17 +526,54 @@ router.post('/evolution/:accountSlug', (req, res) => {
     // Inbound messages from client don't auto-advance (attendant controls flow)
     if (fromMe && content) autoDetectStage(lead, content)
 
-    // Auto-pausa follow-up se lead respondeu (stop_on_reply=1 no follow-up)
+    // Auto-pausa follow-up se lead respondeu (stop_on_reply=1) + executa on_reply_action + move etapa + add tag
     if (!fromMe && lead) {
       const activeFu = db.prepare(`
-        SELECT lfu.id FROM lead_follow_ups lfu
+        SELECT lfu.id, fu.on_reply_action, fu.on_reply_user_id, fu.on_reply_move_to_stage_id, fu.on_reply_add_tag_id, fu.instance_id
+        FROM lead_follow_ups lfu
         JOIN follow_ups fu ON fu.id = lfu.follow_up_id
         WHERE lfu.lead_id = ? AND lfu.status = 'active' AND fu.stop_on_reply = 1
         LIMIT 1
       `).get(lead.id)
       if (activeFu) {
-        db.prepare("UPDATE lead_follow_ups SET status='paused', paused_at=datetime('now'), paused_reason='lead_replied', updated_at=datetime('now') WHERE id=?").run(activeFu.id)
-        console.log(`[FollowUp] Pausado lead=${lead.id} (respondeu)`)
+        // 1. Cancela cadência (status='cancelled' = lead saiu desse FU permanentemente; volta só se sair+voltar da etapa)
+        db.prepare("UPDATE lead_follow_ups SET status='cancelled', paused_at=datetime('now'), paused_reason='lead_replied', current_step_id=NULL, next_run_at=NULL, updated_at=datetime('now') WHERE id=?").run(activeFu.id)
+        console.log(`[FollowUp] Cancelado lead=${lead.id} (respondeu)`)
+
+        // 2. Reatribui conforme on_reply_action
+        const action = activeFu.on_reply_action || 'pause'
+        let newAttendantId = null
+        if (action === 'assign_user' && activeFu.on_reply_user_id) {
+          const u = db.prepare('SELECT id FROM users WHERE id = ? AND is_active = 1').get(activeFu.on_reply_user_id)
+          if (u) newAttendantId = u.id
+        } else if (action === 'roulette') {
+          newAttendantId = pickFromRoulette(account.id, activeFu.instance_id)
+        }
+        if (newAttendantId) {
+          const newUser = db.prepare('SELECT is_bot FROM users WHERE id = ?').get(newAttendantId)
+          const clearAi = newUser?.is_bot === 1 ? ", ai_handed_off_at = NULL" : ""
+          db.prepare(`UPDATE leads SET attendant_id = ?${clearAi}, updated_at = datetime('now') WHERE id = ?`).run(newAttendantId, lead.id)
+          try { broadcastSSE(account.id, 'lead:updated', { id: lead.id }) } catch {}
+          console.log(`[FollowUp] Reatribuido lead=${lead.id} -> user=${newAttendantId} (action=${action})`)
+        }
+
+        // 3. Move etapa (opcional)
+        if (activeFu.on_reply_move_to_stage_id) {
+          const freshLead = db.prepare('SELECT stage_id FROM leads WHERE id = ?').get(lead.id)
+          if (freshLead && freshLead.stage_id !== activeFu.on_reply_move_to_stage_id) {
+            const prev = freshLead.stage_id
+            db.prepare("UPDATE leads SET stage_id = ?, updated_at = datetime('now') WHERE id = ?").run(activeFu.on_reply_move_to_stage_id, lead.id)
+            const histRes = db.prepare('INSERT INTO stage_history (lead_id, from_stage_id, to_stage_id, trigger_type) VALUES (?, ?, ?, ?)').run(lead.id, prev, activeFu.on_reply_move_to_stage_id, 'followup_reply')
+            try { triggerCapiForStageChange(lead.id, activeFu.on_reply_move_to_stage_id, histRes.lastInsertRowid) } catch (e) { console.error('[FollowUp CAPI]', e.message) }
+            console.log(`[FollowUp] Stage lead=${lead.id} ${prev} -> ${activeFu.on_reply_move_to_stage_id}`)
+          }
+        }
+
+        // 4. Adiciona tag (opcional)
+        if (activeFu.on_reply_add_tag_id) {
+          db.prepare('INSERT OR IGNORE INTO lead_tags (lead_id, tag_id) VALUES (?, ?)').run(lead.id, activeFu.on_reply_add_tag_id)
+          console.log(`[FollowUp] Tag adicionada lead=${lead.id} tag=${activeFu.on_reply_add_tag_id}`)
+        }
       }
     }
 

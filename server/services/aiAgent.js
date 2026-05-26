@@ -5,6 +5,7 @@ import fetch from 'node-fetch'
 import db from '../db.js'
 import { callHaiku } from './anthropicClient.js'
 import { broadcastSSE } from '../sse.js'
+import { pickFromRoulette as rouletteUtil } from './roulette.js'
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 
@@ -172,38 +173,10 @@ function countBotMessagesInThread(agent, leadId) {
   `).get(leadId, agent.id).c
 }
 
-// ─── pickFromRoulette ─────────────────────────────────────────────────
+// ─── pickFromRoulette (wrapper do util — handoff sempre exclui bots) ─────
 
 function pickFromRoulette(accountId, instanceId, excludeUserId) {
-  // Tenta default_attendant_id da instancia primeiro (se nao for o bot)
-  if (instanceId) {
-    const inst = db.prepare('SELECT default_attendant_id FROM whatsapp_instances WHERE id = ?').get(instanceId)
-    if (inst?.default_attendant_id && inst.default_attendant_id !== excludeUserId) {
-      const u = getUser(inst.default_attendant_id)
-      if (u && u.is_active && !u.is_bot) return u.id
-    }
-  }
-  // Fallback: round-robin via distribution_rules
-  const funnel = db.prepare("SELECT id FROM funnels WHERE account_id = ? AND is_default = 1 AND is_active = 1").get(accountId)
-  if (funnel) {
-    const rule = db.prepare('SELECT * FROM distribution_rules WHERE account_id = ? AND funnel_id = ?').get(accountId, funnel.id)
-    if (rule && rule.type === 'round_robin' && rule.active_attendants) {
-      try {
-        const attendants = JSON.parse(rule.active_attendants).filter(uid => {
-          if (uid === excludeUserId) return false
-          const u = getUser(uid)
-          return u && u.is_active && !u.is_bot
-        })
-        if (attendants.length > 0) {
-          const idx = rule.last_assigned_index % attendants.length
-          const picked = attendants[idx]
-          db.prepare("UPDATE distribution_rules SET last_assigned_index = ?, updated_at = datetime('now') WHERE id = ?").run(rule.last_assigned_index + 1, rule.id)
-          return picked
-        }
-      } catch {}
-    }
-  }
-  return null
+  return rouletteUtil(accountId, instanceId, { excludeUserId, excludeBots: true })
 }
 
 // ─── executeHandoff ───────────────────────────────────────────────────
@@ -256,7 +229,7 @@ function getToolsForAgent(availableTags, availableStages) {
       input_schema: {
         type: 'object',
         properties: {
-          field: { type: 'string', enum: ['name', 'email', 'phone', 'city', 'empresa', 'instagram'] },
+          field: { type: 'string', enum: ['name', 'email', 'city', 'empresa', 'instagram'] },
           value: { type: 'string', description: 'Valor informado pelo lead' },
         },
         required: ['field', 'value'],
@@ -304,7 +277,7 @@ async function executeTool(toolUse, agent, lead, instanceId, availableTags, avai
   const { name, input } = toolUse
   try {
     if (name === 'update_lead_info') {
-      const allowed = ['name', 'email', 'phone', 'city', 'empresa', 'instagram']
+      const allowed = ['name', 'email', 'city', 'empresa', 'instagram']
       if (allowed.includes(input.field) && input.value) {
         db.prepare(`UPDATE leads SET ${input.field} = ? WHERE id = ?`).run(String(input.value).substring(0, 200), lead.id)
         console.log(`[AI Agent] update_lead_info lead=${lead.id} ${input.field}="${input.value}"`)
@@ -341,7 +314,7 @@ async function sendEvolutionText(instance, phone, text) {
   const res = await fetch(`${instance.api_url}/message/sendText/${instance.instance_name}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'apikey': instance.api_key },
-    body: JSON.stringify({ number, text }),
+    body: JSON.stringify({ number, text, delay: 10000 }),
   })
   const data = await res.json()
   return { ok: !!data.key?.id, wamsgId: data.key?.id || null, raw: data }

@@ -335,6 +335,7 @@ db.exec(`
 // ─── Schema migrations (add columns safely) ─────────────────────
 function addColumnIfNotExists(table, column, type) {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all()
+  if (cols.length === 0) return
   if (!cols.some(c => c.name === column)) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`)
     console.log(`[DB] Added column ${table}.${column}`)
@@ -471,6 +472,16 @@ addColumnIfNotExists('follow_ups', 'inactivity_days', 'INTEGER NOT NULL DEFAULT 
 addColumnIfNotExists('follow_ups', 'variation_delay_seconds', 'INTEGER NOT NULL DEFAULT 30')
 addColumnIfNotExists('follow_up_steps', 'schedule_mode', "TEXT NOT NULL DEFAULT 'relative'")
 addColumnIfNotExists('follow_up_steps', 'scheduled_at', 'TEXT')
+
+// Follow-ups v3: inactivity multi-step (cadência) + variações por step + on-reply action
+addColumnIfNotExists('follow_ups', 'inactivity_minutes', 'INTEGER')
+addColumnIfNotExists('follow_ups', 'inactivity_mode', "TEXT NOT NULL DEFAULT 'rotation'")
+addColumnIfNotExists('follow_ups', 'on_reply_action', "TEXT NOT NULL DEFAULT 'pause'")
+addColumnIfNotExists('follow_ups', 'on_reply_user_id', 'INTEGER REFERENCES users(id) ON DELETE SET NULL')
+addColumnIfNotExists('follow_up_steps', 'variations', 'TEXT')
+// Follow-ups v3.1: on-reply move stage + add tag
+addColumnIfNotExists('follow_ups', 'on_reply_move_to_stage_id', 'INTEGER REFERENCES funnel_stages(id) ON DELETE SET NULL')
+addColumnIfNotExists('follow_ups', 'on_reply_add_tag_id', 'INTEGER REFERENCES tags(id) ON DELETE SET NULL')
 
 // Agentes de IA (Claude Haiku 4.5) — F0+1 schema
 addColumnIfNotExists('accounts', 'ai_agents_enabled', 'INTEGER NOT NULL DEFAULT 0')
