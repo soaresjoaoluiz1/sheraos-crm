@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react'
 import {
   fetchAgent, createAgent, updateAgent, testAgent, fetchAgentUsage,
   fetchWhatsAppInstances, fetchFunnels, fetchUsers, fetchTags,
+  fetchAgentInactivityFollowUp, saveAgentInactivityFollowUp,
   type Agent, type AgentInput, type AgentHandoffReason, type AgentActivationMode,
   type AgentHandoffRule,
   type WhatsAppInstance, type Funnel, type User, type Tag,
 } from '../lib/api'
-import { Bot, X, Save, Send, Activity, BookOpen, Target, ArrowRightLeft, Volume2, DollarSign, Play, AlertCircle } from 'lucide-react'
+import { Bot, X, Save, Send, Activity, BookOpen, Target, ArrowRightLeft, Volume2, DollarSign, Play, AlertCircle, Zap, Plus, Trash2 } from 'lucide-react'
 
 const REQUIRED_FIELDS_OPTS = [
   { key: 'name', label: 'Nome' },
@@ -32,7 +33,7 @@ const ACTIVATION_MODES: { value: AgentActivationMode; label: string; desc: strin
   { value: 'manual', label: '✋ Manual', desc: 'Só atende se gerente atribuir manualmente' },
 ]
 
-type Tab = 'identity' | 'when' | 'training' | 'qualification' | 'handoff' | 'audio' | 'cost'
+type Tab = 'identity' | 'when' | 'training' | 'qualification' | 'handoff' | 'audio' | 'followup' | 'cost'
 
 interface Props {
   agentId: 'new' | number
@@ -70,6 +71,21 @@ export default function AgentEditorModal({ agentId, accountId, onClose, onSaved 
   // Audio
   const [respondsToAudio, setRespondsToAudio] = useState(false)
   const [audioDeclineMessage, setAudioDeclineMessage] = useState('Oi! Por enquanto só leio mensagens de texto. Pode digitar pra mim?')
+  // Welcome msg pra leads de planilha (Haiku-gerada)
+  const [welcomeForSheets, setWelcomeForSheets] = useState(false)
+  const [welcomeExtraInstructions, setWelcomeExtraInstructions] = useState('')
+  // Follow-up de inatividade (bot manda msg se lead parar de responder)
+  const [fuEnabled, setFuEnabled] = useState(false)
+  const [fuInstanceId, setFuInstanceId] = useState<number | null>(null)
+  const [fuInactivityMinutes, setFuInactivityMinutes] = useState(60)
+  const [fuStopOnReply, setFuStopOnReply] = useState(true)
+  const [fuOnReplyAction, setFuOnReplyAction] = useState<'pause' | 'roulette' | 'assign_user'>('pause')
+  const [fuOnReplyUserId, setFuOnReplyUserId] = useState<number | null>(null)
+  const [fuSteps, setFuSteps] = useState<Array<{ delay_minutes: number; message_template: string }>>([
+    { delay_minutes: 0, message_template: 'Olá {{primeiro_nome}}, ainda está aí? Posso te ajudar com mais alguma dúvida?' },
+  ])
+  const [fuSaving, setFuSaving] = useState(false)
+  const [fuLoaded, setFuLoaded] = useState(false)
   // Cost
   const [monthlyTokenLimit, setMonthlyTokenLimit] = useState(500000)
 
@@ -84,7 +100,7 @@ export default function AgentEditorModal({ agentId, accountId, onClose, onSaved 
   const [sandboxHistory, setSandboxHistory] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([])
   const [sandboxLoading, setSandboxLoading] = useState(false)
   const [sandboxCost, setSandboxCost] = useState(0)
-  const [usage, setUsage] = useState<{ tokens: number; limit: number; cost: number } | null>(null)
+  const [usage, setUsage] = useState<{ tokens: number; limit: number; cost: number; sttSec: number; sttCost: number; audioCount: number; totalCost: number } | null>(null)
 
   // Carrega dados externos + agente se editando
   useEffect(() => {
@@ -113,14 +129,40 @@ export default function AgentEditorModal({ agentId, accountId, onClose, onSaved 
         setHandoffKeywords(a.handoff_keywords)
         setRespondsToAudio(a.responds_to_audio === 1)
         setAudioDeclineMessage(a.audio_decline_message)
+        setWelcomeForSheets(a.send_welcome_for_sheets_leads === 1)
+        setWelcomeExtraInstructions(a.welcome_extra_instructions || '')
         setMonthlyTokenLimit(a.monthly_token_limit)
         const map: any = {}
         for (const r of a.handoff_rules || []) map[r.reason] = r
         setHandoffRules(map)
       }).finally(() => setLoading(false))
 
-      fetchAgentUsage(agentId, accountId).then(u => {
-        setUsage({ tokens: u.tokens_used_this_month, limit: u.monthly_limit, cost: u.cost_usd_this_month })
+      // Carrega follow-up de inatividade vinculado ao agente (se houver)
+      fetchAgentInactivityFollowUp(agentId, accountId).then((fu) => {
+        if (fu && fu.is_active === 1) {
+          setFuEnabled(true)
+          setFuInstanceId(fu.instance_id)
+          setFuInactivityMinutes(fu.inactivity_minutes || 60)
+          setFuStopOnReply(fu.stop_on_reply === 1)
+          setFuOnReplyAction(fu.on_reply_action || 'pause')
+          setFuOnReplyUserId(fu.on_reply_user_id || null)
+          if (Array.isArray(fu.steps) && fu.steps.length > 0) {
+            setFuSteps(fu.steps.map(s => ({ delay_minutes: s.delay_minutes || 0, message_template: s.message_template || '' })))
+          }
+        }
+        setFuLoaded(true)
+      }).catch(() => setFuLoaded(true))
+
+      fetchAgentUsage(agentId, accountId).then((u: any) => {
+        setUsage({
+          tokens: u.tokens_used_this_month,
+          limit: u.monthly_limit,
+          cost: u.cost_usd_this_month,
+          sttSec: u.stt_seconds_this_month || 0,
+          sttCost: u.stt_cost_usd_this_month || 0,
+          audioCount: u.audio_count_this_month || 0,
+          totalCost: u.total_cost_usd_this_month || u.cost_usd_this_month,
+        })
       }).catch(() => {})
     }
   }, [agentId, accountId, isNew])
@@ -146,13 +188,48 @@ export default function AgentEditorModal({ agentId, accountId, onClose, onSaved 
         handoff_keywords: handoffKeywords,
         responds_to_audio: respondsToAudio,
         audio_decline_message: audioDeclineMessage,
+        send_welcome_for_sheets_leads: welcomeForSheets,
+        welcome_extra_instructions: welcomeExtraInstructions.trim() || undefined,
         monthly_token_limit: monthlyTokenLimit,
         stage_ids: stageIds,
         instance_ids: instanceIds,
         handoff_rules: Object.values(handoffRules).filter(r => r),
       }
-      if (isNew) await createAgent(accountId, payload)
-      else await updateAgent(agentId as number, accountId, payload)
+      let savedAgentId: number
+      if (isNew) {
+        const created = await createAgent(accountId, payload)
+        savedAgentId = (created as any).id
+      } else {
+        await updateAgent(agentId as number, accountId, payload)
+        savedAgentId = agentId as number
+      }
+
+      // Salva tambem a config de follow-up de inatividade (so se agente ja existe ou acabou de ser criado)
+      if (savedAgentId && fuLoaded) {
+        try {
+          if (fuEnabled) {
+            if (!fuInstanceId) { alert('Aba Follow-up: escolha a instância antes de salvar.'); setSaving(false); return }
+            if (fuSteps.some(s => !s.message_template.trim())) { alert('Aba Follow-up: todos os steps precisam de mensagem.'); setSaving(false); return }
+            await saveAgentInactivityFollowUp(savedAgentId, accountId, {
+              enabled: true,
+              instance_id: fuInstanceId,
+              inactivity_minutes: fuInactivityMinutes,
+              stop_on_reply: fuStopOnReply,
+              on_reply_action: fuOnReplyAction,
+              on_reply_user_id: fuOnReplyUserId,
+              steps: fuSteps,
+            })
+          } else {
+            // Desativa se houver follow-up salvo
+            await saveAgentInactivityFollowUp(savedAgentId, accountId, { enabled: false, steps: [] }).catch(() => {})
+          }
+        } catch (e: any) {
+          alert('Agente salvo, mas Follow-up falhou: ' + (e?.message || ''))
+          setSaving(false)
+          return
+        }
+      }
+
       onSaved()
     } catch (e: any) { alert('Erro: ' + (e?.message || '')) }
     setSaving(false)
@@ -222,6 +299,7 @@ export default function AgentEditorModal({ agentId, accountId, onClose, onSaved 
             { id: 'qualification', label: 'Qualificação', icon: <Target size={11} /> },
             { id: 'handoff', label: 'Handoff', icon: <ArrowRightLeft size={11} /> },
             { id: 'audio', label: 'Áudio', icon: <Volume2 size={11} /> },
+            { id: 'followup', label: 'Follow-up', icon: <Zap size={11} /> },
             { id: 'cost', label: 'Custo + Sandbox', icon: <DollarSign size={11} /> },
           ] as { id: Tab; label: string; icon: any }[]).map(t => (
             <button
@@ -317,6 +395,39 @@ export default function AgentEditorModal({ agentId, accountId, onClose, onSaved 
                 {tags.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
               <small style={{ color: 'var(--text-muted)', fontSize: 11 }}>Se setado, agente só atua em leads que tenham essa tag.</small>
+            </div>
+
+            {/* ─── Welcome message pra leads de planilha ─── */}
+            <div className="form-group" style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border-subtle)' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: 4 }}>
+                <input
+                  type="checkbox"
+                  checked={welcomeForSheets}
+                  onChange={e => setWelcomeForSheets(e.target.checked)}
+                />
+                <span>Enviar primeira msg pra leads vindos da planilha</span>
+              </label>
+              <small style={{ color: 'var(--text-muted)', display: 'block', marginTop: 4, marginLeft: 24, fontSize: 11 }}>
+                Quando lead novo chega via Google Sheets, o bot dispara uma saudação automática
+                via Haiku usando dados do lead (nome, cidade, empresa, tags). Não dispara pra
+                leads do WhatsApp orgânico, site form ou Meta Lead Form. Custo: ~$0.0002 por saudação.
+              </small>
+              {welcomeForSheets && (
+                <div style={{ marginTop: 12, marginLeft: 24 }}>
+                  <label style={{ fontSize: 12 }}>Instruções extras pra saudação (opcional)</label>
+                  <textarea
+                    className="input"
+                    value={welcomeExtraInstructions}
+                    onChange={e => setWelcomeExtraInstructions(e.target.value)}
+                    rows={3}
+                    placeholder="Ex: Mencione a promoção de 10% pra primeira compra. Sempre pergunte sobre o tipo de produto que ele busca."
+                  />
+                  <small style={{ color: 'var(--text-muted)', display: 'block', marginTop: 4, fontSize: 11 }}>
+                    Esse texto vai no system prompt do Haiku junto com a persona. Use pra direcionar
+                    tom específico, oferta, ou perguntas chave.
+                  </small>
+                </div>
+              )}
             </div>
           </>
         )}
@@ -444,18 +555,189 @@ export default function AgentEditorModal({ agentId, accountId, onClose, onSaved 
           <>
             <div className="form-group">
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                <input type="checkbox" checked={respondsToAudio} onChange={e => setRespondsToAudio(e.target.checked)} disabled />
+                <input type="checkbox" checked={respondsToAudio} onChange={e => setRespondsToAudio(e.target.checked)} />
                 <span>Responde áudio</span>
-                <span style={{ fontSize: 10, color: '#FF6B6B', marginLeft: 8 }}>(em breve)</span>
               </label>
-              <small style={{ color: 'var(--text-muted)', fontSize: 11, marginLeft: 24, display: 'block' }}>
-                Por enquanto bot não transcreve áudio (custo extra). Quando lead manda áudio, bot manda a mensagem abaixo.
+              <small style={{ color: 'var(--text-muted)', fontSize: 11, marginLeft: 24, display: 'block', lineHeight: 1.5 }}>
+                Quando ativo: bot transcreve o áudio do lead via Deepgram (~$0.002 por áudio de 30s) e responde como se fosse texto.
+                Se a transcrição falhar (Deepgram offline, áudio corrompido), cai automaticamente na mensagem de recusa abaixo + transfere pra humano.
+                <br />Quando desativo: bot recusa o áudio com a mensagem abaixo e transfere pra humano.
               </small>
             </div>
             <div className="form-group">
-              <label>Resposta automática quando lead manda áudio</label>
+              <label>Mensagem de recusa (quando bot não responde áudio ou transcrição falha)</label>
               <textarea className="input" rows={3} value={audioDeclineMessage} onChange={e => setAudioDeclineMessage(e.target.value)} />
             </div>
+          </>
+        )}
+
+        {/* ─── Tab: Follow-up (bot manda msg se lead parar de responder) ─── */}
+        {tab === 'followup' && (
+          <>
+            {isNew ? (
+              <div style={{ padding: 16, background: 'var(--bg-hover)', borderRadius: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+                Crie o agente primeiro (salve), depois volte aqui pra configurar o follow-up de inatividade.
+              </div>
+            ) : !fuLoaded ? (
+              <div style={{ padding: 16, color: 'var(--text-muted)', fontSize: 12 }}>Carregando...</div>
+            ) : (
+              <>
+                <div className="form-group">
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={fuEnabled} onChange={e => setFuEnabled(e.target.checked)} />
+                    <span>Enviar follow-up se lead parar de responder</span>
+                  </label>
+                  <small style={{ color: 'var(--text-muted)', fontSize: 11, marginLeft: 24, display: 'block', lineHeight: 1.5 }}>
+                    Quando ativo: se um lead que o bot está atendendo ficar sem responder por X minutos, o sistema envia automaticamente
+                    a sequência de mensagens abaixo. Se o lead responder a qualquer momento, a sequência cancela.
+                  </small>
+                </div>
+
+                {fuEnabled && (
+                  <>
+                    <div className="form-group">
+                      <label>Instância WhatsApp pra envio</label>
+                      <select className="select" value={fuInstanceId || ''} onChange={e => setFuInstanceId(e.target.value ? +e.target.value : null)}>
+                        <option value="">— Selecione —</option>
+                        {instances.map(i => <option key={i.id} value={i.id}>{i.instance_name}</option>)}
+                      </select>
+                      <small style={{ color: 'var(--text-muted)', fontSize: 11 }}>Geralmente a mesma instância do bot.</small>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Tempo sem resposta antes do primeiro envio (minutos)</label>
+                      <input type="number" className="input" min={30} value={fuInactivityMinutes}
+                        onChange={e => setFuInactivityMinutes(Math.max(30, parseInt(e.target.value) || 30))} />
+                      <small style={{ color: 'var(--text-muted)', fontSize: 11 }}>Mínimo 30 min. Sugestão: 60 (1h) pra leads quentes, 1440 (1 dia) pra leads frios.</small>
+                    </div>
+
+                    {/* Steps */}
+                    <div className="form-group">
+                      <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span>Steps de follow-up ({fuSteps.length}/5)</span>
+                        {fuSteps.length < 5 && (
+                          <button type="button" className="btn btn-secondary btn-sm" onClick={() => setFuSteps([...fuSteps, { delay_minutes: 1440, message_template: '' }])}>
+                            <Plus size={11} /> Adicionar step
+                          </button>
+                        )}
+                      </label>
+                      <small style={{ color: 'var(--text-muted)', fontSize: 11, display: 'block', marginBottom: 8 }}>
+                        Variáveis disponíveis: <code>{'{{primeiro_nome}}'}</code>, <code>{'{{nome}}'}</code>
+                      </small>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {fuSteps.map((s, i) => (
+                          <div key={i} style={{ background: 'var(--bg-hover)', padding: 10, borderRadius: 8, border: '1px solid var(--border-subtle)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                              <strong style={{ fontSize: 12 }}>Step {i + 1}</strong>
+                              {fuSteps.length > 1 && (
+                                <button type="button" className="btn btn-danger btn-sm" onClick={() => setFuSteps(fuSteps.filter((_, idx) => idx !== i))}>
+                                  <Trash2 size={11} />
+                                </button>
+                              )}
+                            </div>
+                            <textarea
+                              className="input"
+                              rows={2}
+                              placeholder="Olá {{primeiro_nome}}, ainda está aí?"
+                              value={s.message_template}
+                              onChange={e => setFuSteps(fuSteps.map((x, idx) => idx === i ? { ...x, message_template: e.target.value } : x))}
+                              style={{ marginBottom: 6 }}
+                            />
+                            {i < fuSteps.length - 1 && (
+                              <div>
+                                <label style={{ fontSize: 11 }}>Aguardar antes do próximo step (minutos)</label>
+                                <input type="number" className="input" min={30}
+                                  value={s.delay_minutes}
+                                  onChange={e => setFuSteps(fuSteps.map((x, idx) => idx === i ? { ...x, delay_minutes: Math.max(30, parseInt(e.target.value) || 30) } : x))}
+                                />
+                                <small style={{ color: 'var(--text-muted)', fontSize: 10 }}>Sugestão: 120 (2h) entre steps próximos / 1440 (1 dia) entre tentativas distantes.</small>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Stop on reply + on-reply action */}
+                    <div className="form-group">
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                        <input type="checkbox" checked={fuStopOnReply} onChange={e => setFuStopOnReply(e.target.checked)} />
+                        <span>Cancelar sequência se o lead responder</span>
+                      </label>
+                    </div>
+
+                    {fuStopOnReply && (
+                      <>
+                        <div className="form-group">
+                          <label>O que fazer quando o lead responder?</label>
+                          <select className="select" value={fuOnReplyAction} onChange={e => setFuOnReplyAction(e.target.value as any)}>
+                            <option value="pause">Apenas pausar (bot continua atendendo)</option>
+                            <option value="roulette">Reatribuir pela roleta da conta</option>
+                            <option value="assign_user">Reatribuir pra um atendente específico</option>
+                          </select>
+                        </div>
+                        {fuOnReplyAction === 'assign_user' && (
+                          <div className="form-group">
+                            <label>Atendente</label>
+                            <select className="select" value={fuOnReplyUserId || ''} onChange={e => setFuOnReplyUserId(e.target.value ? +e.target.value : null)}>
+                              <option value="">— Selecione —</option>
+                              {users.filter(u => u.is_active === 1).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                            </select>
+                          </div>
+                        )}
+                      </>
+                    )}
+
+                    {/* Botão salvar dedicado da aba */}
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      disabled={fuSaving}
+                      onClick={async () => {
+                        if (!fuInstanceId) { alert('Escolha a instância de envio'); return }
+                        if (fuSteps.some(s => !s.message_template.trim())) { alert('Todos os steps precisam de mensagem'); return }
+                        setFuSaving(true)
+                        try {
+                          await saveAgentInactivityFollowUp(agentId as number, accountId, {
+                            enabled: true,
+                            instance_id: fuInstanceId,
+                            inactivity_minutes: fuInactivityMinutes,
+                            stop_on_reply: fuStopOnReply,
+                            on_reply_action: fuOnReplyAction,
+                            on_reply_user_id: fuOnReplyUserId,
+                            steps: fuSteps,
+                          })
+                          alert('Follow-up salvo!')
+                        } catch (e: any) {
+                          alert('Erro: ' + (e?.message || 'falha ao salvar'))
+                        }
+                        setFuSaving(false)
+                      }}
+                    >
+                      <Save size={14} /> {fuSaving ? 'Salvando...' : 'Salvar follow-up'}
+                    </button>
+                  </>
+                )}
+
+                {!fuEnabled && fuLoaded && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={async () => {
+                      setFuSaving(true)
+                      try {
+                        await saveAgentInactivityFollowUp(agentId as number, accountId, { enabled: false, steps: [] })
+                      } catch {}
+                      setFuSaving(false)
+                    }}
+                    style={{ marginTop: 8 }}
+                    disabled={fuSaving}
+                  >
+                    Desativar follow-up salvo
+                  </button>
+                )}
+              </>
+            )}
           </>
         )}
 
@@ -474,12 +756,27 @@ export default function AgentEditorModal({ agentId, accountId, onClose, onSaved 
               <div className="form-group">
                 <label>Uso este mês</label>
                 <div style={{ padding: 10, background: 'rgba(255,179,0,0.05)', borderRadius: 6 }}>
+                  {/* Haiku (texto) */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 6 }}>
-                    <span>{usage.tokens.toLocaleString()} / {usage.limit.toLocaleString()} tokens</span>
-                    <span style={{ color: '#FFCB45' }}>~US$ {usage.cost.toFixed(4)}</span>
+                    <span>📝 {usage.tokens.toLocaleString()} / {usage.limit.toLocaleString()} tokens (Haiku)</span>
+                    <span style={{ color: 'var(--accent-light)' }}>~US$ {usage.cost.toFixed(4)}</span>
                   </div>
-                  <div style={{ height: 6, background: 'rgba(255,255,255,0.06)', borderRadius: 3 }}>
-                    <div style={{ height: '100%', width: `${Math.min(100, (usage.tokens / usage.limit) * 100)}%`, background: '#FFB300', borderRadius: 3 }} />
+                  <div style={{ height: 6, background: 'var(--bg-hover)', borderRadius: 3 }}>
+                    <div style={{ height: '100%', width: `${Math.min(100, (usage.tokens / usage.limit) * 100)}%`, background: 'var(--accent)', borderRadius: 3 }} />
+                  </div>
+
+                  {/* STT (audio) — só mostra se houve algum áudio */}
+                  {usage.audioCount > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border-subtle)' }}>
+                      <span>🔊 {usage.audioCount} áudios · {usage.sttSec.toFixed(0)}s transcritos (Deepgram)</span>
+                      <span style={{ color: 'var(--accent-light)' }}>~US$ {usage.sttCost.toFixed(4)}</span>
+                    </div>
+                  )}
+
+                  {/* Total */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border-medium)', fontWeight: 700 }}>
+                    <span>Total mês</span>
+                    <span style={{ color: 'var(--accent)' }}>US$ {usage.totalCost.toFixed(4)}</span>
                   </div>
                 </div>
               </div>

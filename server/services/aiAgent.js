@@ -6,7 +6,8 @@ import db from '../db.js'
 import { callHaiku } from './anthropicClient.js'
 import { broadcastSSE } from '../sse.js'
 import { pickFromRoulette as rouletteUtil } from './roulette.js'
-import { notifyAndOpenLead } from './leadHandoff.js'
+import { notifyAndOpenLead, sendViaInstance } from './leadHandoff.js'
+import { transcribeAudio, fetchAudioBuffer } from './deepgramClient.js'
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 
@@ -349,22 +350,78 @@ export async function processInboundMessage(lead, msgContent, mediaType, instanc
       return
     }
 
-    // 4. Audio sem suporte?
-    if (mediaType === 'audio' && !agent.responds_to_audio) {
-      const inst = db.prepare('SELECT * FROM whatsapp_instances WHERE id = ?').get(instanceId)
-      if (inst && inst.status === 'connected') {
-        const declineMsg = agent.audio_decline_message || 'Oi! Por enquanto so leio mensagens de texto. Pode digitar pra mim?'
-        const sendRes = await sendEvolutionText(inst, lead.phone, declineMsg)
-        if (sendRes.ok) {
-          db.prepare(`
-            INSERT INTO messages (lead_id, account_id, direction, content, media_type, sender_name, wa_msg_id, wa_timestamp, instance_id, ai_agent_id)
-            VALUES (?, ?, 'outbound', ?, 'text', 'AI', ?, datetime('now'), ?, ?)
-          `).run(lead.id, lead.account_id, declineMsg, sendRes.wamsgId, instanceId, agent.id)
-          try { broadcastSSE(lead.account_id, 'lead:message', { lead_id: lead.id }) } catch {}
+    // 4. Audio: flag OFF = recusa + handoff; flag ON = transcreve via Deepgram e segue
+    let sttSec = 0
+    let sttCost = 0
+    let sttProvider = null
+
+    if (mediaType === 'audio') {
+      const declineAndHandoff = async (reason) => {
+        const inst = db.prepare('SELECT * FROM whatsapp_instances WHERE id = ?').get(instanceId)
+        if (inst && inst.status === 'connected') {
+          const declineMsg = agent.audio_decline_message || 'Oi! Por enquanto so leio mensagens de texto. Pode digitar pra mim?'
+          const sendRes = await sendEvolutionText(inst, lead.phone, declineMsg)
+          if (sendRes.ok) {
+            db.prepare(`
+              INSERT INTO messages (lead_id, account_id, direction, content, media_type, sender_name, wa_msg_id, wa_timestamp, instance_id, ai_agent_id)
+              VALUES (?, ?, 'outbound', ?, 'text', 'AI', ?, datetime('now'), ?, ?)
+            `).run(lead.id, lead.account_id, declineMsg, sendRes.wamsgId, instanceId, agent.id)
+            try { broadcastSSE(lead.account_id, 'lead:message', { lead_id: lead.id }) } catch {}
+          }
         }
+        executeHandoff(agent, lead, reason, instanceId)
       }
-      executeHandoff(agent, lead, 'audio_received', instanceId)
-      return
+
+      if (!agent.responds_to_audio) {
+        // Flag OFF — comportamento atual preservado
+        await declineAndHandoff('audio_received')
+        return
+      }
+
+      // Flag ON — baixa audio da Evolution + transcreve via Deepgram + injeta texto
+      const inst = db.prepare('SELECT * FROM whatsapp_instances WHERE id = ?').get(instanceId)
+      if (!inst || inst.status !== 'connected') {
+        console.error(`[AI Agent] STT: instancia ${instanceId} indisponivel`)
+        await declineAndHandoff('stt_failed')
+        return
+      }
+
+      // Pega wa_msg_id da ultima msg de audio inbound do lead
+      const lastAudio = db.prepare(`
+        SELECT wa_msg_id FROM messages
+        WHERE lead_id = ? AND direction = 'inbound' AND media_type = 'audio' AND wa_msg_id IS NOT NULL
+        ORDER BY id DESC LIMIT 1
+      `).get(lead.id)
+
+      if (!lastAudio?.wa_msg_id) {
+        console.error(`[AI Agent] STT: wa_msg_id nao encontrado pra lead=${lead.id}`)
+        await declineAndHandoff('stt_failed')
+        return
+      }
+
+      try {
+        const { buffer, mimetype } = await fetchAudioBuffer(inst, lastAudio.wa_msg_id)
+        const result = await transcribeAudio(buffer, { mimetype, language: 'pt-BR' })
+        if (!result.ok) throw new Error(result.reason || 'unknown')
+
+        if (!result.transcript.trim()) {
+          console.warn(`[AI Agent] STT vazio lead=${lead.id} — handoff`)
+          await declineAndHandoff('audio_received')
+          return
+        }
+
+        sttSec = result.durationSec
+        sttCost = result.costUsd
+        sttProvider = 'deepgram'
+        console.log(`[AI Agent] STT lead=${lead.id} dur=${sttSec.toFixed(1)}s cost=$${sttCost.toFixed(4)} txt="${result.transcript.slice(0, 80)}${result.transcript.length > 80 ? '...' : ''}"`)
+
+        // Reassign msgContent (parametro) pro Haiku ver o texto transcrito
+        msgContent = `[Audio transcrito] ${result.transcript}`
+      } catch (e) {
+        console.error(`[AI Agent] STT falhou lead=${lead.id}:`, e.message)
+        await declineAndHandoff('stt_failed')
+        return
+      }
     }
 
     // 5. Checa max_messages
@@ -392,6 +449,10 @@ export async function processInboundMessage(lead, msgContent, mediaType, instanc
     // Garante que a ultima msg eh do lead (user)
     if (history.length === 0 || history[history.length - 1].role !== 'user') {
       history.push({ role: 'user', content: msgContent || '(mensagem vazia)' })
+    } else if (mediaType === 'audio' && sttProvider) {
+      // Audio foi transcrito (sttProvider setado) — substitui o '[Audio]' que veio do
+      // historico DB pela transcricao, senao Haiku ve '[Audio]' e dispara handoff sem motivo.
+      history[history.length - 1] = { role: 'user', content: msgContent }
     }
 
     // 9. Define tools
@@ -423,11 +484,14 @@ export async function processInboundMessage(lead, msgContent, mediaType, instanc
         break
       }
 
-      // Log de uso (cada chamada)
+      // Log de uso (cada chamada). STT loga so na primeira iteracao pra nao duplicar.
+      const logSttSec = i === 0 ? sttSec : 0
+      const logSttCost = i === 0 ? sttCost : 0
+      const logSttProvider = i === 0 ? sttProvider : null
       db.prepare(`
-        INSERT INTO ai_agent_token_log (agent_id, account_id, lead_id, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(agent.id, agent.account_id, lead.id, result.usage.input, result.usage.output, result.usage.cacheRead, result.usage.cacheCreation, result.costUsd)
+        INSERT INTO ai_agent_token_log (agent_id, account_id, lead_id, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd, stt_seconds, stt_cost_usd, stt_provider)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(agent.id, agent.account_id, lead.id, result.usage.input, result.usage.output, result.usage.cacheRead, result.usage.cacheCreation, result.costUsd, logSttSec, logSttCost, logSttProvider)
       const iterTokens = result.usage.input + result.usage.output + result.usage.cacheRead + result.usage.cacheCreation
       totalTokens += iterTokens
       totalCost += result.costUsd
@@ -486,5 +550,141 @@ export async function processInboundMessage(lead, msgContent, mediaType, instanc
     console.log(`[AI Agent] Processed lead=${lead.id} agent=${agent.id} iters=${iterationsRun} tokens=${totalTokens} cost_usd=${totalCost.toFixed(6)} tools=${totalToolsExecuted} handoff=${handoffTriggered} text_len=${finalText.length}`)
   } catch (err) {
     console.error('[AI Agent] processInboundMessage erro:', err.message)
+  }
+}
+
+// ─── sendBotWelcomeForSheetsLead ──────────────────────────────────────
+// Saudacao automatica gerada pelo Haiku quando lead novo cair via planilha (source='sheets').
+// Opt-in por agente (ai_agents.send_welcome_for_sheets_leads). Idempotente via leads.ai_first_msg_sent_at.
+// Fire-and-forget: qualquer erro so loga, nao quebra o webhook que ja respondeu 200.
+
+export async function sendBotWelcomeForSheetsLead(leadId, instanceId) {
+  try {
+    const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(leadId)
+    if (!lead) return
+
+    // (Sem filtro de source — funcao so eh chamada do webhook /sheets/:slug que ja garante
+    // origem. Source string varia muito por integracao: 'sheets', 'google_sheets', 'LP_*', etc.)
+
+    // FILTRO 2: idempotencia — so 1x por lead (protege Apps Script retry)
+    if (lead.ai_first_msg_sent_at) {
+      console.log(`[Bot Welcome] SKIP lead=${leadId} — ja enviado em ${lead.ai_first_msg_sent_at}`)
+      return
+    }
+
+    // FILTRO 3: precisa phone
+    if (!lead.phone) {
+      console.log(`[Bot Welcome] SKIP lead=${leadId} — sem phone`)
+      return
+    }
+
+    // FILTRO 4: agente elegivel (reusa toda logica de findAgentForLead)
+    const agent = findAgentForLead(lead, instanceId)
+    if (!agent) {
+      console.log(`[Bot Welcome] SKIP lead=${leadId} — sem agente elegivel`)
+      return
+    }
+
+    // FILTRO 5: agente tem opt-in pra welcome?
+    if (!agent.send_welcome_for_sheets_leads) {
+      console.log(`[Bot Welcome] SKIP lead=${leadId} agent=${agent.id} — flag off`)
+      return
+    }
+
+    // FILTRO 6: limite de tokens do agente?
+    resetMonthlyTokensIfNeeded(agent)
+    if (agent.monthly_token_limit && agent.tokens_used_this_month >= agent.monthly_token_limit) {
+      console.log(`[Bot Welcome] SKIP lead=${leadId} agent=${agent.id} — limite mensal atingido`)
+      return
+    }
+
+    // Resolve instancia: prefere lead.instance_id, fallback pro arg
+    const targetInstId = lead.instance_id || instanceId
+    if (!targetInstId) {
+      console.log(`[Bot Welcome] SKIP lead=${leadId} — sem instancia`)
+      return
+    }
+    const inst = db.prepare("SELECT * FROM whatsapp_instances WHERE id = ? AND status = 'connected'").get(targetInstId)
+    if (!inst) {
+      console.warn(`[Bot Welcome] inst offline/inexistente lead=${leadId} inst=${targetInstId}`)
+      return
+    }
+
+    // Tags do lead pra contextualizar
+    const tags = db.prepare(`
+      SELECT t.name FROM tags t
+      JOIN lead_tags lt ON lt.tag_id = t.id
+      WHERE lt.lead_id = ?
+    `).all(leadId).map(r => r.name)
+
+    // System prompt customizado pra geracao de saudacao (NAO usa buildSystemPrompt normal porque
+    // aquele assume conversa em andamento; este aqui e' o primeiro toque).
+    const systemPrompt = `Voce e ${agent.name}${agent.persona ? `, ${agent.persona}` : ', assistente'} atendendo leads via WhatsApp.
+
+CONTEXTO DESTE TURNO: um lead acabou de chegar via planilha (Google Sheets). Ele AINDA NAO mandou mensagem nenhuma. Sua tarefa e fazer o PRIMEIRO contato.
+
+Dados do lead:
+- Nome: ${lead.name || '(sem nome)'}
+- Telefone: ${lead.phone}
+- Cidade: ${lead.city || 'desconhecida'}
+- Empresa: ${lead.empresa || 'desconhecida'}
+- Tags: ${tags.join(', ') || 'nenhuma'}
+${agent.welcome_extra_instructions ? `\nINSTRUCOES EXTRAS DO GERENTE:\n${agent.welcome_extra_instructions}\n` : ''}
+REGRAS:
+1. Cumprimente o lead pelo PRIMEIRO nome (se tiver nome completo, use so o primeiro)
+2. Apresente-se brevemente (voce e o atendimento da empresa)
+3. Faca UMA pergunta aberta pra iniciar a conversa
+4. Mantenha tom natural da sua persona — nao pareca robo
+5. Texto curto: 2-4 linhas no maximo
+6. Portugues brasileiro coloquial
+7. SEM markdown, SEM listas, SEM emojis (excecao: 👋 opcional no inicio)
+8. Nao invente informacoes que nao tem`
+
+    const result = await callHaiku({
+      systemPrompt,
+      messages: [{ role: 'user', content: 'Gere AGORA a saudacao pra esse lead. Apenas o texto da mensagem, sem aspas, sem cabecalhos.' }],
+      maxTokens: 250,
+    })
+
+    const msgText = (result.content || '').trim()
+    if (!msgText) {
+      console.warn(`[Bot Welcome] Haiku retornou vazio lead=${leadId}`)
+      return
+    }
+
+    // Envia via Evolution
+    const sendResult = await sendViaInstance(inst, lead.phone, msgText)
+    if (!sendResult.ok) {
+      console.warn(`[Bot Welcome] envio falhou lead=${leadId}: ${sendResult.reason || 'unknown'}`)
+      return
+    }
+
+    // Salva msg no historico (sender_name = agente, ai_agent_id = agente)
+    db.prepare(`
+      INSERT INTO messages (lead_id, account_id, direction, content, media_type, sender_name, wa_msg_id, instance_id, ai_agent_id)
+      VALUES (?, ?, 'outbound', ?, 'text', ?, ?, ?, ?)
+    `).run(lead.id, lead.account_id, msgText, agent.name, sendResult.wamsgId, inst.id, agent.id)
+
+    // Atualiza last_instance_id + marca idempotencia
+    db.prepare("UPDATE leads SET ai_first_msg_sent_at = datetime('now'), last_instance_id = ?, updated_at = datetime('now') WHERE id = ?")
+      .run(inst.id, leadId)
+
+    // Loga custo (mesma tabela do fluxo reativo, source='welcome_sheets' pra filtrar dashboard)
+    db.prepare(`
+      INSERT INTO ai_agent_token_log (agent_id, lead_id, account_id, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd, source)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'welcome_sheets')
+    `).run(
+      agent.id, leadId, lead.account_id,
+      result.usage.input, result.usage.output, result.usage.cacheRead, result.usage.cacheCreation,
+      result.costUsd
+    )
+
+    // Atualiza contador mensal do agente
+    db.prepare("UPDATE ai_agents SET tokens_used_this_month = tokens_used_this_month + ? WHERE id = ?")
+      .run(result.usage.total, agent.id)
+
+    console.log(`[Bot Welcome] OK lead=${leadId} agent=${agent.id} cost=$${result.costUsd.toFixed(6)} txt="${msgText.slice(0, 70).replace(/\n/g, ' ')}..."`)
+  } catch (err) {
+    console.error(`[Bot Welcome] exception lead=${leadId}:`, err.message)
   }
 }

@@ -20,7 +20,7 @@ export function pctChange(c: number, p: number) { if (p === 0) return c > 0 ? 10
 // Types
 // =============================================
 
-export interface Account { id: number; name: string; slug: string; logo_url: string | null; is_active: number; created_at: string; lead_count?: number; user_count?: number; cnpj?: string | null; razao_social?: string | null; segmento?: string | null; website?: string | null; instagram?: string | null; whatsapp_comercial?: string | null; valor_mensal?: number | null; contrato_inicio?: string | null; cidade?: string | null; estado?: string | null; observacoes?: string | null; trabalha_anuncio?: number; investimento_anuncios?: number | null; meta_pixel_id?: string | null; meta_capi_token?: string | null; meta_capi_test_event_code?: string | null; meta_capi_enabled?: number; ai_agents_enabled?: number }
+export interface Account { id: number; name: string; slug: string; logo_url: string | null; is_active: number; created_at: string; lead_count?: number; user_count?: number; cnpj?: string | null; razao_social?: string | null; segmento?: string | null; website?: string | null; instagram?: string | null; whatsapp_comercial?: string | null; valor_mensal?: number | null; contrato_inicio?: string | null; cidade?: string | null; estado?: string | null; observacoes?: string | null; trabalha_anuncio?: number; investimento_anuncios?: number | null; meta_pixel_id?: string | null; meta_capi_token?: string | null; meta_capi_test_event_code?: string | null; meta_capi_enabled?: number; ai_agents_enabled?: number; attendant_analytics_enabled?: number }
 export interface User { id: number; account_id: number | null; account_name?: string | null; name: string; email: string; role: string; is_active: number; is_bot?: number; primary_instance_id?: number | null; notification_instance_id?: number | null; can_manage_proposals?: number; can_manage_contracts?: number; can_grab_leads?: number; created_at: string }
 export interface FunnelStage { id: number; funnel_id: number; name: string; position: number; color: string; is_conversion: number; is_terminal: number; auto_keywords: string | null; meta_event_name?: string | null }
 export interface Funnel { id: number; account_id: number; name: string; is_default: number; is_active: number; first_msg_template?: string | null; stages: FunnelStage[] }
@@ -31,6 +31,7 @@ export interface Lead {
   source: string | null; source_detail: string | null; notes: string | null
   wa_remote_jid: string | null; instance_id: number | null; last_instance_id?: number | null; profile_pic_url: string | null; is_active: number; created_at: string; updated_at: string
   is_archived?: number; archived_at?: string | null; has_new_after_archive?: number
+  unread_count?: number  // qtd de msgs inbound nao lidas — zerado ao abrir o chat
   empresa?: string | null; cpf_cnpj?: string | null; instagram?: string | null; trabalha_anuncio?: number; investimento_anuncios?: number | null
   opted_in_at?: string | null; opted_out_at?: string | null; last_broadcast_at?: string | null
   state?: string | null; zip?: string | null; birthdate?: string | null; gender?: string | null
@@ -40,8 +41,10 @@ export interface Lead {
   stage_name?: string; stage_color?: string; attendant_name?: string; instance_name?: string
   last_message?: string; message_count?: number; tags?: Tag[]
 }
-export interface Message { id: number; lead_id: number; direction: 'inbound' | 'outbound'; content: string | null; media_type: string; media_url: string | null; sender_name: string | null; wa_msg_id: string | null; instance_id?: number | null; created_at: string }
+export type MessageDeliveryStatus = 'sent' | 'delivered' | 'read'
+export interface Message { id: number; lead_id: number; direction: 'inbound' | 'outbound'; content: string | null; media_type: string; media_url: string | null; sender_name: string | null; wa_msg_id: string | null; instance_id?: number | null; created_at: string; delivery_status?: MessageDeliveryStatus; delivered_at?: string | null; read_at?: string | null }
 export const fetchMessageMedia = (leadId: number, msgId: number) => apiFetch<{ dataUrl: string; mime: string; type: string }>(`/api/messages/${leadId}/media/${msgId}`)
+export const markLeadAsRead = (leadId: number) => apiFetch<{ ok: boolean; lead_id: number; unread_count: number }>(`/api/leads/${leadId}/read`, { method: 'PATCH' })
 export interface StageHistoryEntry { id: number; lead_id: number; from_stage_name: string | null; to_stage_name: string; trigger_type: string; user_name: string | null; created_at: string }
 export interface LeadNote { id: number; lead_id: number; user_id: number; content: string; user_name: string; created_at: string }
 export interface PipelineMetric { stage_id: number; name: string; color: string; position: number; is_conversion: number; lead_count: number; avg_hours_in_stage: number | null; pct_of_total: number; conversion_from_prev: number | null }
@@ -224,6 +227,83 @@ export const fetchDashboardStats = (accountId: number, days = 7) => apiFetch<Das
 export const fetchAgentStats = (accountId: number, days = 7) => apiFetch<{ agents: AgentStat[] }>(`/api/dashboard/agents?account_id=${accountId}&days=${days}`).then(d => d.agents)
 export const fetchGlobalDashboard = () => apiFetch<{ accounts: any[]; totalLeads: number; leadsToday: number }>('/api/dashboard/global')
 
+export interface AiUsageData {
+  period: string
+  total: {
+    total_tokens: number
+    haiku_cost_usd: number
+    stt_seconds: number
+    stt_cost_usd: number
+    audio_count: number
+    message_count: number
+    total_cost_usd: number
+  }
+  byAccount: Array<{ id: number; name: string; total_tokens: number; haiku_cost_usd: number; stt_seconds: number; stt_cost_usd: number; audio_count: number; message_count: number; total_cost_usd: number }>
+  byAgent: Array<{ id: number; agent_name: string; account_name: string; total_tokens: number; haiku_cost_usd: number; stt_seconds: number; stt_cost_usd: number; audio_count: number; message_count: number; total_cost_usd: number }>
+}
+export const fetchAiUsageGlobal = (days?: number) => apiFetch<AiUsageData>(`/api/dashboard/ai-usage${days ? `?days=${days}` : ''}`)
+
+// ─── Dashboard de Análise de Atendimentos ───
+export interface AttendantMetrics {
+  user_id: number; user_name: string; role: 'atendente' | 'gerente'
+  leads_assigned: number; leads_responded: number; leads_converted: number
+  ttfr_avg_seconds: number | null; tmr_avg_seconds: number | null
+  leads_under_5min: number; leads_under_30min: number; leads_under_1h: number
+  open_conversations: number; abandoned_leads: number
+  ai_score_avg: number | null; ai_errors_total: number | null; lost_sales_detected: number
+}
+export interface AttendantDailyMetric {
+  date: string; leads_assigned: number; leads_responded: number; leads_converted: number
+  ttfr_avg_seconds: number | null; tmr_avg_seconds: number | null
+  leads_under_5min: number; leads_under_30min: number; leads_under_1h: number
+  open_conversations: number; abandoned_leads: number
+}
+export interface ConversationInsight {
+  id: number; lead_id: number; lead_name: string; lead_phone?: string
+  summary: string; lead_intent: 'hot' | 'warm' | 'cold' | 'not_qualified'
+  lost_sale_signals: string | null
+  attendant_errors: string[]; attendant_score: number | null
+  score_reasoning: string; suggested_next_step: string
+  last_message_quality: 'excellent' | 'good' | 'mediocre' | 'poor'
+  attendant_user_id: number | null; attendant_name: string | null
+  analyzed_at: string
+}
+export interface AttendantDetail {
+  user: { id: number; name: string; role: string }
+  days: number
+  daily: AttendantDailyMetric[]
+  recent_insights: ConversationInsight[]
+  top_errors: Array<{ error: string; count: number }>
+}
+export const fetchAttendants = (accountId: number, days = 30) =>
+  apiFetch<{ days: number; attendants: AttendantMetrics[] }>(`/api/dashboard/attendants?account_id=${accountId}&days=${days}`)
+export const fetchAttendantDetail = (userId: number, accountId: number, days = 30) =>
+  apiFetch<AttendantDetail>(`/api/dashboard/attendants/${userId}?account_id=${accountId}&days=${days}`)
+export const fetchConversationInsights = (accountId: number, opts: { days?: number; filter?: string; attendant_id?: number; limit?: number } = {}) => {
+  const q = new URLSearchParams({ account_id: String(accountId) })
+  if (opts.days) q.set('days', String(opts.days))
+  if (opts.filter) q.set('filter', opts.filter)
+  if (opts.attendant_id) q.set('attendant_id', String(opts.attendant_id))
+  if (opts.limit) q.set('limit', String(opts.limit))
+  return apiFetch<{ insights: ConversationInsight[] }>(`/api/dashboard/conversation-insights?${q.toString()}`)
+}
+export const fetchLeadInsight = (leadId: number, accountId: number) =>
+  apiFetch<{ insight: ConversationInsight | null }>(`/api/dashboard/conversation-insights/lead/${leadId}?account_id=${accountId}`)
+// Custom fetch: 429 nao lanca exception, retorna body com retry_after_min pra UI tratar.
+export const triggerAnalysisNow = async (accountId: number, maxLeads: number = 50): Promise<{ ok: boolean; message?: string; error?: string; retry_after_min?: number; max_leads?: number }> => {
+  const res = await fetch(`/api/dashboard/analyze-now?account_id=${accountId}&max=${maxLeads}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+  })
+  if (res.status === 401) { localStorage.removeItem('sheraos_crm_token'); window.location.href = `${BASE}/login`; throw new Error('Unauthorized') }
+  const body = await res.json().catch(() => ({}))
+  if (res.status === 429) return { ok: false, error: body.error, retry_after_min: body.retry_after_min }
+  if (!res.ok) return { ok: false, error: body.error || `Erro ${res.status}` }
+  return body
+}
+export const updateAnalysisLimit = (accountId: number, limit: number) =>
+  apiFetch<{ ok: boolean; analysis_token_limit: number }>(`/api/dashboard/analysis-limit?account_id=${accountId}`, { method: 'PUT', body: JSON.stringify({ limit }) })
+
 // Integrations
 export interface EvolutionConfig { api_url: string | null; api_key: string | null; configured?: boolean }
 export const fetchEvolutionConfig = (accountId: number) => apiFetch<EvolutionConfig>(`/api/integrations/evolution-config?account_id=${accountId}`)
@@ -314,7 +394,12 @@ export const fetchDefaultFormInstance = (accountId: number) =>
 export const setDefaultFormInstance = (accountId: number, instanceId: number | null) =>
   apiFetch(`/api/tag-mapping/default-form-instance?account_id=${accountId}`, { method: 'PUT', body: JSON.stringify({ instance_id: instanceId }) })
 export const fetchSheetsStatus = (accountId: number) =>
-  apiFetch<{ last_lead_at: string | null }>(`/api/integrations/sheets-status?account_id=${accountId}`)
+  apiFetch<{ last_lead_at: string | null; default_tag_id: number | null }>(`/api/integrations/sheets-status?account_id=${accountId}`)
+export const setSheetsDefaultTag = (accountId: number, tagId: number | null) =>
+  apiFetch<{ ok: boolean; default_tag_id: number | null }>(
+    `/api/integrations/sheets-default-tag?account_id=${accountId}`,
+    { method: 'PUT', body: JSON.stringify({ tag_id: tagId }) }
+  )
 
 // Admin: check all WhatsApp instances across all accounts (super_admin only)
 export interface InstanceCheckResult {
@@ -390,6 +475,7 @@ export interface FollowUp {
   on_reply_user_id?: number | null;
   on_reply_move_to_stage_id?: number | null;
   on_reply_add_tag_id?: number | null;
+  agent_id?: number | null;  // se setado, follow-up agent-based (lead atendido pelo bot) em vez de stage-based
   steps?: FollowUpStep[]; steps_count?: number; active_leads?: number;
   created_by: number | null; created_by_name?: string | null;
   created_at: string; updated_at: string;
@@ -478,6 +564,8 @@ export interface Agent {
   required_fields_arr?: string[]
   responds_to_audio: number
   audio_decline_message: string
+  send_welcome_for_sheets_leads: number
+  welcome_extra_instructions: string | null
   max_messages_before_handoff: number
   handoff_keywords: string
   activation_mode: AgentActivationMode
@@ -505,6 +593,8 @@ export interface AgentInput {
   required_fields?: string[]
   responds_to_audio?: boolean
   audio_decline_message?: string
+  send_welcome_for_sheets_leads?: boolean
+  welcome_extra_instructions?: string | null
   max_messages_before_handoff?: number
   handoff_keywords?: string
   activation_mode?: AgentActivationMode
@@ -547,6 +637,22 @@ export const deleteAgent = (id: number, accountId: number) =>
 
 export const fetchAgentUsage = (id: number, accountId: number) =>
   apiFetch<AgentUsage>(`/api/agents/${id}/usage?account_id=${accountId}`)
+
+// Follow-up de inatividade vinculado ao agente (1:1)
+export interface AgentInactivityFollowUpInput {
+  enabled: boolean
+  instance_id?: number | null
+  inactivity_minutes?: number
+  variation_delay_seconds?: number
+  stop_on_reply?: boolean
+  on_reply_action?: 'pause' | 'roulette' | 'assign_user'
+  on_reply_user_id?: number | null
+  steps: Array<{ delay_minutes: number; message_template: string }>
+}
+export const fetchAgentInactivityFollowUp = (agentId: number, accountId: number) =>
+  apiFetch<{ follow_up: FollowUp | null }>(`/api/follow-ups/by-agent/${agentId}?account_id=${accountId}`).then(d => d.follow_up)
+export const saveAgentInactivityFollowUp = (agentId: number, accountId: number, data: AgentInactivityFollowUpInput) =>
+  apiFetch<{ ok: boolean; follow_up: FollowUp | null }>(`/api/agents/${agentId}/inactivity-followup?account_id=${accountId}`, { method: 'PUT', body: JSON.stringify(data) })
 
 export const testAgent = (id: number, accountId: number, message: string, history: Array<{ role: 'user' | 'assistant'; content: string }> = []) =>
   apiFetch<{ response: string; usage: { input: number; output: number; cacheRead: number; cacheCreation: number; total: number }; cost_usd: number; stop_reason: string }>(`/api/agents/${id}/test?account_id=${accountId}`, { method: 'POST', body: JSON.stringify({ message, history }) })
@@ -620,3 +726,181 @@ export const createLaunch = (accountId: number, data: { title: string; identific
 export const updateLaunch = (id: number, accountId: number, data: Partial<Launch>) => apiFetch(`/api/launches/${id}?account_id=${accountId}`, { method: 'PUT', body: JSON.stringify(data) })
 export const updateLaunchMessages = (id: number, accountId: number, messages: Partial<LaunchMessage>[]) => apiFetch(`/api/launches/${id}/messages?account_id=${accountId}`, { method: 'PUT', body: JSON.stringify({ messages }) })
 export const deleteLaunch = (id: number, accountId: number) => apiFetch(`/api/launches/${id}?account_id=${accountId}`, { method: 'DELETE' })
+
+// =============================================
+// Conversation Intelligence V2
+// =============================================
+
+export interface OverviewV2 {
+  cards: {
+    conversas_analisadas: number
+    score_medio: number | null
+    sla_humano_pct: number | null
+    leads_quentes_em_risco: number
+    vendas_perdidas: number
+    receita_em_risco: number
+    erros_criticos_count: number
+    proximas_acoes_pendentes: number
+    bot_taxa_resolucao: number | null
+    follow_ups_atrasados: number
+  }
+  days: number
+}
+
+export interface RankingRowV2 {
+  user_id: number
+  user_name: string
+  role: 'atendente' | 'gerente'
+  leads_assigned: number
+  leads_responded: number
+  leads_converted: number
+  ttfr_human: number | null
+  tmr_human: number | null
+  under5: number
+  idle24: number
+  score_v2: number | null
+  lost_sales: number
+  quentes: number
+  sla_5min_pct: number | null
+  conversion_pct: number | null
+  principal_erro: string | null
+  principal_forte: string | null
+}
+
+export interface CriticalConversation {
+  lead_id: number
+  lead_name: string
+  lead_phone: string
+  attendant_name: string | null
+  attendant_user_id: number | null
+  temperatura_lead: 'frio' | 'morno' | 'quente' | null
+  conversation_score: number | null
+  summary: string
+  prioridade_revisao: 'baixa' | 'media' | 'alta' | 'critica' | null
+  mensagem_retomada: string | null
+  suggested_next_step: string | null
+  chance_conversao: number | null
+  lost_sale_signals: string | null
+  erro_critico: string | null
+}
+
+export interface ConversationErrorDetail {
+  id: number
+  actor_type: 'bot' | 'atendente' | 'gerente' | 'processo'
+  code: string | null
+  category: string | null
+  gravity: 'baixa' | 'media' | 'alta' | 'critica'
+  description: string
+  impact: string | null
+  how_to_fix: string | null
+  evidence_message_ids: number[]
+}
+
+export interface ConversationStrengthDetail {
+  id: number
+  actor_type: 'bot' | 'atendente' | 'gerente' | 'processo'
+  code: string | null
+  description: string
+  impact: string | null
+  evidence_message_ids: number[]
+}
+
+export interface ParticipantAnalysis {
+  actor_type: 'bot' | 'atendente' | 'gerente'
+  actor_user_id: number | null
+  actor_ai_agent_id: number | null
+  actor_name: string
+  score: number | null
+  acertos_summary: string | null
+  erros_summary: string | null
+  recomendacao: string | null
+}
+
+export interface ConversationDetailV2 {
+  insight: any  // shape detalhado preserva V1+V2
+  errors: ConversationErrorDetail[]
+  strengths: ConversationStrengthDetail[]
+  participants: ParticipantAnalysis[]
+}
+
+export interface AnalystAlert {
+  id: number
+  account_id: number
+  lead_id: number | null
+  lead_name: string | null
+  lead_phone: string | null
+  insight_id: number | null
+  type: 'lead_quente_abandonado' | 'proposta_sem_retorno' | 'erro_critico' | 'bot_falhou'
+  severity: 'media' | 'alta' | 'critica'
+  title: string
+  description: string | null
+  suggested_action: string | null
+  assigned_to_user_id: number | null
+  assigned_to_name: string | null
+  status: 'open' | 'resolved' | 'dismissed'
+  created_at: string
+  resolved_at: string | null
+}
+
+export interface CoachingWeekly {
+  id: number
+  account_id: number
+  user_id: number
+  week_start: string
+  summary: string
+  strengths: string[]
+  improvements: string[]
+  conversations_to_review: number[]
+  training_recommended: string
+  suggested_script: string
+  goal_next_week: string
+  ai_score_avg_week: number | null
+  cost_usd: number
+  created_at: string
+}
+
+export interface MarketIntel {
+  objecoes_top: Array<{ label: string; count: number }>
+  motivos_perda_top: Array<{ label: string; count: number }>
+  riscos_top: Array<{ label: string; count: number }>
+  days: number
+  sample_size: number
+}
+
+export interface AnalyzeEstimate {
+  leads_pending_total: number
+  leads_to_analyze: number
+  estimated_cost_usd: number
+  estimated_cost_all_usd: number
+  month_spent_usd: number
+  month_limit_usd: number
+  account_has_flag: boolean
+  is_super_admin_bypass: boolean
+}
+
+export const fetchOverviewV2 = (accountId: number, days: number = 30) =>
+  apiFetch<OverviewV2>(`/api/dashboard/overview-v2?account_id=${accountId}&days=${days}`)
+export const fetchRankingV2 = (accountId: number, days: number = 30) =>
+  apiFetch<{ days: number; attendants: RankingRowV2[] }>(`/api/dashboard/ranking-v2?account_id=${accountId}&days=${days}`)
+export const fetchCriticalConversations = (accountId: number, days: number = 30, limit: number = 50) =>
+  apiFetch<{ conversations: CriticalConversation[] }>(`/api/dashboard/critical-conversations?account_id=${accountId}&days=${days}&limit=${limit}`).then(d => d.conversations)
+export const fetchConversationDetailV2 = (leadId: number, accountId: number) =>
+  apiFetch<ConversationDetailV2>(`/api/dashboard/conversation-detail/${leadId}?account_id=${accountId}`)
+export const fetchAlerts = (accountId: number, status: 'open' | 'resolved' | 'dismissed' = 'open') =>
+  apiFetch<{ alerts: AnalystAlert[] }>(`/api/dashboard/alerts?account_id=${accountId}&status=${status}`).then(d => d.alerts)
+export const resolveAlert = (id: number, accountId: number, status: 'resolved' | 'dismissed' = 'resolved') =>
+  apiFetch(`/api/dashboard/alerts/${id}/resolve?account_id=${accountId}`, { method: 'POST', body: JSON.stringify({ status }) })
+export const assignAlert = (id: number, accountId: number, userId: number | null) =>
+  apiFetch(`/api/dashboard/alerts/${id}/assign?account_id=${accountId}`, { method: 'POST', body: JSON.stringify({ user_id: userId }) })
+export const fetchCoaching = (userId: number, accountId: number, weeks: number = 4) =>
+  apiFetch<{ weekly: CoachingWeekly[] }>(`/api/dashboard/coaching/${userId}?account_id=${accountId}&weeks=${weeks}`).then(d => d.weekly)
+export const generateCoachingNow = (userId: number, accountId: number) =>
+  apiFetch<{ ok: boolean; week_start: string; message: string }>(`/api/dashboard/coaching/${userId}/generate?account_id=${accountId}`, { method: 'POST' })
+export const fetchMarketIntel = (accountId: number, days: number = 30) =>
+  apiFetch<MarketIntel>(`/api/dashboard/market-intelligence?account_id=${accountId}&days=${days}`)
+export const fetchAnalyzeEstimate = (accountId: number, days: number = 7, maxLeads: number = 50) =>
+  apiFetch<AnalyzeEstimate>(`/api/dashboard/analyze-estimate?account_id=${accountId}&days=${days}&max=${maxLeads}`)
+export const markProposalSent = (leadId: number, accountId: number) =>
+  apiFetch(`/api/dashboard/leads/${leadId}/mark-proposal-sent?account_id=${accountId}`, { method: 'POST' })
+export const updateLeadValue = (leadId: number, accountId: number, value: number) =>
+  apiFetch(`/api/dashboard/leads/${leadId}/value?account_id=${accountId}`, { method: 'PUT', body: JSON.stringify({ value_estimated: value }) })

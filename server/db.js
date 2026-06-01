@@ -350,6 +350,8 @@ addColumnIfNotExists('leads', 'instance_id', 'INTEGER REFERENCES whatsapp_instan
 // accounts: Evolution API credentials (shared across all instances)
 addColumnIfNotExists('accounts', 'evolution_api_url', 'TEXT')
 addColumnIfNotExists('accounts', 'evolution_api_key', 'TEXT')
+// Tag default pra todo lead novo vindo da planilha (webhook /sheets/:slug). NULL = sem tag automatica.
+addColumnIfNotExists('accounts', 'sheets_default_tag_id', 'INTEGER REFERENCES tags(id) ON DELETE SET NULL')
 
 // Defaults centralizados da Evolution API (ja preenche em todas contas)
 export const DEFAULT_EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://127.0.0.1:8080'
@@ -482,6 +484,280 @@ addColumnIfNotExists('follow_up_steps', 'variations', 'TEXT')
 // Follow-ups v3.1: on-reply move stage + add tag
 addColumnIfNotExists('follow_ups', 'on_reply_move_to_stage_id', 'INTEGER REFERENCES funnel_stages(id) ON DELETE SET NULL')
 addColumnIfNotExists('follow_ups', 'on_reply_add_tag_id', 'INTEGER REFERENCES tags(id) ON DELETE SET NULL')
+// Follow-up vinculado ao agente IA (lead atendido pelo bot parou de responder).
+// NULL pra follow-ups stage-based existentes (intocados).
+addColumnIfNotExists('follow_ups', 'agent_id', 'INTEGER REFERENCES ai_agents(id) ON DELETE CASCADE')
+// Sem WHERE clause: sqlite3 CLI do CentOS 7 nao parseia partial index, quebra inspecao manual.
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_follow_ups_agent_id ON follow_ups(agent_id)') } catch (e) { console.warn('[db] idx_follow_ups_agent_id:', e.message) }
+
+// ─── Dashboard de Análise de Atendimentos ───
+// 1. Insights extraídos por Haiku por conversa (lead) — 1 linha por lead
+db.exec(`
+  CREATE TABLE IF NOT EXISTS conversation_insights (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    lead_id INTEGER NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    analyzed_at TEXT NOT NULL DEFAULT (datetime('now')),
+    last_message_id INTEGER,
+    summary TEXT,
+    lead_intent TEXT,
+    lost_sale_signals TEXT,
+    attendant_errors TEXT,
+    attendant_score INTEGER,
+    score_reasoning TEXT,
+    suggested_next_step TEXT,
+    last_message_quality TEXT,
+    attendant_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    tokens_used INTEGER DEFAULT 0,
+    cost_usd REAL DEFAULT 0,
+    UNIQUE (lead_id)
+  )
+`)
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_insights_account_attendant ON conversation_insights(account_id, attendant_user_id, analyzed_at)') } catch (e) { console.warn('[db] idx_insights:', e.message) }
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_insights_score ON conversation_insights(account_id, attendant_score)') } catch (e) {}
+
+// 2. Métricas operacionais pré-calculadas por dia (agregador SQL noturno)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS attendant_metrics_daily (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    date TEXT NOT NULL,
+    leads_assigned INTEGER DEFAULT 0,
+    leads_responded INTEGER DEFAULT 0,
+    leads_converted INTEGER DEFAULT 0,
+    ttfr_avg_seconds REAL,
+    tmr_avg_seconds REAL,
+    leads_under_5min INTEGER DEFAULT 0,
+    leads_under_30min INTEGER DEFAULT 0,
+    leads_under_1h INTEGER DEFAULT 0,
+    open_conversations INTEGER DEFAULT 0,
+    abandoned_leads INTEGER DEFAULT 0,
+    computed_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (account_id, user_id, date)
+  )
+`)
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_metrics_daily_lookup ON attendant_metrics_daily(account_id, date, user_id)') } catch (e) {}
+
+// Rate limit do "Analisar agora" + limite mensal de tokens p/ análise + timestamp do último cron noturno
+addColumnIfNotExists('accounts', 'last_analysis_at', 'TEXT')
+addColumnIfNotExists('accounts', 'last_nightly_at', 'TEXT')
+addColumnIfNotExists('accounts', 'analysis_token_limit', 'INTEGER NOT NULL DEFAULT 200000')
+// Feature flag — gerente da conta só vê /atendimentos se super_admin ativou.
+// Cron noturno + analyzeAllAccounts SO processam contas com flag = 1 (economiza custo).
+addColumnIfNotExists('accounts', 'attendant_analytics_enabled', 'INTEGER NOT NULL DEFAULT 0')
+// Timestamp do último coaching weekly run (segunda 3h05 UTC). Idempotencia weekly.
+addColumnIfNotExists('accounts', 'last_weekly_coaching_at', 'TEXT')
+
+// ─── Conversation Intelligence V2 ───
+// Tudo aditivo: V1 continua funcionando, V2 estende quando insights_version = 2.
+
+// Autoria humana de mensagens (V1 só sabia "humano vs bot" via ai_agent_id).
+// Backfill best-effort via script de migração; novas msgs preenchem direto no send-flow.
+addColumnIfNotExists('messages', 'sent_by_user_id', 'INTEGER REFERENCES users(id) ON DELETE SET NULL')
+addColumnIfNotExists('messages', 'follow_up_id', 'INTEGER REFERENCES follow_ups(id) ON DELETE SET NULL')
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_messages_sent_by ON messages(sent_by_user_id)') } catch (e) {}
+
+// Receita em risco + tempo até proposta/qualificação por lead.
+addColumnIfNotExists('leads', 'value_estimated', 'REAL')
+addColumnIfNotExists('leads', 'proposal_sent_at', 'TEXT')
+addColumnIfNotExists('leads', 'qualified_at', 'TEXT')
+
+// Flag em funnel_stages: marca stages "qualificado+" (gerente configura).
+addColumnIfNotExists('funnel_stages', 'is_qualified', 'INTEGER NOT NULL DEFAULT 0')
+
+// Extender conversation_insights (V1 colunas permanecem; V2 adiciona em cima).
+addColumnIfNotExists('conversation_insights', 'insights_version', 'INTEGER NOT NULL DEFAULT 1')
+addColumnIfNotExists('conversation_insights', 'conversation_score', 'INTEGER')         // 0-100
+addColumnIfNotExists('conversation_insights', 'score_velocidade_sla', 'INTEGER')       // /15
+addColumnIfNotExists('conversation_insights', 'score_abertura', 'INTEGER')             // /10
+addColumnIfNotExists('conversation_insights', 'score_diagnostico', 'INTEGER')          // /20
+addColumnIfNotExists('conversation_insights', 'score_qualificacao', 'INTEGER')         // /15
+addColumnIfNotExists('conversation_insights', 'score_conducao', 'INTEGER')             // /15
+addColumnIfNotExists('conversation_insights', 'score_objecoes', 'INTEGER')             // /10
+addColumnIfNotExists('conversation_insights', 'score_proximo_passo', 'INTEGER')        // /10
+addColumnIfNotExists('conversation_insights', 'score_organizacao_crm', 'INTEGER')      // /5
+addColumnIfNotExists('conversation_insights', 'temperatura_lead', 'TEXT')              // frio|morno|quente
+addColumnIfNotExists('conversation_insights', 'fit_icp', 'INTEGER')                    // 0-100
+addColumnIfNotExists('conversation_insights', 'chance_conversao', 'INTEGER')           // 0-100
+addColumnIfNotExists('conversation_insights', 'status_recomendado', 'TEXT')
+addColumnIfNotExists('conversation_insights', 'mensagem_retomada', 'TEXT')
+addColumnIfNotExists('conversation_insights', 'objecoes_detectadas', 'TEXT')           // JSON array
+addColumnIfNotExists('conversation_insights', 'motivos_perda', 'TEXT')                 // JSON array
+addColumnIfNotExists('conversation_insights', 'riscos_detectados', 'TEXT')             // JSON array
+addColumnIfNotExists('conversation_insights', 'prioridade_revisao', 'TEXT')            // baixa|media|alta|critica
+addColumnIfNotExists('conversation_insights', 'confidence_score', 'REAL')              // 0..1
+addColumnIfNotExists('conversation_insights', 'bot_analysis_json', 'TEXT')
+addColumnIfNotExists('conversation_insights', 'handoff_analysis_json', 'TEXT')
+addColumnIfNotExists('conversation_insights', 'coaching_recomendado', 'TEXT')
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_insights_version ON conversation_insights(account_id, insights_version)') } catch (e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_insights_temperatura ON conversation_insights(account_id, temperatura_lead, chance_conversao)') } catch (e) {}
+
+// Extender attendant_metrics_daily (V1 colunas permanecem).
+addColumnIfNotExists('attendant_metrics_daily', 'ttfr_human_avg_seconds', 'REAL')
+addColumnIfNotExists('attendant_metrics_daily', 'ttfr_human_p90_seconds', 'REAL')
+addColumnIfNotExists('attendant_metrics_daily', 'ttfr_bot_avg_seconds', 'REAL')
+addColumnIfNotExists('attendant_metrics_daily', 'tmr_human_avg_seconds', 'REAL')
+addColumnIfNotExists('attendant_metrics_daily', 'leads_without_human_response', 'INTEGER DEFAULT 0')
+addColumnIfNotExists('attendant_metrics_daily', 'leads_idle_24h', 'INTEGER DEFAULT 0')
+addColumnIfNotExists('attendant_metrics_daily', 'leads_idle_72h', 'INTEGER DEFAULT 0')
+addColumnIfNotExists('attendant_metrics_daily', 'time_to_qualified_avg_seconds', 'REAL')
+addColumnIfNotExists('attendant_metrics_daily', 'time_to_proposal_avg_seconds', 'REAL')
+
+// 3. Catálogo padronizado de erros (populado via seed abaixo).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS conversation_error_catalog (
+    code TEXT PRIMARY KEY,
+    category TEXT NOT NULL,
+    label_pt TEXT NOT NULL,
+    default_gravity TEXT NOT NULL,
+    default_how_to_fix TEXT
+  )
+`)
+
+// 4. Erros detectados pela IA (1 linha por (insight, erro)). FK fraca ao catálogo (code sem REFERENCES).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS conversation_errors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    insight_id INTEGER NOT NULL REFERENCES conversation_insights(id) ON DELETE CASCADE,
+    lead_id INTEGER NOT NULL,
+    account_id INTEGER NOT NULL,
+    attendant_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    actor_type TEXT NOT NULL,
+    code TEXT,
+    category TEXT,
+    gravity TEXT,
+    description TEXT NOT NULL,
+    impact TEXT,
+    how_to_fix TEXT,
+    evidence_message_ids TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )
+`)
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_conv_errors_account_attendant ON conversation_errors(account_id, attendant_user_id, created_at)') } catch (e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_conv_errors_code ON conversation_errors(code)') } catch (e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_conv_errors_insight ON conversation_errors(insight_id)') } catch (e) {}
+
+// 5. Acertos.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS conversation_strengths (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    insight_id INTEGER NOT NULL REFERENCES conversation_insights(id) ON DELETE CASCADE,
+    lead_id INTEGER NOT NULL,
+    account_id INTEGER NOT NULL,
+    attendant_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    actor_type TEXT NOT NULL,
+    code TEXT,
+    description TEXT NOT NULL,
+    impact TEXT,
+    evidence_message_ids TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )
+`)
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_conv_strengths_account_attendant ON conversation_strengths(account_id, attendant_user_id, created_at)') } catch (e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_conv_strengths_insight ON conversation_strengths(insight_id)') } catch (e) {}
+
+// 6. Análise por participante (bot/atendente/gerente — 1 linha por insight × actor).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS conversation_participant_analysis (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    insight_id INTEGER NOT NULL REFERENCES conversation_insights(id) ON DELETE CASCADE,
+    lead_id INTEGER NOT NULL,
+    account_id INTEGER NOT NULL,
+    actor_type TEXT NOT NULL,
+    actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    actor_ai_agent_id INTEGER,
+    actor_name TEXT,
+    score INTEGER,
+    acertos_summary TEXT,
+    erros_summary TEXT,
+    recomendacao TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )
+`)
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_conv_participant_lookup ON conversation_participant_analysis(account_id, actor_type, actor_user_id, created_at)') } catch (e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_conv_participant_insight ON conversation_participant_analysis(insight_id)') } catch (e) {}
+
+// 7. Alertas operacionais (lead quente abandonado, proposta sem retorno, erro crítico, bot falhou).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS analyst_alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    lead_id INTEGER REFERENCES leads(id) ON DELETE CASCADE,
+    insight_id INTEGER REFERENCES conversation_insights(id) ON DELETE SET NULL,
+    type TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    suggested_action TEXT,
+    assigned_to_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    resolved_at TEXT
+  )
+`)
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_alerts_account_status ON analyst_alerts(account_id, status, severity)') } catch (e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_alerts_lead ON analyst_alerts(lead_id)') } catch (e) {}
+
+// 8. Coaching semanal (1 linha por user × semana). Cron toda segunda 3h05 UTC.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS attendant_coaching_weekly (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    week_start TEXT NOT NULL,
+    summary TEXT,
+    strengths TEXT,
+    improvements TEXT,
+    conversations_to_review TEXT,
+    training_recommended TEXT,
+    suggested_script TEXT,
+    goal_next_week TEXT,
+    ai_score_avg_week REAL,
+    tokens_used INTEGER DEFAULT 0,
+    cost_usd REAL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (account_id, user_id, week_start)
+  )
+`)
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_coaching_week ON attendant_coaching_weekly(account_id, week_start)') } catch (e) {}
+
+// Seed inicial do catálogo de erros (idempotente via INSERT OR IGNORE).
+const errorCatalogSeed = [
+  // velocidade
+  { code: 'velocidade.demorou_resposta_inicial', category: 'velocidade', label_pt: 'Demorou para responder o lead', default_gravity: 'alta', default_how_to_fix: 'Responder em até 5 min após chegar o lead.' },
+  { code: 'velocidade.abandonou_meio_conversa', category: 'velocidade', label_pt: 'Respondeu rápido no começo mas abandonou', default_gravity: 'alta', default_how_to_fix: 'Manter ritmo de resposta consistente até o fechamento.' },
+  { code: 'velocidade.demorou_apos_interesse', category: 'velocidade', label_pt: 'Demorou após lead demonstrar interesse', default_gravity: 'critica', default_how_to_fix: 'Tratar pedido de preço/proposta como prioridade imediata.' },
+  // diagnostico
+  { code: 'diagnostico.nao_perguntou_necessidade', category: 'diagnostico', label_pt: 'Não perguntou a necessidade real', default_gravity: 'alta', default_how_to_fix: 'Fazer 2-3 perguntas abertas antes de apresentar preço.' },
+  { code: 'diagnostico.pulou_para_preco', category: 'diagnostico', label_pt: 'Pulou direto para preço sem qualificar', default_gravity: 'alta', default_how_to_fix: 'Entender contexto e dor antes de enviar valor.' },
+  { code: 'diagnostico.nao_identificou_decisor', category: 'diagnostico', label_pt: 'Não identificou o decisor da compra', default_gravity: 'media', default_how_to_fix: 'Perguntar quem mais participa da decisão.' },
+  { code: 'diagnostico.pergunta_generica', category: 'diagnostico', label_pt: 'Fez pergunta genérica demais', default_gravity: 'baixa', default_how_to_fix: 'Personalizar perguntas conforme contexto da empresa/produto.' },
+  // conducao
+  { code: 'conducao.nao_pediu_proximo_passo', category: 'conducao', label_pt: 'Não definiu o próximo passo', default_gravity: 'alta', default_how_to_fix: 'Terminar toda mensagem com convite a uma ação concreta.' },
+  { code: 'conducao.mensagem_robotica', category: 'conducao', label_pt: 'Mensagem fria/robótica/sem personalização', default_gravity: 'media', default_how_to_fix: 'Usar nome do lead, citar contexto, adaptar tom.' },
+  { code: 'conducao.nao_explicou_valor', category: 'conducao', label_pt: 'Não conectou produto com a dor do cliente', default_gravity: 'alta', default_how_to_fix: 'Mostrar como o produto resolve a dor mencionada antes do preço.' },
+  { code: 'conducao.nao_ofereceu_proposta', category: 'conducao', label_pt: 'Não ofereceu proposta no momento certo', default_gravity: 'alta', default_how_to_fix: 'Quando o lead demonstrar interesse, enviar proposta objetiva.' },
+  { code: 'conducao.mensagem_muito_longa', category: 'conducao', label_pt: 'Mensagem muito longa / cansativa', default_gravity: 'baixa', default_how_to_fix: 'Dividir em mensagens curtas e diretas.' },
+  // objecao
+  { code: 'objecao.ignorou_objecao_preco', category: 'objecao', label_pt: 'Ignorou objeção de preço', default_gravity: 'critica', default_how_to_fix: 'Reconhecer a objeção, mostrar ROI, oferecer alternativa.' },
+  { code: 'objecao.aceitou_vou_pensar', category: 'objecao', label_pt: 'Aceitou "vou pensar" sem follow-up', default_gravity: 'alta', default_how_to_fix: 'Combinar data e horário pra retornar antes de encerrar.' },
+  { code: 'objecao.defensivo', category: 'objecao', label_pt: 'Respondeu objeção de forma defensiva', default_gravity: 'media', default_how_to_fix: 'Reformular como benefício, mostrar empatia.' },
+  // crm
+  { code: 'crm.nao_mudou_etapa', category: 'crm', label_pt: 'Não atualizou a etapa do funil', default_gravity: 'baixa', default_how_to_fix: 'Mover o lead conforme avança na conversa.' },
+  { code: 'crm.nao_registrou_motivo_perda', category: 'crm', label_pt: 'Não registrou motivo da perda', default_gravity: 'media', default_how_to_fix: 'Sempre registrar tag/motivo ao mover pra "perdido".' },
+  // handoff/bot
+  { code: 'bot.nao_transferiu', category: 'crm', label_pt: 'Bot não transferiu pra humano quando devia', default_gravity: 'critica', default_how_to_fix: 'Configurar gatilho de handoff (palavra-chave, intent forte).' },
+  { code: 'bot.entendeu_errado', category: 'crm', label_pt: 'Bot interpretou mal a mensagem', default_gravity: 'media', default_how_to_fix: 'Revisar treinamento do bot e adicionar exemplos.' },
+  { code: 'handoff.sem_contexto', category: 'crm', label_pt: 'Transferência sem contexto', default_gravity: 'alta', default_how_to_fix: 'Resumir conversa e dor do lead antes de transferir.' },
+]
+const insertCatalogStmt = db.prepare(`
+  INSERT OR IGNORE INTO conversation_error_catalog (code, category, label_pt, default_gravity, default_how_to_fix)
+  VALUES (?, ?, ?, ?, ?)
+`)
+for (const e of errorCatalogSeed) {
+  try { insertCatalogStmt.run(e.code, e.category, e.label_pt, e.default_gravity, e.default_how_to_fix) } catch (err) {}
+}
 
 // Agentes de IA (Claude Haiku 4.5) — F0+1 schema
 addColumnIfNotExists('accounts', 'ai_agents_enabled', 'INTEGER NOT NULL DEFAULT 0')
@@ -566,6 +842,80 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_ai_token_log_month ON ai_agent_token_log(agent_id, created_at);
 `)
 
+// STT (speech-to-text) — colunas pra rastrear custo de transcricao de audio (Deepgram)
+addColumnIfNotExists('ai_agent_token_log', 'stt_seconds', 'REAL DEFAULT 0')
+addColumnIfNotExists('ai_agent_token_log', 'stt_cost_usd', 'REAL DEFAULT 0')
+addColumnIfNotExists('ai_agent_token_log', 'stt_provider', 'TEXT')
+// 'source' identifica de onde veio a chamada (default null = msg reativa do lead; 'welcome_sheets' = sauda
+// cao auto pra lead novo de planilha). Permite filtrar custos por tipo no dashboard.
+addColumnIfNotExists('ai_agent_token_log', 'source', 'TEXT')
+
+// Migração: ai_agent_token_log.agent_id NOT NULL bloqueia analise V2 e coaching (que nao tem agente conversacional).
+// SQLite nao permite ALTER COLUMN — recria tabela + copia dados.
+try {
+  const cols = db.prepare("PRAGMA table_info(ai_agent_token_log)").all()
+  const agentIdCol = cols.find(c => c.name === 'agent_id')
+  // notnull pode vir como Number 1 ou string "1" dependendo do driver — usa truthy check
+  if (agentIdCol && Number(agentIdCol.notnull) === 1) {
+    console.log('[DB] Migracao ai_agent_token_log.agent_id NOT NULL -> NULL iniciando...')
+    db.pragma('foreign_keys = OFF')
+    db.exec(`
+      CREATE TABLE ai_agent_token_log_new (
+        id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+        agent_id              INTEGER,
+        account_id            INTEGER NOT NULL,
+        lead_id               INTEGER,
+        input_tokens          INTEGER NOT NULL DEFAULT 0,
+        output_tokens         INTEGER NOT NULL DEFAULT 0,
+        cache_read_tokens     INTEGER NOT NULL DEFAULT 0,
+        cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+        cost_usd              REAL,
+        created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+        stt_seconds           REAL DEFAULT 0,
+        stt_cost_usd          REAL DEFAULT 0,
+        stt_provider          TEXT,
+        source                TEXT,
+        FOREIGN KEY (agent_id) REFERENCES ai_agents(id) ON DELETE CASCADE
+      );
+      INSERT INTO ai_agent_token_log_new
+        (id, agent_id, account_id, lead_id, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd, created_at, stt_seconds, stt_cost_usd, stt_provider, source)
+      SELECT
+        id, agent_id, account_id, lead_id, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd, created_at,
+        COALESCE(stt_seconds, 0), COALESCE(stt_cost_usd, 0), stt_provider, source
+      FROM ai_agent_token_log;
+      DROP TABLE ai_agent_token_log;
+      ALTER TABLE ai_agent_token_log_new RENAME TO ai_agent_token_log;
+      CREATE INDEX IF NOT EXISTS idx_ai_token_log_month ON ai_agent_token_log(agent_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_ai_token_log_source ON ai_agent_token_log(account_id, source, created_at);
+    `)
+    db.pragma('foreign_keys = ON')
+    console.log('[DB] Migracao ai_agent_token_log concluida')
+  } else {
+    console.log(`[DB] ai_agent_token_log.agent_id ja eh nullable (notnull=${agentIdCol?.notnull}) — migracao pulada`)
+  }
+} catch (e) {
+  console.error('[DB] Migracao ai_agent_token_log FALHOU:', e.message, e.stack)
+  try { db.pragma('foreign_keys = ON') } catch {}
+}
+
+// Welcome msg pra leads novos de planilha (Haiku-gerada) — opt-in por agente.
+addColumnIfNotExists('ai_agents', 'send_welcome_for_sheets_leads', 'INTEGER NOT NULL DEFAULT 0')
+addColumnIfNotExists('ai_agents', 'welcome_extra_instructions', 'TEXT')
+
+// Status WhatsApp por msg (estilo WhatsApp Web — sent/delivered/read).
+// `delivery_status` default 'sent' eh compativel com msgs antigas (que ja sao consideradas enviadas).
+addColumnIfNotExists('messages', 'delivery_status', "TEXT NOT NULL DEFAULT 'sent'")
+addColumnIfNotExists('messages', 'delivered_at', 'TEXT')
+addColumnIfNotExists('messages', 'read_at', 'TEXT')
+
+// Contador denormalizado de msgs inbound nao lidas por lead — zerado quando vendedor abre o chat.
+addColumnIfNotExists('leads', 'unread_count', 'INTEGER NOT NULL DEFAULT 0')
+
+// Indexes pra lookup de status (webhook update por wa_msg_id) e badge sidebar.
+// Sem WHERE clause: sqlite3 CLI do CentOS 7 nao parseia partial index, quebra inspecao manual.
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_messages_wa_msg_id ON messages(wa_msg_id)') } catch (e) { console.warn('[db] idx_messages_wa_msg_id:', e.message) }
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_leads_unread ON leads(account_id, unread_count)') } catch (e) { console.warn('[db] idx_leads_unread:', e.message) }
+
 // Follow-ups (cadencias automaticas — diferentes das cadencias manuais ja existentes)
 db.exec(`
   CREATE TABLE IF NOT EXISTS follow_ups (
@@ -641,6 +991,8 @@ addColumnIfNotExists('contracts', 'hub_client_id', 'INTEGER')
 addColumnIfNotExists('whatsapp_instances', 'first_msg_template', 'TEXT')
 addColumnIfNotExists('users', 'notification_instance_id', 'INTEGER REFERENCES whatsapp_instances(id) ON DELETE SET NULL')
 addColumnIfNotExists('leads', 'first_msg_sent_at', 'TEXT')
+// Bot IA marca quando enviou a primeira saudacao (separado de first_msg_sent_at do template estatico).
+addColumnIfNotExists('leads', 'ai_first_msg_sent_at', 'TEXT')
 addColumnIfNotExists('funnels', 'first_msg_template', 'TEXT')
 
 // Tabela de configs globais (notifier instance configuravel via UI super_admin)

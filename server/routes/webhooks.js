@@ -4,7 +4,7 @@ import db from '../db.js'
 import { broadcastSSE } from '../sse.js'
 import { triggerCapiForStageChange } from '../services/metaCapi.js'
 import { getInstanceConfig, wasAutoMsgSentRecently, sendAutoMessage, shouldSendAway } from '../services/autoMessages.js'
-import { processInboundMessage } from '../services/aiAgent.js'
+import { processInboundMessage, sendBotWelcomeForSheetsLead } from '../services/aiAgent.js'
 import { pickFromRoulette } from '../services/roulette.js'
 import { notifyAndOpenLead } from '../services/leadHandoff.js'
 
@@ -47,7 +47,7 @@ function phoneCompareKey(p) {
   return d.length === 10 ? d : d.slice(-10) // fallback: ultimos 10 se formato desconhecido
 }
 
-function getOrCreateLead(accountId, phone, name, source, waJid, instanceId) {
+function getOrCreateLead(accountId, phone, name, source, waJid, instanceId, opts = {}) {
   phone = normalizePhone(phone)
 
   // ─── GATE: phone bloqueado nesta conta? Ignora silenciosamente. ───
@@ -124,8 +124,9 @@ function getOrCreateLead(accountId, phone, name, source, waJid, instanceId) {
 
   lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(result.lastInsertRowid)
 
-  // Lead handoff: se atribuiu via roleta/default, dispara 1a msg + notif (fire-and-forget)
-  if (attendantId) {
+  // Lead handoff: se atribuiu via roleta/default, dispara 1a msg + notif (fire-and-forget).
+  // Skipa se opts.noAutoHandoff (caller faz manualmente apos aplicar tags/mapping — caso /sheets).
+  if (attendantId && !opts.noAutoHandoff) {
     setImmediate(() => {
       notifyAndOpenLead(lead.id, attendantId, { source: 'webhook' })
         .catch(e => console.error('[Handoff webhook]', e.message))
@@ -189,6 +190,40 @@ router.post('/evolution/:accountSlug', (req, res) => {
     }
 
     const { event, data } = req.body
+
+    // ─── messages.update / MESSAGES_UPDATE — callback de status (delivered/read) ───
+    // WhatsApp status numerico/string: 1=SERVER_ACK(sent), 2=DELIVERY_ACK(delivered), 3=READ, 4=PLAYED.
+    // Idempotente: nunca regride status (read > delivered > sent).
+    if (event === 'messages.update' || event === 'MESSAGES_UPDATE') {
+      try {
+        const rawUpdates = data ? (Array.isArray(data) ? data : [data]) : []
+        const rank = { sent: 1, delivered: 2, read: 3 }
+        for (const upd of rawUpdates) {
+          const waMsgId = upd?.key?.id || upd?.keyId
+          if (!waMsgId) continue
+          const statusRaw = upd.status ?? upd.update?.status
+          let newStatus = null
+          let timestampCol = null
+          if (statusRaw === 'DELIVERY_ACK' || statusRaw === 2) { newStatus = 'delivered'; timestampCol = 'delivered_at' }
+          else if (statusRaw === 'READ' || statusRaw === 'PLAYED' || statusRaw === 3 || statusRaw === 4) { newStatus = 'read'; timestampCol = 'read_at' }
+          else if (statusRaw === 'SERVER_ACK' || statusRaw === 1) { newStatus = 'sent' }
+          if (!newStatus) continue
+          const msg = db.prepare('SELECT id, lead_id, account_id, delivery_status FROM messages WHERE wa_msg_id = ?').get(waMsgId)
+          if (!msg) continue
+          if ((rank[newStatus] || 0) <= (rank[msg.delivery_status] || 0)) continue
+          const sets = ['delivery_status = ?']
+          const params = [newStatus]
+          if (timestampCol) sets.push(`${timestampCol} = COALESCE(${timestampCol}, datetime('now'))`)
+          params.push(msg.id)
+          db.prepare(`UPDATE messages SET ${sets.join(', ')} WHERE id = ?`).run(...params)
+          try { broadcastSSE(msg.account_id, 'message:status', { message_id: msg.id, lead_id: msg.lead_id, status: newStatus }) } catch {}
+        }
+      } catch (e) {
+        console.error('[Webhook messages.update]', e.message)
+      }
+      return res.json({ ok: true })
+    }
+
     if (event !== 'messages.upsert' || !data) return res.json({ ok: true })
 
     const remoteJid = data.key?.remoteJid || ''
@@ -521,6 +556,10 @@ router.post('/evolution/:accountSlug', (req, res) => {
         INSERT INTO messages (lead_id, account_id, direction, content, media_type, media_url, sender_name, wa_msg_id, wa_timestamp, instance_id)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(lead.id, account.id, fromMe ? 'outbound' : 'inbound', content, mediaType, mediaUrl, fromMe ? '' : pushName, msgId || null, timestamp, waInstance?.id || null)
+      // Incrementa unread_count se msg eh inbound e lead nao arquivado (arquivados usam has_new_after_archive).
+      if (!fromMe && !lead.is_archived) {
+        db.prepare("UPDATE leads SET unread_count = unread_count + 1, updated_at = datetime('now') WHERE id = ?").run(lead.id)
+      }
       // Update lead's last_instance_id (next message from CRM will use this instance)
       if (waInstance?.id) {
         db.prepare("UPDATE leads SET last_instance_id = ?, updated_at = datetime('now') WHERE id = ?").run(waInstance.id, lead.id)
@@ -796,7 +835,9 @@ router.post('/sheets/:accountSlug', (req, res) => {
 
     if (!name && !phone) return res.status(400).json({ error: 'name ou phone obrigatorio' })
 
-    const { lead, isNew, blocked } = getOrCreateLead(account.id, phone, name, source, null)
+    // noAutoHandoff: webhook /sheets aplica tags+mapping DEPOIS de criar lead, entao centraliza
+    // o handoff no final (evita race entre setImmediate do getOrCreateLead e o do mapping).
+    const { lead, isNew, blocked } = getOrCreateLead(account.id, phone, name, source, null, null, { noAutoHandoff: true })
     if (blocked) { console.log(`[Webhook Sheets] phone ${phone} bloqueado, ignorando`); return res.json({ ok: true, blocked: true }) }
     if (!lead) return res.status(400).json({ error: 'Falha ao criar lead (sem funil configurado?)' })
 
@@ -817,6 +858,106 @@ router.post('/sheets/:accountSlug', (req, res) => {
     if (empresa) db.prepare('UPDATE leads SET empresa = COALESCE(empresa, ?) WHERE id = ?').run(empresa, lead.id)
     if (cpf_cnpj) db.prepare('UPDATE leads SET cpf_cnpj = COALESCE(cpf_cnpj, ?) WHERE id = ?').run(cpf_cnpj, lead.id)
     if (instagram) db.prepare('UPDATE leads SET instagram = COALESCE(instagram, ?) WHERE id = ?').run(instagram, lead.id)
+
+    // Tags — fonte 1: tag default configurada na conta (account.sheets_default_tag_id)
+    // Fonte 2: body.tag/tags vindo do Apps Script (string, CSV ou array)
+    // Aplica ambas (cumulativo). INSERT OR IGNORE garante idempotencia.
+    const tagIdsToApply = []
+    if (account.sheets_default_tag_id) tagIdsToApply.push(account.sheets_default_tag_id)
+    const rawTags = body.tags != null ? body.tags : body.tag
+    if (rawTags) {
+      const tagNames = Array.isArray(rawTags)
+        ? rawTags.map(s => String(s).trim()).filter(Boolean)
+        : String(rawTags).split(',').map(s => s.trim()).filter(Boolean)
+      for (const tagName of tagNames) {
+        try {
+          db.prepare("INSERT OR IGNORE INTO tags (account_id, name, color) VALUES (?, ?, '#FFB300')").run(account.id, tagName)
+          const tagRow = db.prepare('SELECT id FROM tags WHERE account_id = ? AND name = ?').get(account.id, tagName)
+          if (tagRow) tagIdsToApply.push(tagRow.id)
+        } catch (e) {
+          console.error(`[Sheets] Erro resolvendo tag "${tagName}" no lead ${lead.id}:`, e.message)
+        }
+      }
+    }
+    for (const tagId of tagIdsToApply) {
+      try {
+        db.prepare('INSERT OR IGNORE INTO lead_tags (lead_id, tag_id) VALUES (?, ?)').run(lead.id, tagId)
+      } catch (e) {
+        console.error(`[Sheets] Erro aplicando tag id=${tagId} lead=${lead.id}:`, e.message)
+      }
+    }
+    if (tagIdsToApply.length > 0) {
+      console.log(`[Sheets] ${tagIdsToApply.length} tag(s) aplicada(s) lead=${lead.id} ids=[${tagIdsToApply.join(',')}]`)
+    }
+
+    // Lookup de regra de roteamento por tag (tag_instance_mapping) — SOBRESCREVE attendant
+    // mesmo se ja tinha vindo da roleta (porque a regra de tag tem prioridade).
+    // So se aplica em lead NOVO (isNew) — evita re-rotear lead existente que volta pela planilha.
+    let mappingHandoffDispatched = false
+    if (isNew && tagIdsToApply.length > 0) {
+      for (const tagId of tagIdsToApply) {
+        const mapping = db.prepare('SELECT instance_id, attendant_id FROM tag_instance_mapping WHERE account_id = ? AND tag_id = ?').get(account.id, tagId)
+        if (mapping) {
+          const updates = []
+          const updateParams = []
+          if (mapping.instance_id) {
+            updates.push('instance_id = ?', 'last_instance_id = ?')
+            updateParams.push(mapping.instance_id, mapping.instance_id)
+          }
+          if (mapping.attendant_id) {
+            updates.push('attendant_id = ?')
+            updateParams.push(mapping.attendant_id)
+          }
+          if (updates.length > 0) {
+            updates.push("updated_at = datetime('now')")
+            updateParams.push(lead.id)
+            db.prepare(`UPDATE leads SET ${updates.join(', ')} WHERE id = ?`).run(...updateParams)
+            // Atualiza o objeto em memoria pra logs/respostas subsequentes
+            if (mapping.instance_id) { lead.instance_id = mapping.instance_id; lead.last_instance_id = mapping.instance_id }
+            if (mapping.attendant_id) lead.attendant_id = mapping.attendant_id
+            db.prepare('INSERT OR IGNORE INTO lead_instance_assignments (lead_id, instance_id, attendant_id) VALUES (?, ?, ?)').run(lead.id, mapping.instance_id, mapping.attendant_id || null)
+            console.log(`[Sheets] Roteamento por tag aplicado lead=${lead.id} tag=${tagId} inst=${mapping.instance_id} atend=${mapping.attendant_id}`)
+
+            // Re-dispara welcome com o atendente CORRETO do mapping (o getOrCreateLead pode ter
+            // atribuido outro user via roleta antes do mapping sobrescrever).
+            // 1) Tenta bot (se mapping.attendant_id eh user-bot com agente IA + flag welcome)
+            // 2) Se bot nao enviou, dispara notifyAndOpenLead que envia first_msg_template
+            //    configurado em /instances -> "Mensagem inicial". Idempotencia via lead.first_msg_sent_at.
+            setImmediate(async () => {
+              try {
+                await sendBotWelcomeForSheetsLead(lead.id, mapping.instance_id)
+              } catch (e) {
+                console.error('[Bot Welcome re-trigger]', e.message)
+              }
+              const updated = db.prepare('SELECT ai_first_msg_sent_at, first_msg_sent_at FROM leads WHERE id = ?').get(lead.id)
+              if (updated?.ai_first_msg_sent_at || updated?.first_msg_sent_at) return
+              if (mapping.attendant_id) {
+                notifyAndOpenLead(lead.id, mapping.attendant_id, { source: 'sheets_mapping' })
+                  .catch(e => console.error('[Handoff sheets mapping]', e.message))
+              }
+            })
+            mappingHandoffDispatched = true
+            break // primeira tag com mapping vence
+          }
+        }
+      }
+    }
+
+    // Fallback: nenhum mapping de tag aplicado, mas lead novo com atendente da roleta.
+    // Dispara handoff (bot welcome + first_msg) na inst do attendant default.
+    if (isNew && !mappingHandoffDispatched && lead.attendant_id) {
+      setImmediate(async () => {
+        try {
+          await sendBotWelcomeForSheetsLead(lead.id, lead.instance_id || null)
+        } catch (e) {
+          console.error('[Bot Welcome sheets fallback]', e.message)
+        }
+        const updated = db.prepare('SELECT ai_first_msg_sent_at, first_msg_sent_at FROM leads WHERE id = ?').get(lead.id)
+        if (updated?.ai_first_msg_sent_at || updated?.first_msg_sent_at) return
+        notifyAndOpenLead(lead.id, lead.attendant_id, { source: 'sheets_default' })
+          .catch(e => console.error('[Handoff sheets default]', e.message))
+      })
+    }
 
     // Auto-detect: lead veio de anuncio? Marca trabalha_anuncio=1 se houver sinal claro
     // (fbclid, ad_id, campaign_id, gclid, ou source/utm indicam paid)
