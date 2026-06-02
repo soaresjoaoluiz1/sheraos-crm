@@ -3,6 +3,7 @@ import fetch from 'node-fetch'
 import db from '../db.js'
 import { requireRole } from '../middleware/auth.js'
 import { broadcastSSE } from '../sse.js'
+import { sendViaInstance, checkWhatsAppNumbersBulk } from '../services/leadHandoff.js'
 
 const router = Router()
 
@@ -191,7 +192,44 @@ async function runBroadcastLoopInner(broadcastId) {
   // Usa offset baseado em sent_count + failed_count pra continuar de onde parou
   let processedCount = (broadcast.sent_count || 0) + (broadcast.failed_count || 0)
 
+  // ─── Pre-flight bulk: valida TODOS os recipients pendentes de uma vez no inicio.
+  // Numeros que nao tem WhatsApp viram 'failed' direto sem nem tentar sendText.
+  // Funciona SO se for o primeiro start do broadcast (sem retomada parcial). Em retomada
+  // o cache do checkWhatsAppNumbersBulk evita revalidar (TTL 5min).
+  try {
+    const pendingPhones = db.prepare("SELECT id, phone FROM broadcast_recipients WHERE broadcast_id = ? AND status = 'pending'").all(broadcastId)
+    if (pendingPhones.length > 0) {
+      const phoneList = pendingPhones.map(p => p.phone)
+      console.log(`[Broadcast Pre-flight] broadcast=${broadcastId} validando ${phoneList.length} numeros...`)
+      const validationMap = await checkWhatsAppNumbersBulk(instance, phoneList)
+      let preflightFailed = 0
+      for (const recipient of pendingPhones) {
+        const exists = validationMap.get(recipient.phone)
+        if (exists === false) {
+          db.prepare("UPDATE broadcast_recipients SET status = 'failed', error = ? WHERE id = ?").run('number_not_on_whatsapp', recipient.id)
+          db.prepare('UPDATE broadcasts SET failed_count = failed_count + 1 WHERE id = ?').run(broadcastId)
+          preflightFailed++
+        }
+      }
+      if (preflightFailed > 0) {
+        console.log(`[Broadcast Pre-flight] broadcast=${broadcastId} marcados ${preflightFailed} como failed (number_not_on_whatsapp)`)
+        broadcastSSE(broadcast.account_id, 'broadcast:progress', { id: broadcastId })
+      }
+    }
+  } catch (e) {
+    console.error(`[Broadcast Pre-flight] broadcast=${broadcastId} erro:`, e.message)
+    // Nao bloqueia o envio se validacao falhar — segue pro while normal
+  }
+
   while (true) {
+    // Re-checa pausa manual a cada iteracao (user clicou pausar pelo UI)
+    const liveBroadcast = db.prepare("SELECT status, paused_at, paused_reason FROM broadcasts WHERE id = ?").get(broadcastId)
+    if (!liveBroadcast || liveBroadcast.status !== 'sending') return // canceladado/completed
+    if (liveBroadcast.paused_at) {
+      broadcastSSE(broadcast.account_id, 'broadcast:paused', { id: broadcastId, reason: liveBroadcast.paused_reason })
+      return
+    }
+
     // Re-checa instancia conectada antes de cada envio
     const liveInstance = db.prepare('SELECT * FROM whatsapp_instances WHERE id = ?').get(broadcast.instance_id)
     if (!liveInstance || liveInstance.status !== 'connected') {
@@ -206,24 +244,29 @@ async function runBroadcastLoopInner(broadcastId) {
     if (!r) break // todos processados
 
     try {
-      const lead = db.prepare('SELECT name FROM leads WHERE id = ?').get(r.lead_id)
+      const lead = db.prepare('SELECT name, phone, empresa, city FROM leads WHERE id = ?').get(r.lead_id)
       const template = allTemplates[processedCount % allTemplates.length]
-      const text = template.replace(/\{\{name\}\}/g, lead?.name || 'Cliente')
-      const number = (r.phone || '').replace(/[^\d]/g, '').replace(/^(?!55)(\d{10,11})$/, '55$1')
+      const firstName = (lead?.name || '').split(' ')[0] || ''
+      const text = String(template)
+        .replace(/\{\{name\}\}/g, lead?.name || 'Cliente')
+        .replace(/\{\{nome\}\}/g, lead?.name || 'Cliente')
+        .replace(/\{\{primeiro_nome\}\}/g, firstName || 'Cliente')
+        .replace(/\{\{first_name\}\}/g, firstName || 'Cliente')
+        .replace(/\{\{empresa\}\}/g, lead?.empresa || '')
+        .replace(/\{\{cidade\}\}/g, lead?.city || '')
+        .replace(/\{\{phone\}\}/g, lead?.phone || '')
+        .replace(/\{\{telefone\}\}/g, lead?.phone || '')
+      // skipValidation=true porque o pre-flight bulk ja rodou antes do while.
+      // sendViaInstance trata normalizacao do numero, fetch e parse do retorno.
+      const sendRes = await sendViaInstance(liveInstance, r.phone, text, { skipValidation: true })
 
-      const sendRes = await fetch(`${liveInstance.api_url}/message/sendText/${liveInstance.instance_name}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'apikey': liveInstance.api_key },
-        body: JSON.stringify({ number, text }),
-      })
-      const data = await sendRes.json()
-
-      if (data.key?.id) {
-        db.prepare("UPDATE broadcast_recipients SET status = 'sent', wa_msg_id = ?, sent_at = datetime('now') WHERE id = ?").run(data.key.id, r.id)
+      if (sendRes.ok && sendRes.wamsgId) {
+        db.prepare("UPDATE broadcast_recipients SET status = 'sent', wa_msg_id = ?, sent_at = datetime('now') WHERE id = ?").run(sendRes.wamsgId, r.id)
         db.prepare("UPDATE leads SET last_broadcast_at = datetime('now') WHERE id = ?").run(r.lead_id)
         db.prepare('UPDATE broadcasts SET sent_count = sent_count + 1 WHERE id = ?').run(broadcastId)
       } else {
-        db.prepare("UPDATE broadcast_recipients SET status = 'failed', error = ? WHERE id = ?").run(JSON.stringify(data).substring(0, 500), r.id)
+        const errMsg = sendRes.reason || JSON.stringify(sendRes.raw || {}).substring(0, 500)
+        db.prepare("UPDATE broadcast_recipients SET status = 'failed', error = ? WHERE id = ?").run(errMsg, r.id)
         db.prepare('UPDATE broadcasts SET failed_count = failed_count + 1 WHERE id = ?').run(broadcastId)
       }
       processedCount++
@@ -287,6 +330,31 @@ export function recoverPendingBroadcasts() {
     runBroadcastLoop(b.id).catch(err => console.error('[Broadcast] Boot recovery error:', err))
   }
 }
+
+// Cancelar disparo em andamento (ou pausado) — para definitivamente, marca como 'cancelled'.
+// Recipients pending continuam pendentes na tabela (auditoria) mas nao sao mais processados.
+router.post('/:id/cancel', requireRole('super_admin', 'gerente'), (req, res) => {
+  const broadcast = db.prepare('SELECT * FROM broadcasts WHERE id = ? AND account_id = ?').get(req.params.id, req.accountId)
+  if (!broadcast) return res.status(404).json({ error: 'Disparo nao encontrado' })
+  if (!['sending', 'paused'].includes(broadcast.status) && !(broadcast.status === 'sending' && broadcast.paused_at)) {
+    if (broadcast.status !== 'sending') return res.status(400).json({ error: 'Disparo nao esta em andamento nem pausado (status: ' + broadcast.status + ')' })
+  }
+  db.prepare("UPDATE broadcasts SET status = 'cancelled', paused_at = NULL, paused_reason = NULL, completed_at = datetime('now') WHERE id = ?").run(broadcast.id)
+  const updated = db.prepare('SELECT * FROM broadcasts WHERE id = ?').get(broadcast.id)
+  broadcastSSE(broadcast.account_id, 'broadcast:cancelled', { id: broadcast.id })
+  res.json({ broadcast: updated })
+})
+
+// Endpoint manual de pausar (user clicou pra pausar no UI)
+router.post('/:id/pause', requireRole('super_admin', 'gerente'), (req, res) => {
+  const broadcast = db.prepare('SELECT * FROM broadcasts WHERE id = ? AND account_id = ?').get(req.params.id, req.accountId)
+  if (!broadcast) return res.status(404).json({ error: 'Disparo nao encontrado' })
+  if (broadcast.status !== 'sending') return res.status(400).json({ error: 'Disparo nao esta em andamento (status: ' + broadcast.status + ')' })
+  if (broadcast.paused_at) return res.status(400).json({ error: 'Disparo ja esta pausado' })
+  db.prepare("UPDATE broadcasts SET paused_at = datetime('now'), paused_reason = ? WHERE id = ?").run('manual_user', broadcast.id)
+  const updated = db.prepare('SELECT * FROM broadcasts WHERE id = ?').get(broadcast.id)
+  res.json({ broadcast: updated })
+})
 
 // Endpoint manual de retomar (caso queira forcar)
 router.post('/:id/resume', requireRole('super_admin', 'gerente'), async (req, res) => {

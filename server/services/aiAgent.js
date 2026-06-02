@@ -317,18 +317,7 @@ async function executeTool(toolUse, agent, lead, instanceId, availableTags, avai
   return { handoff: false }
 }
 
-// ─── sendEvolutionText ────────────────────────────────────────────────
-
-async function sendEvolutionText(instance, phone, text) {
-  const number = (phone || '').replace(/[^\d]/g, '').replace(/^(?!55)(\d{10,11})$/, '55$1')
-  const res = await fetch(`${instance.api_url}/message/sendText/${instance.instance_name}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'apikey': instance.api_key },
-    body: JSON.stringify({ number, text, delay: 10000 }),
-  })
-  const data = await res.json()
-  return { ok: !!data.key?.id, wamsgId: data.key?.id || null, raw: data }
-}
+// (sendEvolutionText removido — agora usa sendViaInstance do leadHandoff.js, que tem pre-flight + cache)
 
 // ─── processInboundMessage ────────────────────────────────────────────
 
@@ -360,13 +349,15 @@ export async function processInboundMessage(lead, msgContent, mediaType, instanc
         const inst = db.prepare('SELECT * FROM whatsapp_instances WHERE id = ?').get(instanceId)
         if (inst && inst.status === 'connected') {
           const declineMsg = agent.audio_decline_message || 'Oi! Por enquanto so leio mensagens de texto. Pode digitar pra mim?'
-          const sendRes = await sendEvolutionText(inst, lead.phone, declineMsg)
+          const sendRes = await sendViaInstance(inst, lead.phone, declineMsg)
           if (sendRes.ok) {
             db.prepare(`
-              INSERT INTO messages (lead_id, account_id, direction, content, media_type, sender_name, wa_msg_id, wa_timestamp, instance_id, ai_agent_id)
-              VALUES (?, ?, 'outbound', ?, 'text', 'AI', ?, datetime('now'), ?, ?)
+              INSERT INTO messages (lead_id, account_id, direction, content, media_type, sender_name, wa_msg_id, wa_timestamp, instance_id, ai_agent_id, delivery_status)
+              VALUES (?, ?, 'outbound', ?, 'text', 'AI', ?, datetime('now'), ?, ?, 'sent')
             `).run(lead.id, lead.account_id, declineMsg, sendRes.wamsgId, instanceId, agent.id)
             try { broadcastSSE(lead.account_id, 'lead:message', { lead_id: lead.id }) } catch {}
+          } else {
+            console.warn(`[AI Agent] declineMsg falhou agent=${agent.id} lead=${lead.id}: ${sendRes.reason}`)
           }
         }
         executeHandoff(agent, lead, reason, instanceId)
@@ -534,15 +525,15 @@ export async function processInboundMessage(lead, msgContent, mediaType, instanc
     if (finalText && finalText.trim()) {
       const inst = db.prepare('SELECT * FROM whatsapp_instances WHERE id = ?').get(instanceId)
       if (inst && inst.status === 'connected') {
-        const sendRes = await sendEvolutionText(inst, lead.phone, finalText.trim())
+        const sendRes = await sendViaInstance(inst, lead.phone, finalText.trim())
         if (sendRes.ok) {
           db.prepare(`
-            INSERT INTO messages (lead_id, account_id, direction, content, media_type, sender_name, wa_msg_id, wa_timestamp, instance_id, ai_agent_id)
-            VALUES (?, ?, 'outbound', ?, 'text', 'AI', ?, datetime('now'), ?, ?)
+            INSERT INTO messages (lead_id, account_id, direction, content, media_type, sender_name, wa_msg_id, wa_timestamp, instance_id, ai_agent_id, delivery_status)
+            VALUES (?, ?, 'outbound', ?, 'text', 'AI', ?, datetime('now'), ?, ?, 'sent')
           `).run(lead.id, lead.account_id, finalText.trim(), sendRes.wamsgId, instanceId, agent.id)
           try { broadcastSSE(lead.account_id, 'lead:message', { lead_id: lead.id }) } catch {}
         } else {
-          console.error(`[AI Agent] Falha envio agent=${agent.id} lead=${lead.id}:`, JSON.stringify(sendRes.raw).substring(0, 200))
+          console.error(`[AI Agent] Falha envio agent=${agent.id} lead=${lead.id}: ${sendRes.reason}`)
         }
       }
     }
@@ -659,10 +650,12 @@ REGRAS:
       return
     }
 
-    // Salva msg no historico (sender_name = agente, ai_agent_id = agente)
+    // Salva msg no historico (sender_name = agente, ai_agent_id = agente).
+    // delivery_status='sent' — webhook messages.update do Evolution vai promover pra 'delivered'/'read' depois.
+    // Se ficar 'sent' por >10min sem confirmacao, cron marca como 'failed' (fidelidade).
     db.prepare(`
-      INSERT INTO messages (lead_id, account_id, direction, content, media_type, sender_name, wa_msg_id, instance_id, ai_agent_id)
-      VALUES (?, ?, 'outbound', ?, 'text', ?, ?, ?, ?)
+      INSERT INTO messages (lead_id, account_id, direction, content, media_type, sender_name, wa_msg_id, instance_id, ai_agent_id, delivery_status)
+      VALUES (?, ?, 'outbound', ?, 'text', ?, ?, ?, ?, 'sent')
     `).run(lead.id, lead.account_id, msgText, agent.name, sendResult.wamsgId, inst.id, agent.id)
 
     // Atualiza last_instance_id + marca idempotencia
@@ -687,4 +680,64 @@ REGRAS:
   } catch (err) {
     console.error(`[Bot Welcome] exception lead=${leadId}:`, err.message)
   }
+}
+
+// ─── replayLastMessagesForAgent ──────────────────────────────────────────
+// Apos reativar agente, processa a ULTIMA msg inbound pendente de cada lead
+// que ficou sem resposta durante a pausa. Fire-and-forget com setTimeout
+// espacado 500ms entre cada chamada (evita burst de Haiku/Evolution).
+//
+// Lead considerado pendente:
+//  - attendant_id aponta pro user-bot do agente
+//  - ativo, nao arquivado, nao bloqueado
+//  - ai_handed_off_at IS NULL (bot ainda eh responsavel)
+//  - tem msg inbound depois de pausedAt
+//  - nao houve outbound depois da ultima inbound
+//
+// Limite: 30 leads por reativacao (protege budget Haiku contra avalanche).
+export async function replayLastMessagesForAgent(agentId, pausedAt) {
+  const agent = db.prepare('SELECT id, account_id, user_id FROM ai_agents WHERE id = ?').get(agentId)
+  if (!agent || !agent.user_id) return { ok: false, reason: 'no_agent_user' }
+  if (!pausedAt) return { ok: false, reason: 'no_paused_at' }
+
+  const pendingLeads = db.prepare(`
+    SELECT l.id as lead_id, l.instance_id,
+      (SELECT content FROM messages WHERE lead_id = l.id AND direction = 'inbound' ORDER BY id DESC LIMIT 1) as last_content,
+      (SELECT media_type FROM messages WHERE lead_id = l.id AND direction = 'inbound' ORDER BY id DESC LIMIT 1) as last_media_type
+    FROM leads l
+    WHERE l.account_id = ?
+      AND l.attendant_id = ?
+      AND l.is_active = 1
+      AND COALESCE(l.is_archived, 0) = 0
+      AND COALESCE(l.is_blocked, 0) = 0
+      AND l.ai_handed_off_at IS NULL
+      AND EXISTS (
+        SELECT 1 FROM messages m
+        WHERE m.lead_id = l.id AND m.direction = 'inbound'
+          AND m.created_at >= ?
+          AND m.id > COALESCE(
+            (SELECT MAX(id) FROM messages WHERE lead_id = l.id AND direction = 'outbound'),
+            0
+          )
+      )
+    ORDER BY (SELECT MAX(created_at) FROM messages WHERE lead_id = l.id) DESC
+    LIMIT 30
+  `).all(agent.account_id, agent.user_id, pausedAt)
+
+  console.log(`[Bot Replay] agent=${agentId} leadsPendentes=${pendingLeads.length}`)
+
+  let dispatched = 0
+  for (const row of pendingLeads) {
+    if (!row.last_content && row.last_media_type !== 'audio') continue
+    const freshLead = db.prepare('SELECT * FROM leads WHERE id = ?').get(row.lead_id)
+    if (!freshLead) continue
+    const delayMs = dispatched * 500
+    setTimeout(() => {
+      processInboundMessage(freshLead, row.last_content || '', row.last_media_type, row.instance_id)
+        .catch(e => console.error(`[Bot Replay] err lead=${row.lead_id}:`, e.message))
+    }, delayMs)
+    dispatched++
+  }
+
+  return { ok: true, dispatched, total: pendingLeads.length }
 }

@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAccount } from '../context/AccountContext'
-import { fetchBroadcasts, fetchLeads, createBroadcast, sendBroadcast, cancelScheduledBroadcast, fetchTags, fetchFunnels, fetchWhatsAppInstances, fetchBroadcastCloneData, type Broadcast, type Lead, type Tag, type Funnel, type WhatsAppInstance } from '../lib/api'
-import { MessageCircle, Plus, Send, CheckCircle, Clock, Trash2, Filter, Tag as TagIcon, GitBranch, Smartphone, AlertTriangle, Eye, PauseCircle, Copy } from 'lucide-react'
+import { fetchBroadcasts, fetchLeads, createBroadcast, sendBroadcast, cancelScheduledBroadcast, pauseBroadcast, resumeBroadcast, cancelBroadcast, fetchTags, fetchFunnels, fetchWhatsAppInstances, fetchBroadcastCloneData, fetchUsers, type Broadcast, type Lead, type Tag, type Funnel, type WhatsAppInstance, type User } from '../lib/api'
+import { MessageCircle, Plus, Send, CheckCircle, Clock, Trash2, Filter, Tag as TagIcon, GitBranch, Smartphone, AlertTriangle, Eye, PauseCircle, Copy, UserCog, Pause, Play, XCircle, Square } from 'lucide-react'
 import { parseSqlDate } from '../lib/dates'
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
@@ -12,6 +12,7 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
   paused: { label: 'Pausado', color: '#FBBC04' },
   completed: { label: 'Concluido', color: '#34C759' },
   failed: { label: 'Falhou', color: '#FF6B6B' },
+  cancelled: { label: 'Cancelado', color: '#FF6B6B' },
 }
 
 const MIN_VARIATIONS = 3 // total messages (principal + 2 variations)
@@ -49,6 +50,8 @@ export default function Messages() {
   const [instances, setInstances] = useState<WhatsAppInstance[]>([])
   const [filterTags, setFilterTags] = useState<number[]>([])
   const [filterStages, setFilterStages] = useState<number[]>([])
+  const [filterAttendants, setFilterAttendants] = useState<number[]>([])
+  const [users, setUsers] = useState<User[]>([])
   const [creating, setCreating] = useState(false)
   const [duplicating, setDuplicating] = useState(false)
   const [cloneNotice, setCloneNotice] = useState<string | null>(null)
@@ -71,6 +74,7 @@ export default function Messages() {
     if (showNew && accountId) {
       fetchTags(accountId).then(setTags).catch(() => {})
       fetchFunnels(accountId).then(setFunnels).catch(() => {})
+      fetchUsers(accountId).then(us => setUsers(us.filter(u => u.is_active && (u.role === 'atendente' || u.role === 'gerente' || u.is_bot)))).catch(() => {})
       fetchWhatsAppInstances(accountId).then(insts => {
         setInstances(insts)
         const connected = insts.find(i => i.status === 'connected')
@@ -90,6 +94,11 @@ export default function Messages() {
     if (filterStages.length > 0) {
       queries.push(...filterStages.map(stageId => fetchLeads(accountId, { stage_id: stageId, limit: 500 })))
     }
+    if (filterAttendants.length > 0 && queries.length === 0) {
+      // Se SO atendente esta filtrado, pede leads desse atendente direto.
+      // Se houver outros filtros, atendente vira filtro client-side no merged abaixo.
+      queries.push(...filterAttendants.map(uid => fetchLeads(accountId, { attendant_id: uid, limit: 500 })))
+    }
     if (queries.length === 0 && leadSearch.length > 1) {
       queries.push(fetchLeads(accountId, { search: leadSearch, limit: 500 }))
     } else if (queries.length > 0 && leadSearch.length > 1) {
@@ -104,8 +113,12 @@ export default function Messages() {
       const map = new Map<number, Lead>()
       all.forEach(r => r.leads.forEach(l => map.set(l.id, l)))
       let merged = Array.from(map.values()).filter(l => l.phone)
+      // Filtro de atendente client-side quando ha outros filtros (intersecao)
+      if (filterAttendants.length > 0 && (filterTags.length > 0 || filterStages.length > 0)) {
+        merged = merged.filter(l => l.attendant_id != null && filterAttendants.includes(l.attendant_id))
+      }
       // Aplica busca de texto sobre o set unificado quando ha filtros
-      if (leadSearch.length > 1 && (filterTags.length > 0 || filterStages.length > 0)) {
+      if (leadSearch.length > 1 && (filterTags.length > 0 || filterStages.length > 0 || filterAttendants.length > 0)) {
         const q = leadSearch.toLowerCase()
         merged = merged.filter(l => (l.name || '').toLowerCase().includes(q) || (l.phone || '').includes(q))
       }
@@ -115,9 +128,9 @@ export default function Messages() {
 
   useEffect(() => {
     if (!accountId) return
-    if (leadSearch.length > 1 || filterTags.length > 0 || filterStages.length > 0) searchLeads()
+    if (leadSearch.length > 1 || filterTags.length > 0 || filterStages.length > 0 || filterAttendants.length > 0) searchLeads()
     else setSearchResults([])
-  }, [leadSearch, filterTags.join(','), filterStages.join(','), accountId])
+  }, [leadSearch, filterTags.join(','), filterStages.join(','), filterAttendants.join(','), accountId])
 
   const toggleLead = (lead: Lead) => {
     setSelectedLeads(prev => prev.some(l => l.id === lead.id) ? prev.filter(l => l.id !== lead.id) : [...prev, lead])
@@ -132,6 +145,7 @@ export default function Messages() {
   }
   const toggleTag = (id: number) => setFilterTags(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
   const toggleStage = (id: number) => setFilterStages(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  const toggleAttendant = (id: number) => setFilterAttendants(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
 
   const totalMessagesCount = 1 + newVariations.filter(v => v.trim()).length
   const enoughVariations = totalMessagesCount >= MIN_VARIATIONS
@@ -188,6 +202,26 @@ export default function Messages() {
     const when = b.scheduled_at ? new Date(b.scheduled_at).toLocaleString('pt-BR') : ''
     if (!confirm(`Cancelar agendamento de "${b.name}"${when ? ` (${when})` : ''}?\n\nO disparo volta pra rascunho e voce pode editar ou re-agendar.`)) return
     try { await cancelScheduledBroadcast(b.id, accountId); load() }
+    catch (e: any) { alert('Erro: ' + e.message) }
+  }
+
+  const handlePause = async (b: Broadcast) => {
+    if (!accountId) return
+    if (!confirm(`Pausar "${b.name}"?\n\nO disparo para imediatamente. Voce pode retomar depois clicando no botao Play.`)) return
+    try { await pauseBroadcast(b.id, accountId); load() }
+    catch (e: any) { alert('Erro: ' + e.message) }
+  }
+
+  const handleResume = async (b: Broadcast) => {
+    if (!accountId) return
+    try { await resumeBroadcast(b.id, accountId); load() }
+    catch (e: any) { alert('Erro: ' + e.message) }
+  }
+
+  const handleCancel = async (b: Broadcast) => {
+    if (!accountId) return
+    if (!confirm(`Cancelar "${b.name}"?\n\nO disparo para definitivamente. Os ${b.sent_count} contatos ja enviados nao sao afetados, mas os ${b.total_count - b.sent_count - b.failed_count} restantes NAO recebem a msg. O disparo fica marcado como Cancelado.`)) return
+    try { await cancelBroadcast(b.id, accountId); load() }
     catch (e: any) { alert('Erro: ' + e.message) }
   }
 
@@ -272,8 +306,37 @@ export default function Messages() {
                         {b.status === 'draft' && <button className="btn btn-primary btn-sm" onClick={() => handleSend(b.id)} style={{ fontSize: 11 }}><Send size={11} /> Enviar</button>}
                         {b.status === 'scheduled' && <button className="btn btn-secondary btn-sm" onClick={() => handleCancelSchedule(b)} style={{ fontSize: 11 }} title="Cancelar agendamento (volta pra rascunho)">Cancelar</button>}
                         {b.status === 'completed' && <CheckCircle size={14} style={{ color: '#34C759' }} />}
-                        {b.status === 'sending' && !isPaused && <Clock size={14} style={{ color: '#5DADE2' }} className="spinning" />}
-                        {isPaused && <PauseCircle size={14} style={{ color: '#FBBC04' }} />}
+                        {b.status === 'cancelled' && <XCircle size={14} style={{ color: '#FF6B6B' }} title="Cancelado" />}
+                        {b.status === 'sending' && !isPaused && (
+                          <>
+                            <Clock size={14} style={{ color: '#5DADE2' }} className="spinning" />
+                            <button className="btn btn-sm btn-icon" onClick={() => handlePause(b)}
+                              style={{ background: 'rgba(251,188,4,0.15)', border: '1px solid rgba(251,188,4,0.4)', color: '#FBBC04' }}
+                              title="Pausar disparo">
+                              <Pause size={12} />
+                            </button>
+                            <button className="btn btn-sm btn-icon" onClick={() => handleCancel(b)}
+                              style={{ background: 'rgba(255,107,107,0.15)', border: '1px solid rgba(255,107,107,0.4)', color: '#FF6B6B' }}
+                              title="Parar disparo (cancela definitivamente)">
+                              <Square size={12} />
+                            </button>
+                          </>
+                        )}
+                        {b.status === 'sending' && isPaused && (
+                          <>
+                            <PauseCircle size={14} style={{ color: '#FBBC04' }} />
+                            <button className="btn btn-sm btn-icon" onClick={() => handleResume(b)}
+                              style={{ background: 'rgba(52,199,89,0.15)', border: '1px solid rgba(52,199,89,0.4)', color: '#34C759' }}
+                              title="Retomar disparo">
+                              <Play size={12} />
+                            </button>
+                            <button className="btn btn-sm btn-icon" onClick={() => handleCancel(b)}
+                              style={{ background: 'rgba(255,107,107,0.15)', border: '1px solid rgba(255,107,107,0.4)', color: '#FF6B6B' }}
+                              title="Parar disparo (cancela definitivamente)">
+                              <Square size={12} />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -334,8 +397,12 @@ export default function Messages() {
                 </div>
 
                 <div className="form-group"><label>Nome do disparo</label><input className="input" value={newName} onChange={e => setNewName(e.target.value)} placeholder="Ex: Promo Marco 2026" /></div>
-                <div className="form-group"><label>Mensagem principal (use {'{{name}}'} pra nome do lead)</label>
-                  <textarea className="input" rows={3} value={newTemplate} onChange={e => setNewTemplate(e.target.value)} placeholder="Ola {{name}}, temos uma oferta especial..." />
+                <div className="form-group">
+                  <label>Mensagem principal</label>
+                  <textarea className="input" rows={3} value={newTemplate} onChange={e => setNewTemplate(e.target.value)} placeholder="Ola {{nome}}, temos uma oferta especial..." />
+                  <div style={{ fontSize: 11, color: '#9B96B0', marginTop: 4 }}>
+                    Variaveis disponiveis: <code style={{ color: '#FFB300' }}>{'{{nome}}'}</code> <code style={{ color: '#FFB300' }}>{'{{primeiro_nome}}'}</code> <code style={{ color: '#FFB300' }}>{'{{empresa}}'}</code> <code style={{ color: '#FFB300' }}>{'{{cidade}}'}</code> <code style={{ color: '#FFB300' }}>{'{{telefone}}'}</code>
+                  </div>
                 </div>
 
                 {/* Variacoes — minimo MIN_VARIATIONS - 1 = 2 */}
@@ -473,8 +540,36 @@ export default function Messages() {
                   </div>
                 )}
 
-                {(filterTags.length > 0 || filterStages.length > 0) && (
-                  <button className="btn btn-secondary btn-sm" onClick={() => { setFilterTags([]); setFilterStages([]) }} style={{ fontSize: 10, marginBottom: 8 }}>
+                {/* Atendentes como chips multi-select */}
+                {users.length > 0 && (
+                  <div style={{ marginBottom: 10 }}>
+                    <label style={{ fontSize: 11, color: '#9B96B0', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                      <UserCog size={11} /> Filtrar por atendente {filterAttendants.length > 0 && <span style={{ color: '#FFB300' }}>({filterAttendants.length} ativo{filterAttendants.length > 1 ? 's' : ''})</span>}
+                    </label>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                      {users.map(u => {
+                        const active = filterAttendants.includes(u.id)
+                        const isBot = u.is_bot === 1
+                        const color = isBot ? '#9B6DFF' : u.role === 'gerente' ? '#FFB300' : '#34C759'
+                        return (
+                          <button key={u.id} type="button" onClick={() => toggleAttendant(u.id)}
+                            style={{
+                              padding: '4px 10px', borderRadius: 12, fontSize: 11, cursor: 'pointer',
+                              border: `1px solid ${active ? color : 'rgba(255,255,255,0.1)'}`,
+                              background: active ? `${color}25` : 'rgba(255,255,255,0.03)',
+                              color: active ? color : '#9B96B0',
+                              fontWeight: active ? 600 : 400,
+                            }}>
+                            {active ? '✓ ' : ''}{isBot ? '🤖 ' : ''}{u.name}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {(filterTags.length > 0 || filterStages.length > 0 || filterAttendants.length > 0) && (
+                  <button className="btn btn-secondary btn-sm" onClick={() => { setFilterTags([]); setFilterStages([]); setFilterAttendants([]) }} style={{ fontSize: 10, marginBottom: 8 }}>
                     <Filter size={10} /> Limpar filtros
                   </button>
                 )}
@@ -499,8 +594,8 @@ export default function Messages() {
                       {l.stage_name && <span style={{ fontSize: 10, color: l.stage_color || '#FFB300', marginLeft: 'auto' }}>{l.stage_name}</span>}
                     </label>
                   ))}
-                  {searchResults.length === 0 && (leadSearch.length > 1 || filterTags.length > 0 || filterStages.length > 0) && <div style={{ padding: 20, textAlign: 'center', color: '#6B6580' }}>Nenhum lead encontrado neste filtro</div>}
-                  {searchResults.length === 0 && leadSearch.length <= 1 && filterTags.length === 0 && filterStages.length === 0 && <div style={{ padding: 20, textAlign: 'center', color: '#6B6580' }}>Selecione tags, etapas, ou digite pra buscar...</div>}
+                  {searchResults.length === 0 && (leadSearch.length > 1 || filterTags.length > 0 || filterStages.length > 0 || filterAttendants.length > 0) && <div style={{ padding: 20, textAlign: 'center', color: '#6B6580' }}>Nenhum lead encontrado neste filtro</div>}
+                  {searchResults.length === 0 && leadSearch.length <= 1 && filterTags.length === 0 && filterStages.length === 0 && filterAttendants.length === 0 && <div style={{ padding: 20, textAlign: 'center', color: '#6B6580' }}>Selecione tags, etapas, atendentes, ou digite pra buscar...</div>}
                 </div>
                 {selectedLeads.length > 0 && (
                   <div style={{ marginTop: 6, padding: '6px 10px', background: 'rgba(255,179,0,0.05)', borderRadius: 6, fontSize: 11, color: '#9B96B0' }}>

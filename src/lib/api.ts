@@ -330,6 +330,8 @@ export const createBroadcast = (accountId: number, data: { name: string; message
 export const sendBroadcast = (id: number, accountId: number) => apiFetch(`/api/broadcasts/${id}/send?account_id=${accountId}`, { method: 'POST' })
 export const resumeBroadcast = (id: number, accountId: number) => apiFetch(`/api/broadcasts/${id}/resume?account_id=${accountId}`, { method: 'POST' })
 export const cancelScheduledBroadcast = (id: number, accountId: number) => apiFetch<{ broadcast: Broadcast }>(`/api/broadcasts/${id}/cancel-schedule?account_id=${accountId}`, { method: 'POST' })
+export const pauseBroadcast = (id: number, accountId: number) => apiFetch<{ broadcast: Broadcast }>(`/api/broadcasts/${id}/pause?account_id=${accountId}`, { method: 'POST' })
+export const cancelBroadcast = (id: number, accountId: number) => apiFetch<{ broadcast: Broadcast }>(`/api/broadcasts/${id}/cancel?account_id=${accountId}`, { method: 'POST' })
 export const deleteBroadcast = (id: number, accountId: number) => apiFetch(`/api/broadcasts/${id}?account_id=${accountId}`, { method: 'DELETE' })
 export interface BroadcastCloneData {
   clone: { name: string; message_template: string; message_variations: string[]; media_url: string | null; delay_seconds: number; instance_id: number | null; leads: Lead[] }
@@ -634,6 +636,14 @@ export const updateAgent = (id: number, accountId: number, data: Partial<AgentIn
 
 export const deleteAgent = (id: number, accountId: number) =>
   apiFetch(`/api/agents/${id}?account_id=${accountId}`, { method: 'DELETE' })
+
+// Toggle rapido pausar/reativar bot. Ao reativar, backend dispara replay da ultima msg pendente de cada lead.
+export const toggleAgentActive = (id: number, accountId: number) =>
+  apiFetch<{
+    ok: boolean
+    is_active: number
+    replay?: { total: number; will_replay: number }
+  }>(`/api/agents/${id}/toggle-active?account_id=${accountId}`, { method: 'PATCH' })
 
 export const fetchAgentUsage = (id: number, accountId: number) =>
   apiFetch<AgentUsage>(`/api/agents/${id}/usage?account_id=${accountId}`)
