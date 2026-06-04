@@ -61,6 +61,193 @@ function _normalizePhone(phone) {
   return (phone || '').replace(/[^\d]/g, '').replace(/^(?!55)(\d{10,11})$/, '55$1')
 }
 
+// ─── Anti-ban: horario comercial por instancia ───────────────────────────
+// business_hours_json formato: {sun:[{start:"08:00",end:"21:00"}], mon:[...], ...}
+// null = 24/7 (compat com instancias antigas). Dia sem slots = fechado.
+function isInBusinessHours(instance, now = new Date()) {
+  if (!instance.business_hours_json) return true
+  let schedule = null
+  try { schedule = JSON.parse(instance.business_hours_json) } catch { return true }
+  if (!schedule || typeof schedule !== 'object') return true
+  const dayKeys = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
+  const slots = schedule[dayKeys[now.getDay()]]
+  if (!Array.isArray(slots) || slots.length === 0) return false
+  const cur = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+  return slots.some(s => s?.start && s?.end && cur >= s.start && cur <= s.end)
+}
+
+// ─── Anti-ban: cap msgs automaticas pro mesmo lead em 24h ───────────────
+// Conta outbound nas ultimas 24h com sent/delivered/read. Chat manual passa
+// via opts.skipLeadCap=true.
+function checkLeadCap(instance, leadId) {
+  if (!leadId) return { ok: true }
+  const cap = instance.lead_daily_msg_cap || 5
+  const count = db.prepare(`
+    SELECT COUNT(*) as n FROM messages
+    WHERE lead_id = ? AND direction = 'outbound'
+      AND created_at >= datetime('now', '-1 day')
+      AND delivery_status IN ('sent', 'delivered', 'read')
+  `).get(leadId)?.n || 0
+  if (count >= cap) {
+    return { ok: false, reason: `lead_daily_cap_${cap}`, count, cap }
+  }
+  return { ok: true, count, cap }
+}
+
+// ─── Anti-ban: saude da instancia + auto-pausa por taxa de falha ────────
+// Janela default 2h. Minimo 20 msgs pra avaliar (evita amostra ruim).
+//
+// Metrica: NAO_FAILED rate = (total - failed) / total. Esse calculo eh robusto:
+// - Funciona mesmo se webhook messages.update da Evolution nao atualizar
+//   sent->delivered (caso comum em algumas instalacoes).
+// - Detecta REJEICAO real (Evolution recusou, numero invalido, sessao morta).
+//
+// Threshold: <70% nao-failed -> auto-pausa. Auto-resume eh tarefa do scheduler.
+function checkInstanceHealth(instance) {
+  if (instance.paused_at && instance.paused_reason === 'manual') {
+    return { ok: false, reason: 'manually_paused' }
+  }
+  const windowMin = instance.health_check_window_min || 120
+  const stats = db.prepare(`
+    SELECT
+      COUNT(*) as total,
+      SUM(CASE WHEN delivery_status = 'failed' THEN 1 ELSE 0 END) as failed
+    FROM messages
+    WHERE instance_id = ? AND direction = 'outbound'
+      AND created_at >= datetime('now', '-${windowMin} minutes')
+      AND delivery_status IN ('sent','delivered','read','failed')
+  `).get(instance.id)
+  if ((stats?.total || 0) < 20) return { ok: true, total: stats?.total || 0 }
+  const failedRate = (stats.failed || 0) / stats.total
+  const okRate = 1 - failedRate
+  if (okRate < 0.70) {
+    db.prepare("UPDATE whatsapp_instances SET paused_at = datetime('now'), paused_reason = 'delivered_rate_low' WHERE id = ?").run(instance.id)
+    console.warn(`[Health] inst=${instance.instance_name} AUTO-PAUSED ok_rate=${(okRate * 100).toFixed(0)}% (failed=${stats.failed}/${stats.total})`)
+    return { ok: false, reason: 'auto_paused_low_delivery', rate: okRate, failed: stats.failed, total: stats.total }
+  }
+  return { ok: true, rate: okRate, total: stats.total }
+}
+
+// ─── Anti-ban: marca a ultima inbound do lead como lida ─────────────────
+// Replica humano que abre a conversa antes de responder.
+// Best-effort: se Evolution recusar, ignora silenciosamente.
+export async function markMessageAsRead(instance, lead) {
+  if (!lead || !instance) return
+  const lastMsg = db.prepare(`
+    SELECT wa_msg_id, wa_remote_jid FROM messages
+    WHERE lead_id = ? AND direction = 'inbound' AND wa_msg_id IS NOT NULL
+    ORDER BY id DESC LIMIT 1
+  `).get(lead.id)
+  if (!lastMsg?.wa_msg_id) return
+  const remoteJid = lastMsg.wa_remote_jid || (lead.phone ? `${_normalizePhone(lead.phone)}@s.whatsapp.net` : null)
+  if (!remoteJid) return
+  try {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 3000)
+    await fetch(`${instance.api_url}/chat/markMessageAsRead/${instance.instance_name}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: instance.api_key },
+      body: JSON.stringify({ read_messages: [{ remoteJid, fromMe: false, id: lastMsg.wa_msg_id }] }),
+      signal: controller.signal,
+    }).catch(() => {})
+    clearTimeout(timer)
+  } catch {}
+}
+
+// ─── Anti-ban: quota por instancia + warm-up gradual ────────────────────
+// Defaults conservadores. Override por instancia via hourly_send_limit/daily_send_limit.
+// Warm-up: instancia nova (created_at < 3 dias) usa multiplicador menor.
+const QUOTA_DEFAULT_PER_HOUR = 100
+const QUOTA_DEFAULT_PER_DAY = 800
+const WARMUP_DAYS = 3
+// Dia 1 = 5% do quota, dia 2 = 20%, dia 3 = 50%. Dia 4+ = 100%.
+const WARMUP_MULTIPLIERS = [0.05, 0.20, 0.50]
+
+function checkSendQuota(instance) {
+  const hourlyLimit = instance.hourly_send_limit || QUOTA_DEFAULT_PER_HOUR
+  const dailyLimit = instance.daily_send_limit || QUOTA_DEFAULT_PER_DAY
+
+  let effectiveHourly = hourlyLimit
+  let effectiveDaily = dailyLimit
+
+  // Aplica warm-up se ainda esta na janela
+  if (instance.warmup_until) {
+    const warmupEndMs = new Date(instance.warmup_until.replace(' ', 'T') + 'Z').getTime()
+    if (warmupEndMs > Date.now()) {
+      const refDate = instance.created_at || instance.warmup_until
+      const createdMs = new Date(String(refDate).replace(' ', 'T') + 'Z').getTime()
+      const daysIn = Math.max(0, Math.floor((Date.now() - createdMs) / 86400000))
+      const mult = WARMUP_MULTIPLIERS[Math.min(daysIn, WARMUP_MULTIPLIERS.length - 1)]
+      effectiveHourly = Math.max(1, Math.floor(hourlyLimit * mult))
+      effectiveDaily = Math.max(1, Math.floor(dailyLimit * mult))
+    }
+  }
+
+  // Conta envios reais (sent/delivered/read) na ultima hora
+  const hourCount = db.prepare(`
+    SELECT COUNT(*) as n FROM messages
+    WHERE instance_id = ? AND direction = 'outbound'
+      AND created_at >= datetime('now', '-1 hour')
+      AND delivery_status IN ('sent', 'delivered', 'read')
+  `).get(instance.id)?.n || 0
+  if (hourCount >= effectiveHourly) {
+    return { ok: false, reason: `quota_hourly_${effectiveHourly}`, hourCount, limit: effectiveHourly }
+  }
+
+  const dayCount = db.prepare(`
+    SELECT COUNT(*) as n FROM messages
+    WHERE instance_id = ? AND direction = 'outbound'
+      AND created_at >= datetime('now', '-1 day')
+      AND delivery_status IN ('sent', 'delivered', 'read')
+  `).get(instance.id)?.n || 0
+  if (dayCount >= effectiveDaily) {
+    return { ok: false, reason: `quota_daily_${effectiveDaily}`, dayCount, limit: effectiveDaily }
+  }
+
+  return { ok: true, effectiveHourly, effectiveDaily, hourCount, dayCount }
+}
+
+// ─── Anti-ban: typing simulation ─────────────────────────────────────────
+// Antes de enviar, manda presence=composing pro Evolution e aguarda tempo
+// proporcional ao tamanho do texto. Caps min 1.2s, max 5s. Jitter ±25%.
+const TYPING_MIN_MS = 1200
+const TYPING_MAX_MS = 5000
+
+async function simulateTyping(instance, phone, text) {
+  const number = _normalizePhone(phone)
+  if (!number) return
+  // ~40 chars/sec digitando humano + base 800ms.
+  const baseRaw = 800 + (text || '').length * 25
+  const base = Math.max(TYPING_MIN_MS, Math.min(TYPING_MAX_MS, baseRaw))
+  const jitter = 0.75 + Math.random() * 0.5  // 0.75x a 1.25x
+  const ms = Math.round(base * jitter)
+
+  // Best-effort: cada chamada de presence pode falhar silenciosamente.
+  const sendPresence = (presence) => {
+    try {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 3000)
+      return fetch(`${instance.api_url}/chat/sendPresence/${instance.instance_name}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: instance.api_key },
+        body: JSON.stringify({ number, presence, delay: 100 }),
+        signal: controller.signal,
+      }).catch(() => {}).finally(() => clearTimeout(timer))
+    } catch { return Promise.resolve() }
+  }
+
+  // Sequencia humana completa: online -> digitando -> parou de digitar -> envia
+  // 1. Online (simula abrir o WhatsApp)
+  await sendPresence('available')
+  await new Promise(r => setTimeout(r, 300 + Math.random() * 200))  // 300-500ms
+  // 2. Digitando
+  await sendPresence('composing')
+  await new Promise(r => setTimeout(r, ms))
+  // 3. Parou de digitar (vai enviar)
+  await sendPresence('paused')
+  await new Promise(r => setTimeout(r, 100 + Math.random() * 100))  // 100-200ms
+}
+
 /**
  * Valida 1 numero via Evolution. Cache 5min.
  * Retorna: true (existe), false (nao existe), null (timeout/erro — assume valido pra nao bloquear envio).
@@ -176,18 +363,51 @@ export async function checkWhatsAppNumbersBulk(instance, phones) {
 }
 
 /**
- * Envia msg via Evolution com pre-flight de validacao de numero.
+ * Envia msg via Evolution com pre-flight de validacao de numero e protecoes anti-ban.
  *
  * @param {Object} instance
  * @param {string} phone
  * @param {string} text
  * @param {Object} [opts]
- * @param {boolean} [opts.skipValidation=false] - pula pre-flight (use quando ja validou antes)
+ * @param {number} [opts.leadId] - lead.id pra cap diario (recomendado se disponivel)
+ * @param {boolean} [opts.skipValidation=false] - pula pre-flight de numero
+ * @param {boolean} [opts.skipTyping=false] - pula sequencia de presence (chat humano)
+ * @param {boolean} [opts.skipQuota=false] - pula quota por instancia (chat humano)
+ * @param {boolean} [opts.skipBusinessHours=false] - pula horario comercial (chat humano + auto-msgs)
+ * @param {boolean} [opts.skipLeadCap=false] - pula cap por lead/dia (chat humano)
+ * @param {boolean} [opts.skipHealthCheck=false] - pula check de delivered_rate (chat humano)
  * @returns {Promise<{ok: boolean, wamsgId: string|null, reason?: string, validationFailed?: boolean, raw?: object}>}
  */
 export async function sendViaInstance(instance, phone, text, opts = {}) {
   const number = _normalizePhone(phone)
   if (!number) return { ok: false, reason: 'phone vazio' }
+
+  // Instancia pausada (auto ou manual) — bloqueia tudo exceto chat humano
+  if (instance.paused_at && !opts.skipHealthCheck) {
+    return { ok: false, reason: `instance_paused_${instance.paused_reason || 'unknown'}` }
+  }
+
+  // Horario comercial (skip pra chat manual humano e auto-mensagens de ausencia)
+  if (!opts.skipBusinessHours) {
+    if (!isInBusinessHours(instance)) {
+      return { ok: false, reason: 'outside_business_hours' }
+    }
+  }
+
+  // Cap por lead/dia (skip pra chat manual humano)
+  if (!opts.skipLeadCap && opts.leadId) {
+    const c = checkLeadCap(instance, opts.leadId)
+    if (!c.ok) {
+      console.warn(`[LeadCap] inst=${instance.instance_name} lead=${opts.leadId} bloqueado: ${c.reason} (count=${c.count}/${c.cap})`)
+      return { ok: false, reason: c.reason }
+    }
+  }
+
+  // Saude da instancia (delivered_rate) — pode auto-pausar
+  if (!opts.skipHealthCheck) {
+    const h = checkInstanceHealth(instance)
+    if (!h.ok) return { ok: false, reason: h.reason }
+  }
 
   // Pre-flight: valida numero (a menos que caller diga pra pular)
   if (!opts.skipValidation) {
@@ -199,11 +419,24 @@ export async function sendViaInstance(instance, phone, text, opts = {}) {
     // exists === null (timeout/erro de validacao): segue mesmo assim
   }
 
+  // Quota check (skip pra chat manual humano)
+  if (!opts.skipQuota) {
+    const q = checkSendQuota(instance)
+    if (!q.ok) {
+      console.warn(`[Quota] inst=${instance.instance_name} bloqueado: ${q.reason} (count=${q.hourCount ?? q.dayCount}/${q.limit})`)
+      return { ok: false, reason: q.reason }
+    }
+  }
+
+  // Anti-ban: typing simulation antes do envio (skip pra chat manual humano)
+  if (!opts.skipTyping) await simulateTyping(instance, phone, text)
+
   try {
     const res = await fetch(`${instance.api_url}/message/sendText/${instance.instance_name}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'apikey': instance.api_key },
-      body: JSON.stringify({ number, text, delay: 2000 }),
+      // delay:2000 removido — typing simulation ja cobre o tempo de "digitacao"
+      body: JSON.stringify({ number, text }),
     })
     const data = await res.json().catch(() => ({}))
     if (!data.key?.id) {
@@ -283,7 +516,7 @@ export async function notifyAndOpenLead(leadId, attendantUserId, opts = {}) {
         if (tpl && tpl.trim()) {
           const text = renderTemplate(tpl, vars)
           if (text.trim()) {
-            const r = await sendViaInstance(vendInst, lead.phone, text)
+            const r = await sendViaInstance(vendInst, lead.phone, text, { leadId: lead.id })
             if (r.ok) {
               db.prepare(`INSERT INTO messages (lead_id, account_id, direction, content, media_type, sender_name, wa_msg_id, instance_id)
                           VALUES (?, ?, 'outbound', ?, 'text', ?, ?, ?)`)
@@ -316,7 +549,10 @@ export async function notifyAndOpenLead(leadId, attendantUserId, opts = {}) {
           : ''
         const sourceLabel = SOURCE_LABELS[opts.source] || 'novo lead'
         const text = `📩 ${sourceLabel.charAt(0).toUpperCase() + sourceLabel.slice(1)}: ${vars.lead_name || vars.phone} (${vars.phone})${cityPart}${stagePart}\n\nAbra o CRM pra continuar a conversa.`
-        const r = await sendViaInstance(notifier, userInst.phone_number, text)
+        // Notifier eh msg interna pro vendedor (nao pro lead). Skip tudo anti-ban.
+        const r = await sendViaInstance(notifier, userInst.phone_number, text, {
+          skipBusinessHours: true, skipLeadCap: true, skipQuota: true, skipHealthCheck: true,
+        })
         if (r.ok) console.log(`[Handoff] Notif lead=${lead.id} -> ${user.name} source=${opts.source || '?'}`)
         else console.error(`[Handoff] Notif FALHOU lead=${lead.id}:`, r.reason || JSON.stringify(r.raw).substring(0, 150))
       }

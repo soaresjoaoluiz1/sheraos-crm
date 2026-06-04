@@ -6,7 +6,7 @@ import db from '../db.js'
 import { callHaiku } from './anthropicClient.js'
 import { broadcastSSE } from '../sse.js'
 import { pickFromRoulette as rouletteUtil } from './roulette.js'
-import { notifyAndOpenLead, sendViaInstance } from './leadHandoff.js'
+import { notifyAndOpenLead, sendViaInstance, markMessageAsRead } from './leadHandoff.js'
 import { transcribeAudio, fetchAudioBuffer } from './deepgramClient.js'
 
 // ─── Helpers ──────────────────────────────────────────────────────────
@@ -39,8 +39,10 @@ function resetMonthlyTokensIfNeeded(agent) {
 
 // ─── findAgentForLead ─────────────────────────────────────────────────
 
-export function findAgentForLead(lead, instanceId) {
+export function findAgentForLead(lead, instanceId, _opts = {}) {
   if (!lead) return null
+  // Removido modo force — botao "Forcar IA" agora roda o fluxo NORMAL.
+  // Bloqueios sao reportados pelo diagnoseForceAi() na rota /force-ai-respond.
 
   // 0. Account tem feature gate?
   const account = getAccount(lead.account_id)
@@ -65,7 +67,7 @@ export function findAgentForLead(lead, instanceId) {
     // Filtro etapa
     const hasStage = db.prepare('SELECT 1 FROM ai_agent_stages WHERE agent_id = ? AND stage_id = ?').get(agent.id, lead.stage_id)
     if (!hasStage) continue
-    // Filtro instancia (se instanceId presente)
+    // Filtro instancia
     if (instanceId) {
       const hasInstance = db.prepare('SELECT 1 FROM ai_agent_instances WHERE agent_id = ? AND instance_id = ?').get(agent.id, instanceId)
       if (!hasInstance) continue
@@ -89,6 +91,86 @@ export function findAgentForLead(lead, instanceId) {
     }
   }
   return null
+}
+
+// ─── diagnoseForceAi ─────────────────────────────────────────────────
+// Diagnostica POR QUE o bot nao atuaria (ou faria handoff silencioso) nesse lead.
+// Retorna lista de bloqueios em pt-BR. Vazio = bot atuaria normalmente.
+export function diagnoseForceAi(lead, instanceId) {
+  const blockers = []
+  if (!lead) return { blockers: ['Lead nao encontrado'] }
+
+  const account = getAccount(lead.account_id)
+  if (!account) return { blockers: ['Conta nao encontrada'] }
+  if (!account.ai_agents_enabled) blockers.push('IA dos agentes esta desativada na conta')
+
+  if (lead.is_blocked) blockers.push('Lead esta bloqueado')
+  if (lead.is_archived) blockers.push('Lead esta arquivado')
+  if (!lead.is_active) blockers.push('Lead esta inativo')
+
+  if (lead.ai_handed_off_at) blockers.push('Lead ja teve handoff anterior (bot transferiu pra humano em ' + lead.ai_handed_off_at + ')')
+
+  if (lead.attendant_id) {
+    const att = getUser(lead.attendant_id)
+    if (att && !att.is_bot) blockers.push(`Lead tem atendente humano atribuido: ${att.name}`)
+  }
+
+  // Verifica agentes
+  const agents = db.prepare("SELECT * FROM ai_agents WHERE account_id = ? AND is_active = 1 ORDER BY id ASC").all(lead.account_id)
+  if (agents.length === 0) {
+    blockers.push('Nenhum agente IA ativo nessa conta')
+    return { blockers }
+  }
+
+  // Verifica se ALGUM agente bate todos os filtros de config E pode responder
+  // (sem cair em handoff silencioso por max_messages ou token limit)
+  let anyAgentViable = false
+  const issuesPerAgent = []
+  for (const agent of agents) {
+    const stageOk = !!db.prepare('SELECT 1 FROM ai_agent_stages WHERE agent_id = ? AND stage_id = ?').get(agent.id, lead.stage_id)
+    const instanceOk = !instanceId || !!db.prepare('SELECT 1 FROM ai_agent_instances WHERE agent_id = ? AND instance_id = ?').get(agent.id, instanceId)
+    const tagOk = !agent.required_tag_id || leadHasTag(lead.id, agent.required_tag_id)
+    if (!stageOk || !instanceOk || !tagOk) {
+      const why = []
+      if (!stageOk) {
+        const stageName = db.prepare('SELECT name FROM funnel_stages WHERE id = ?').get(lead.stage_id)?.name || `id=${lead.stage_id}`
+        why.push(`etapa "${stageName}" nao configurada`)
+      }
+      if (!instanceOk) {
+        const instName = db.prepare('SELECT instance_name FROM whatsapp_instances WHERE id = ?').get(instanceId)?.instance_name || `id=${instanceId}`
+        why.push(`instancia "${instName}" nao configurada`)
+      }
+      if (!tagOk) {
+        const tagName = db.prepare('SELECT name FROM tags WHERE id = ?').get(agent.required_tag_id)?.name || `id=${agent.required_tag_id}`
+        why.push(`tag "${tagName}" ausente`)
+      }
+      issuesPerAgent.push(`"${agent.name}": ${why.join(', ')}`)
+      continue
+    }
+
+    // Config bate. Agora checa se nao vai cair em handoff silencioso:
+    // 1. Limite mensal de tokens estourado -> handoff sem msg
+    if ((agent.tokens_used_this_month || 0) >= (agent.monthly_token_limit || 0)) {
+      issuesPerAgent.push(`"${agent.name}": limite mensal de tokens estourado (${agent.tokens_used_this_month}/${agent.monthly_token_limit}). Bot faria handoff sem responder`)
+      continue
+    }
+    // 2. Max messages atingido -> handoff sem msg
+    const botMsgCount = countBotMessagesInThread(agent, lead.id)
+    if (botMsgCount >= (agent.max_messages_before_handoff || 999)) {
+      issuesPerAgent.push(`"${agent.name}": ja mandou ${botMsgCount} msgs nesse lead (limite ${agent.max_messages_before_handoff}). Bot faria handoff sem responder. Pra liberar, criar follow-up novo ou aumentar o limite no agente.`)
+      continue
+    }
+
+    // Esse agente esta viavel — pode atender sem cair em handoff
+    anyAgentViable = true
+    break
+  }
+
+  if (!anyAgentViable && issuesPerAgent.length > 0) {
+    blockers.push('Nenhum agente pode atuar: ' + issuesPerAgent.join(' | '))
+  }
+
+  return { blockers }
 }
 
 // ─── buildSystemPrompt ────────────────────────────────────────────────
@@ -146,6 +228,17 @@ function buildSystemPrompt(agent, lead, availableTags, availableStages) {
   if (availableTags && availableTags.length > 0) {
     parts.push('TAGS DISPONIVEIS: ' + availableTags.map(t => `"${t.name}"`).join(', '))
   }
+
+  // Anti-ban: variacao humana pra parecer menos previsivel
+  parts.push('')
+  parts.push('VARIACAO HUMANA (importante pra parecer natural, nao robotico):')
+  parts.push('- Varie saudacoes: "Oi!", "Opa!", "E ai!", "Ola"... ou comece DIRETO sem saudacao se ja deu bom dia antes na conversa')
+  parts.push('- Nem sempre comece com o nome do lead — humano nao faz isso toda msg')
+  parts.push('- Varie comprimento: as vezes 1 frase curta, as vezes 2 frases')
+  parts.push('- Use coloquialismos leves quando o tom permitir: "ta", "pra", "ne", "blz", "tmj"')
+  parts.push('- Pontuacao natural OK: pode terminar sem ponto final, usar "..." pra pausa')
+  parts.push('- NAO use emoji em toda msg — so quando faz sentido (alegria, confirmacao etc)')
+  parts.push('- Pode escrever em minuscula ocasionalmente, como humano apressado')
 
   return parts.filter(Boolean).join('\n')
 }
@@ -321,12 +414,14 @@ async function executeTool(toolUse, agent, lead, instanceId, availableTags, avai
 
 // ─── processInboundMessage ────────────────────────────────────────────
 
-export async function processInboundMessage(lead, msgContent, mediaType, instanceId) {
+export async function processInboundMessage(lead, msgContent, mediaType, instanceId, _opts = {}) {
   try {
     console.log(`[AI Agent DEBUG] processInboundMessage chamado lead=${lead?.id} instance=${instanceId} mediaType=${mediaType} content="${(msgContent||'').substring(0,30)}"`)
-    // 1. Encontra agente
+    // 1. Encontra agente (respeita todos os filtros — bloqueios sao reportados pelo diagnoseForceAi na rota)
     const agent = findAgentForLead(lead, instanceId)
-    if (!agent) return
+    if (!agent) {
+      return { ok: false, reason: 'no_matching_agent' }
+    }
     console.log(`[AI Agent DEBUG] agente encontrado: id=${agent.id} name=${agent.name}`)
 
     // 2. Reset mensal de tokens se mes virou
@@ -349,7 +444,7 @@ export async function processInboundMessage(lead, msgContent, mediaType, instanc
         const inst = db.prepare('SELECT * FROM whatsapp_instances WHERE id = ?').get(instanceId)
         if (inst && inst.status === 'connected') {
           const declineMsg = agent.audio_decline_message || 'Oi! Por enquanto so leio mensagens de texto. Pode digitar pra mim?'
-          const sendRes = await sendViaInstance(inst, lead.phone, declineMsg)
+          const sendRes = await sendViaInstance(inst, lead.phone, declineMsg, { leadId: lead.id })
           if (sendRes.ok) {
             db.prepare(`
               INSERT INTO messages (lead_id, account_id, direction, content, media_type, sender_name, wa_msg_id, wa_timestamp, instance_id, ai_agent_id, delivery_status)
@@ -523,9 +618,27 @@ export async function processInboundMessage(lead, msgContent, mediaType, instanc
 
     // 13. Envia resposta texto (se houver)
     if (finalText && finalText.trim()) {
+      // Anti-ban: espaca msg do bot se houve outbound recente (<10s) pro mesmo lead.
+      // Evita rajada quando lead manda varias inbounds seguidas que disparam respostas em sequencia.
+      const lastBotMsg = db.prepare(`
+        SELECT created_at FROM messages
+        WHERE lead_id = ? AND direction = 'outbound' AND ai_agent_id = ?
+        ORDER BY id DESC LIMIT 1
+      `).get(lead.id, agent.id)
+      if (lastBotMsg?.created_at) {
+        const lastMs = new Date(String(lastBotMsg.created_at).replace(' ', 'T') + 'Z').getTime()
+        const secondsSince = (Date.now() - lastMs) / 1000
+        if (secondsSince < 10) {
+          const wait = 2000 + Math.random() * 2000  // 2-4s
+          console.log(`[AI Agent] espacando msg do bot lead=${lead.id} wait=${Math.round(wait)}ms (last=${secondsSince.toFixed(1)}s)`)
+          await new Promise(r => setTimeout(r, wait))
+        }
+      }
       const inst = db.prepare('SELECT * FROM whatsapp_instances WHERE id = ?').get(instanceId)
       if (inst && inst.status === 'connected') {
-        const sendRes = await sendViaInstance(inst, lead.phone, finalText.trim())
+        // Anti-ban: marca msg como lida ANTES de responder (humano abre conversa antes)
+        try { await markMessageAsRead(inst, lead) } catch {}
+        const sendRes = await sendViaInstance(inst, lead.phone, finalText.trim(), { leadId: lead.id })
         if (sendRes.ok) {
           db.prepare(`
             INSERT INTO messages (lead_id, account_id, direction, content, media_type, sender_name, wa_msg_id, wa_timestamp, instance_id, ai_agent_id, delivery_status)
@@ -644,7 +757,7 @@ REGRAS:
     }
 
     // Envia via Evolution
-    const sendResult = await sendViaInstance(inst, lead.phone, msgText)
+    const sendResult = await sendViaInstance(inst, lead.phone, msgText, { leadId: lead.id })
     if (!sendResult.ok) {
       console.warn(`[Bot Welcome] envio falhou lead=${leadId}: ${sendResult.reason || 'unknown'}`)
       return

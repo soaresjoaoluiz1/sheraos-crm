@@ -7,7 +7,7 @@ import {
   sendMessage, sendMessageMedia, updateLead, moveLeadStage, assignLead, addLeadNote, addLeadTag, removeLeadTag,
   fetchLeadCadence, advanceLeadCadence, removeLeadCadence, fetchCadences, assignLeadCadence, createTag,
   fetchLeadFollowUp, fetchFollowUps, assignFollowUp, pauseLeadFollowUp, resumeLeadFollowUp, cancelLeadFollowUp,
-  archiveLead, blockLead, createStandaloneTask, fetchLeadTasks, completeStandaloneTask, deleteStandaloneTask, completeTask, skipTask, fetchLeadConversations, type LeadConversation,
+  archiveLead, blockLead, createStandaloneTask, fetchLeadTasks, completeStandaloneTask, deleteStandaloneTask, completeTask, skipTask, fetchLeadConversations, forceAiRespond, type LeadConversation,
   fetchReadyMessages, type ReadyMessage,
   createLeadOrFindExisting, markLeadAsRead,
   requestLeadTransfer, acceptTransferRequest, rejectTransferRequest, fetchPendingTransferRequests, grabLead, type TransferRequest,
@@ -18,12 +18,12 @@ import EditTaskModal from '../components/EditTaskModal'
 import FilterDropdown, { type FilterValue } from '../components/FilterDropdown'
 import {
   MessageCircle, Search, Send, Phone, User, Edit3, Save, X, Plus,
-  StickyNote, Tag as TagIcon, GitBranch, Smartphone, ListOrdered, ChevronRight, Check, Clock, Archive, Ban, ListTodo, ChevronDown, ChevronUp, Trash2, Paperclip, FileText, MessageSquarePlus, Copy, Zap, Pause, Play,
+  StickyNote, Tag as TagIcon, GitBranch, Smartphone, ListOrdered, ChevronRight, Check, Clock, Archive, Ban, ListTodo, ChevronDown, ChevronUp, Trash2, Paperclip, FileText, MessageSquarePlus, Copy, Zap, Pause, Play, Bot,
   Menu as MenuIcon, MessagesSquare, Info as InfoIcon, History as HistoryIcon, ChevronLeft,
 } from 'lucide-react'
 import MessageMedia from '../components/MessageMedia'
 import { applyMessageVars } from '../lib/messageVars'
-import { parseSqlDate, formatTime } from '../lib/dates'
+import { parseSqlDate, formatTime, formatDayLabel, localDayKey } from '../lib/dates'
 import { useIsMobile } from '../hooks/useIsMobile'
 
 function timeAgo(dateStr: string) {
@@ -216,40 +216,65 @@ export default function Chat() {
   }, [accountId, instanceFilter, tagFilter, stageFilter, attendantFilter, showArchived])
   useEffect(() => { loadLeadsList() }, [loadLeadsList])
 
+  // Race token: cada chamada de loadLead recebe um id incremental.
+  // Resposta de fetch so eh aplicada se ainda for a chamada "atual" — descarta
+  // respostas obsoletas quando user troca de lead rapido.
+  const loadLeadTokenRef = useRef(0)
+  // Loading flag: true enquanto o lead esta sendo carregado (UI mostra "..." no atendente)
+  const [leadLoading, setLeadLoading] = useState(false)
+
   // Load selected lead detail
   const loadLead = useCallback(async () => {
-    if (!selectedLeadId || !accountId) { setLead(null); setMessages([]); setLeadTasks([]); setConversations([]); setActiveConvInstance(null); return }
-    const data = await fetchLead(selectedLeadId, accountId)
-    setLead(data.lead)
-    setMessages(data.messages)
-    setHistory(data.stageHistory)
-    setNotes(data.notes || [])
-    fetchLeadTasks(selectedLeadId, accountId).then(setLeadTasks).catch(() => setLeadTasks([]))
-    fetchLeadConversations(selectedLeadId, accountId).then(convs => {
-      setConversations(convs)
-      // Default: ultima instancia conversada (ou primeira que o user tem acesso)
-      if (convs.length > 0) {
-        const last = data.lead.last_instance_id && convs.find(c => c.instance_id === data.lead.last_instance_id)
-        setActiveConvInstance(last ? last.instance_id : convs[0].instance_id)
-      } else setActiveConvInstance(null)
-    }).catch(() => { setConversations([]); setActiveConvInstance(null) })
-    setEditData({ name: data.lead.name || '', phone: data.lead.phone || '', email: data.lead.email || '', city: data.lead.city || '', empresa: data.lead.empresa || '', cpf_cnpj: data.lead.cpf_cnpj || '', instagram: data.lead.instagram || '', trabalha_anuncio: data.lead.trabalha_anuncio || 0, investimento_anuncios: data.lead.investimento_anuncios || '' })
+    if (!selectedLeadId || !accountId) {
+      setLead(null); setMessages([]); setLeadTasks([]); setConversations([])
+      setActiveConvInstance(null); setLeadLoading(false)
+      return
+    }
+    // 1. Limpa estado do lead anterior IMEDIATAMENTE pra UI nao mostrar dados stale
+    setLead(null); setMessages([]); setLeadCadence(null); setLeadFollowUp(null); setLeadTasks([]); setConversations([])
+    setLeadLoading(true)
+    // 2. Race token pra descartar respostas obsoletas se user trocar de lead rapido
+    const myToken = ++loadLeadTokenRef.current
+    const reqLeadId = selectedLeadId
     try {
-      const lc = await fetchLeadCadence(selectedLeadId, accountId)
-      setLeadCadence(lc)
-      if (lc?.attempt_message) {
-        setCadenceMsgText(applyMessageVars(lc.attempt_message, {
-          leadName: data.lead.name,
-          leadEmpresa: data.lead.empresa,
-          leadCity: data.lead.city,
-          attendantName: user?.name,
-        }))
-      } else setCadenceMsgText('')
-    } catch { setLeadCadence(null); setCadenceMsgText('') }
-    try {
-      const lfu = await fetchLeadFollowUp(selectedLeadId, accountId)
-      setLeadFollowUp(lfu)
-    } catch { setLeadFollowUp(null) }
+      const data = await fetchLead(reqLeadId, accountId)
+      if (myToken !== loadLeadTokenRef.current) return  // outra chamada mais recente — descarta
+      setLead(data.lead)
+      setMessages(data.messages)
+      setHistory(data.stageHistory)
+      setNotes(data.notes || [])
+      fetchLeadTasks(reqLeadId, accountId).then(r => { if (myToken === loadLeadTokenRef.current) setLeadTasks(r) }).catch(() => {})
+      fetchLeadConversations(reqLeadId, accountId).then(convs => {
+        if (myToken !== loadLeadTokenRef.current) return
+        setConversations(convs)
+        if (convs.length > 0) {
+          const last = data.lead.last_instance_id && convs.find(c => c.instance_id === data.lead.last_instance_id)
+          setActiveConvInstance(last ? last.instance_id : convs[0].instance_id)
+        } else setActiveConvInstance(null)
+      }).catch(() => {
+        if (myToken === loadLeadTokenRef.current) { setConversations([]); setActiveConvInstance(null) }
+      })
+      setEditData({ name: data.lead.name || '', phone: data.lead.phone || '', email: data.lead.email || '', city: data.lead.city || '', empresa: data.lead.empresa || '', cpf_cnpj: data.lead.cpf_cnpj || '', instagram: data.lead.instagram || '', trabalha_anuncio: data.lead.trabalha_anuncio || 0, investimento_anuncios: data.lead.investimento_anuncios || '' })
+      try {
+        const lc = await fetchLeadCadence(reqLeadId, accountId)
+        if (myToken !== loadLeadTokenRef.current) return
+        setLeadCadence(lc)
+        if (lc?.attempt_message) {
+          setCadenceMsgText(applyMessageVars(lc.attempt_message, {
+            leadName: data.lead.name,
+            leadEmpresa: data.lead.empresa,
+            leadCity: data.lead.city,
+            attendantName: user?.name,
+          }))
+        } else setCadenceMsgText('')
+      } catch { if (myToken === loadLeadTokenRef.current) { setLeadCadence(null); setCadenceMsgText('') } }
+      try {
+        const lfu = await fetchLeadFollowUp(reqLeadId, accountId)
+        if (myToken === loadLeadTokenRef.current) setLeadFollowUp(lfu)
+      } catch { if (myToken === loadLeadTokenRef.current) setLeadFollowUp(null) }
+    } finally {
+      if (myToken === loadLeadTokenRef.current) setLeadLoading(false)
+    }
   }, [selectedLeadId, accountId])
   useEffect(() => { loadLead() }, [loadLead])
 
@@ -408,6 +433,38 @@ export default function Chat() {
     } catch (e: any) {
       setNotice({ kind: 'error', title: 'Erro ao copiar', message: e?.message || 'Browser bloqueou acesso ao clipboard (precisa HTTPS)' })
     }
+  }
+
+  const handleForceAi = () => {
+    if (!lead) return
+    const runForceAi = async () => {
+      try {
+        const r = await forceAiRespond(lead.id)
+        if (r.ok) {
+          setNotice({ kind: 'success', title: 'IA disparada', message: r.message || 'Resposta deve chegar em segundos.' })
+        } else if (r.blockers && r.blockers.length > 0) {
+          // Backend retornou lista de bloqueios — formata como bullets
+          setNotice({
+            kind: 'error',
+            title: 'Bot nao pode atuar nesse lead',
+            message: '• ' + r.blockers.join('\n• '),
+          })
+        } else {
+          setNotice({ kind: 'error', title: 'Falhou', message: r.error || 'Nao foi possivel disparar' })
+        }
+      } catch (e: any) {
+        setNotice({ kind: 'error', title: 'Erro', message: e?.message || 'Erro de rede' })
+      }
+    }
+    setNotice({
+      kind: 'info',
+      title: 'Disparar IA?',
+      message: 'Roda o bot pra responder a última mensagem do lead. Mesmas regras de uma recepção normal: respeita atendente, handoff anterior, etapa, tag e instância. Se algo bloqueia, eu te aviso o quê.',
+      actions: [
+        { label: 'Cancelar', onClick: () => setNotice(null) },
+        { label: 'Disparar', primary: true, onClick: () => { setNotice(null); runForceAi() } },
+      ],
+    })
   }
 
   const connectedInstances = useMemo(() => instances.filter(i => i.status === 'connected'), [instances])
@@ -719,10 +776,14 @@ export default function Chat() {
 
   const handleCreateTag = async () => {
     if (!accountId || !newTagName.trim() || !lead) return
-    const tag = await createTag(accountId, newTagName.trim(), newTagColor)
-    setTags(prev => [...prev, tag])
-    await addLeadTag(lead.id, tag.id)
-    setNewTagName(''); loadLead()
+    try {
+      const tag = await createTag(accountId, newTagName.trim(), newTagColor)
+      setTags(prev => [...prev, tag])
+      await addLeadTag(lead.id, tag.id)
+      setNewTagName(''); loadLead()
+    } catch (e: any) {
+      setNotice({ kind: 'error', title: 'Erro ao criar tag', message: e?.message || 'Falha desconhecida' })
+    }
   }
 
   const allStages = funnels.flatMap(f => f.stages || [])
@@ -872,6 +933,17 @@ export default function Chat() {
                     <Copy size={12} />
                   </button>
                 )}
+                {user?.role === 'super_admin' && (
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    title={leadLoading ? 'Carregando dados do lead...' : 'Disparar IA (mesmas regras de uma msg normal)'}
+                    onClick={handleForceAi}
+                    disabled={leadLoading}
+                    style={{ padding: '4px 8px', opacity: leadLoading ? 0.5 : 1 }}
+                  >
+                    <Bot size={12} />
+                  </button>
+                )}
                 <button className="btn btn-secondary btn-sm" title="Arquivar" onClick={() => handleArchiveLead(lead.id)} style={{ padding: '4px 8px' }}>
                   <Archive size={12} />
                 </button>
@@ -900,31 +972,46 @@ export default function Chat() {
 
               <div className="chat-messages">
                 {visibleMessages.length === 0 && <div style={{ textAlign: 'center', color: '#6B6580', padding: 40, fontSize: 13 }}>Nenhuma mensagem nesta conversa</div>}
-                {visibleMessages.map(m => (
-                  <div key={m.id} className={`chat-msg-row ${m.direction}`}>
-                    <div className={`chat-bubble ${m.direction}`} style={m.direction === 'outbound' && !m.wa_msg_id ? { border: '1px solid #FF6B6B', opacity: 0.8 } : undefined}>
-                      {m.media_type && m.media_type !== 'text'
-                        ? <MessageMedia message={m} leadId={lead.id} />
-                        : (m.content || <em style={{ opacity: 0.5 }}>Sem conteudo</em>)}
-                    </div>
-                    <div className="chat-bubble-time">
-                      {m.sender_name && <span>{m.sender_name} · </span>}
-                      <span>{formatTime(m.created_at)}</span>
-                      {(m as any).instance_id && (() => {
-                        const inst = instances.find(i => i.id === (m as any).instance_id)
-                        return inst ? <span style={{ marginLeft: 4, padding: '0 5px', borderRadius: 3, background: 'rgba(255,179,0,0.12)', color: '#FFB300', fontSize: 9, fontWeight: 600 }}>via {inst.instance_name}</span> : null
-                      })()}
-                      {m.direction === 'outbound' && (() => {
-                        // Fallback pra msgs antigas sem delivery_status: wa_msg_id presente = entregue (cinza), ausente = falha
-                        const st = m.delivery_status || (m.wa_msg_id ? 'sent' : 'failed')
-                        if (st === 'failed') return <span className="msg-check msg-check-failed" title="Falha no envio">✗</span>
-                        if (st === 'read') return <span className="msg-check msg-check-read" title="Lida pelo lead">✓✓</span>
-                        if (st === 'delivered') return <span className="msg-check msg-check-delivered" title="Entregue ao aparelho">✓✓</span>
-                        return <span className="msg-check msg-check-sent" title="Enviada">✓</span>
-                      })()}
-                    </div>
-                  </div>
-                ))}
+                {(() => {
+                  let lastDayKey = ''
+                  const elements: React.ReactNode[] = []
+                  for (const m of visibleMessages) {
+                    const dayKey = localDayKey(m.created_at)
+                    if (dayKey && dayKey !== lastDayKey) {
+                      elements.push(
+                        <div key={`sep-${dayKey}`} className="chat-day-separator">
+                          <span>{formatDayLabel(m.created_at)}</span>
+                        </div>
+                      )
+                      lastDayKey = dayKey
+                    }
+                    elements.push(
+                      <div key={m.id} className={`chat-msg-row ${m.direction}`}>
+                        <div className={`chat-bubble ${m.direction}`} style={m.direction === 'outbound' && !m.wa_msg_id ? { border: '1px solid #FF6B6B', opacity: 0.8 } : undefined}>
+                          {m.media_type && m.media_type !== 'text'
+                            ? <MessageMedia message={m} leadId={lead.id} />
+                            : (m.content || <em style={{ opacity: 0.5 }}>Sem conteudo</em>)}
+                        </div>
+                        <div className="chat-bubble-time">
+                          {m.sender_name && <span>{m.sender_name} · </span>}
+                          <span>{formatTime(m.created_at)}</span>
+                          {(m as any).instance_id && (() => {
+                            const inst = instances.find(i => i.id === (m as any).instance_id)
+                            return inst ? <span style={{ marginLeft: 4, padding: '0 5px', borderRadius: 3, background: 'rgba(255,179,0,0.12)', color: '#FFB300', fontSize: 9, fontWeight: 600 }}>via {inst.instance_name}</span> : null
+                          })()}
+                          {m.direction === 'outbound' && (() => {
+                            const st = m.delivery_status || (m.wa_msg_id ? 'sent' : 'failed')
+                            if (st === 'failed') return <span className="msg-check msg-check-failed" title="Falha no envio">✗</span>
+                            if (st === 'read') return <span className="msg-check msg-check-read" title="Lida pelo lead">✓✓</span>
+                            if (st === 'delivered') return <span className="msg-check msg-check-delivered" title="Entregue ao aparelho">✓✓</span>
+                            return <span className="msg-check msg-check-sent" title="Enviada">✓</span>
+                          })()}
+                        </div>
+                      </div>
+                    )
+                  }
+                  return elements
+                })()}
                 <div ref={chatEndRef} />
               </div>
               {/* Dropdown 'Enviar via' — sempre visivel quando ha instancias conectadas */}
@@ -1616,7 +1703,7 @@ export default function Chat() {
               {notice.kind === 'error' ? <X size={18} style={{ color: '#FF6B6B' }} /> : notice.kind === 'success' ? <Check size={18} style={{ color: '#34C759' }} /> : <MessageCircle size={18} style={{ color: '#FFB300' }} />}
               {notice.title}
             </h2>
-            <p style={{ fontSize: 13, color: '#C8C2D8', marginTop: 8, lineHeight: 1.5 }}>{notice.message}</p>
+            <p style={{ fontSize: 13, color: '#C8C2D8', marginTop: 8, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{notice.message}</p>
             <div className="modal-actions">
               {notice.actions && notice.actions.length > 0 ? (
                 <>

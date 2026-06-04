@@ -108,9 +108,9 @@ router.post('/whatsapp', requireRole('super_admin', 'gerente', 'atendente'), asy
     console.error('[Evolution Create Instance]', err.message)
   }
 
-  // Save to DB
+  // Save to DB. Anti-ban: nova instancia entra em warm-up de 3 dias (volume gradual).
   const result = db.prepare(
-    'INSERT INTO whatsapp_instances (account_id, instance_name, api_url, api_key, status, qr_code, lead_intake_mode) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    "INSERT INTO whatsapp_instances (account_id, instance_name, api_url, api_key, status, qr_code, lead_intake_mode, warmup_until) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now', '+3 days'))"
   ).run(req.accountId, instance_name, baseUrl, api_key, qrCode ? 'connecting' : 'disconnected', qrCode, lead_intake_mode)
   const instance = db.prepare('SELECT * FROM whatsapp_instances WHERE id = ?').get(result.lastInsertRowid)
 
@@ -237,6 +237,70 @@ router.get('/whatsapp/:id/status', async (req, res) => {
     db.prepare("UPDATE whatsapp_instances SET status = 'disconnected' WHERE id = ?").run(instance.id)
     res.json({ instance: db.prepare('SELECT * FROM whatsapp_instances WHERE id = ?').get(instance.id), error: err.message })
   }
+})
+
+// ─── Anti-ban: health da instancia (delivered_rate, read_rate, risk_score) ──────
+// GET /api/integrations/whatsapp/:id/health
+// Retorna 3 janelas (1h, 6h, 24h) + risk_score 0-100 baseado em delivered_rate.
+router.get('/whatsapp/:id/health', requireRole('super_admin', 'gerente'), (req, res) => {
+  const instance = getOwnedInstance(req, res)
+  if (!instance) return
+
+  const windows = [
+    { label: '1h', minutes: 60 },
+    { label: '6h', minutes: 360 },
+    { label: '24h', minutes: 1440 },
+  ]
+  const stats = windows.map(w => {
+    const s = db.prepare(`
+      SELECT
+        COUNT(*) as total,
+        SUM(CASE WHEN delivery_status='sent' THEN 1 ELSE 0 END) as sent,
+        SUM(CASE WHEN delivery_status='delivered' THEN 1 ELSE 0 END) as delivered,
+        SUM(CASE WHEN delivery_status='read' THEN 1 ELSE 0 END) as read,
+        SUM(CASE WHEN delivery_status='failed' THEN 1 ELSE 0 END) as failed
+      FROM messages
+      WHERE instance_id = ? AND direction='outbound'
+        AND created_at >= datetime('now', '-${w.minutes} minutes')
+    `).get(instance.id)
+    // ok_rate = 1 - failed/total. Robusto mesmo se webhook nao promove sent->delivered.
+    const total = s.total || 0
+    const ok_rate = total > 0 ? (1 - (s.failed || 0) / total) : null
+    // delivered_rate so eh calculavel se webhook estiver funcionando (delivered+read > 0)
+    const delivered_known = (s.delivered || 0) + (s.read || 0)
+    const delivered_rate = delivered_known > 0 ? (delivered_known / total) : null
+    const read_rate = delivered_known > 0 ? (s.read / delivered_known) : null
+    return { window: w.label, ...s, ok_rate, delivered_rate, read_rate }
+  })
+
+  // Risk score 0-100 baseado em ok_rate (% nao-failed). Mais robusto que delivered_rate.
+  const riskScore = (() => {
+    const w6h = stats.find(s => s.window === '6h') || stats[0]
+    if (!w6h.total || w6h.total < 10) return 0  // amostra pequena demais
+    const r = w6h.ok_rate
+    if (r === null) return 0
+    if (r >= 0.95) return 10
+    if (r >= 0.85) return 30
+    if (r >= 0.70) return 60
+    return 90
+  })()
+
+  res.json({
+    instance: {
+      id: instance.id,
+      name: instance.instance_name,
+      status: instance.status,
+      paused_at: instance.paused_at,
+      paused_reason: instance.paused_reason,
+      warmup_until: instance.warmup_until,
+      business_hours_json: instance.business_hours_json,
+      lead_daily_msg_cap: instance.lead_daily_msg_cap,
+      hourly_send_limit: instance.hourly_send_limit,
+      daily_send_limit: instance.daily_send_limit,
+    },
+    windows: stats,
+    risk_score: riskScore,
+  })
 })
 
 // ─── Refresh QR code ─────────────────────────────────────────────

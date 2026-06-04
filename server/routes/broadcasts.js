@@ -257,8 +257,8 @@ async function runBroadcastLoopInner(broadcastId) {
         .replace(/\{\{phone\}\}/g, lead?.phone || '')
         .replace(/\{\{telefone\}\}/g, lead?.phone || '')
       // skipValidation=true porque o pre-flight bulk ja rodou antes do while.
-      // sendViaInstance trata normalizacao do numero, fetch e parse do retorno.
-      const sendRes = await sendViaInstance(liveInstance, r.phone, text, { skipValidation: true })
+      // leadId pra cap por lead/dia.
+      const sendRes = await sendViaInstance(liveInstance, r.phone, text, { skipValidation: true, leadId: r.lead_id })
 
       if (sendRes.ok && sendRes.wamsgId) {
         db.prepare("UPDATE broadcast_recipients SET status = 'sent', wa_msg_id = ?, sent_at = datetime('now') WHERE id = ?").run(sendRes.wamsgId, r.id)
@@ -277,8 +277,11 @@ async function runBroadcastLoopInner(broadcastId) {
       processedCount++
     }
 
-    // Delay aleatorio dentro de +/- 30% pra parecer humano
-    const jitter = baseDelay * (0.7 + Math.random() * 0.6)
+    // Anti-ban: jitter +30% sobre o baseDelay configurado (nunca pra menos).
+    // baseDelay configurado eh o MINIMO. Real fica entre 1.0x e 1.3x.
+    // Ex: user configura 100s → real fica entre 100s e 130s.
+    const jitterMult = 1.0 + Math.random() * 0.3  // 1.0x a 1.3x (sempre >= baseDelay)
+    const jitter = Math.round(baseDelay * jitterMult)
     await new Promise(resolve => setTimeout(resolve, jitter))
   }
 

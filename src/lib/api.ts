@@ -132,6 +132,8 @@ export async function createLeadOrFindExisting(accountId: number, data: Partial<
 export const updateLead = (id: number, data: Partial<Lead>) => apiFetch(`/api/leads/${id}`, { method: 'PUT', body: JSON.stringify(data) })
 export const optInLead = (id: number) => apiFetch(`/api/leads/${id}/opt-in`, { method: 'POST' })
 export const optOutLead = (id: number) => apiFetch(`/api/leads/${id}/opt-out`, { method: 'POST' })
+export const forceAiRespond = (id: number) =>
+  apiFetch<{ ok: boolean; message?: string; error?: string; blockers?: string[] }>(`/api/leads/${id}/force-ai-respond`, { method: 'POST' })
 export const moveLeadStage = (id: number, stageId: number) => apiFetch(`/api/leads/${id}/stage`, { method: 'PUT', body: JSON.stringify({ stage_id: stageId }) })
 export const assignLead = (id: number, attendantId: number | null, notify?: boolean) => apiFetch(`/api/leads/${id}/assign`, { method: 'PUT', body: JSON.stringify({ attendant_id: attendantId, notify_attendant: !!notify }) })
 export const refreshProfilePic = (id: number) => apiFetch<{ profile_pic_url: string | null }>(`/api/leads/${id}/refresh-profile-pic`, { method: 'POST' })
@@ -290,8 +292,15 @@ export const fetchConversationInsights = (accountId: number, opts: { days?: numb
 export const fetchLeadInsight = (leadId: number, accountId: number) =>
   apiFetch<{ insight: ConversationInsight | null }>(`/api/dashboard/conversation-insights/lead/${leadId}?account_id=${accountId}`)
 // Custom fetch: 429 nao lanca exception, retorna body com retry_after_min pra UI tratar.
-export const triggerAnalysisNow = async (accountId: number, maxLeads: number = 50): Promise<{ ok: boolean; message?: string; error?: string; retry_after_min?: number; max_leads?: number }> => {
-  const res = await fetch(`/api/dashboard/analyze-now?account_id=${accountId}&max=${maxLeads}`, {
+export const triggerAnalysisNow = async (
+  accountId: number,
+  maxLeads: number = 50,
+  opts: { resetAll?: boolean; resetLead?: number } = {}
+): Promise<{ ok: boolean; message?: string; error?: string; retry_after_min?: number; max_leads?: number }> => {
+  const params = new URLSearchParams({ account_id: String(accountId), max: String(maxLeads) })
+  if (opts.resetAll) params.set('reset_all', 'true')
+  if (opts.resetLead) params.set('reset_lead', String(opts.resetLead))
+  const res = await fetch(`/api/dashboard/analyze-now?${params.toString()}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
   })
@@ -880,6 +889,13 @@ export interface MarketIntel {
 export interface AnalyzeEstimate {
   leads_pending_total: number
   leads_to_analyze: number
+  leads_skipped?: number                // novo: ja em dia (puladas)
+  leads_incremental?: number            // novo: total de incrementais pendentes
+  leads_full?: number                   // novo: total de fulls pendentes
+  leads_incremental_to_analyze?: number // novo: incrementais no batch
+  leads_full_to_analyze?: number        // novo: fulls no batch
+  estimated_cost_incremental_usd?: number  // novo
+  estimated_cost_full_usd?: number         // novo
   estimated_cost_usd: number
   estimated_cost_all_usd: number
   month_spent_usd: number

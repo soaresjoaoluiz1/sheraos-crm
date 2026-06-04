@@ -5,7 +5,7 @@ import { requireRole } from '../middleware/auth.js'
 import { broadcastSSE } from '../sse.js'
 import { triggerCapiForStageChange } from '../services/metaCapi.js'
 import { notifyAndOpenLead } from '../services/leadHandoff.js'
-import { sendBotWelcomeForSheetsLead } from '../services/aiAgent.js'
+import { sendBotWelcomeForSheetsLead, processInboundMessage, diagnoseForceAi } from '../services/aiAgent.js'
 
 const router = Router()
 
@@ -537,7 +537,10 @@ router.put('/:id/stage', (req, res) => {
   if (!lead) return res.status(404).json({ error: 'Lead nao encontrado' })
 
   const oldStageId = lead.stage_id
-  db.prepare("UPDATE leads SET stage_id = ?, updated_at = datetime('now') WHERE id = ?").run(stage_id, lead.id)
+  // Mudanca de etapa MANUAL (via UI) trava bot pra esse lead — gerente/atendente assumiu controle.
+  // Se quiser reativar bot, atribuir bot como atendente OU usar botao "Forcar IA" (super_admin).
+  // Bot interno (aiAgent) muda stage via SQL direto, NAO passa por essa rota — entao nao afeta o fluxo natural do bot.
+  db.prepare("UPDATE leads SET stage_id = ?, ai_handed_off_at = COALESCE(ai_handed_off_at, datetime('now')), updated_at = datetime('now') WHERE id = ?").run(stage_id, lead.id)
   const histRes = db.prepare('INSERT INTO stage_history (lead_id, from_stage_id, to_stage_id, trigger_type, triggered_by) VALUES (?, ?, ?, ?, ?)').run(
     lead.id, oldStageId, stage_id, 'manual', req.user.id
   )
@@ -611,9 +614,13 @@ router.put('/:id/assign', requireRole('super_admin', 'gerente'), (req, res) => {
   }
 
   if (clearHandoff) {
+    // Atribuiu bot: bot pode voltar a atender
     db.prepare("UPDATE leads SET attendant_id = ?, ai_handed_off_at = NULL, updated_at = datetime('now') WHERE id = ?").run(attendant_id, lead.id)
   } else {
-    db.prepare("UPDATE leads SET attendant_id = ?, updated_at = datetime('now') WHERE id = ?").run(attendant_id || null, lead.id)
+    // Atribuiu humano OU removeu atendente (NULL = "Sem atendente"): trava bot pra esse lead
+    // ai_handed_off_at impede que o agente conditional volte a pegar o lead automaticamente.
+    // Pra reativar, atribuir bot de novo OU usar botao "Forcar IA" (super_admin).
+    db.prepare("UPDATE leads SET attendant_id = ?, ai_handed_off_at = COALESCE(ai_handed_off_at, datetime('now')), updated_at = datetime('now') WHERE id = ?").run(attendant_id || null, lead.id)
   }
 
   const updated = db.prepare('SELECT * FROM leads WHERE id = ?').get(lead.id)
@@ -738,7 +745,7 @@ router.get('/tags/list', (req, res) => {
   res.json({ tags })
 })
 
-router.post('/tags/create', requireRole('super_admin', 'gerente'), (req, res) => {
+router.post('/tags/create', requireRole('super_admin', 'gerente', 'atendente'), (req, res) => {
   if (!req.accountId) return res.status(400).json({ error: 'account_id required' })
   const { name, color } = req.body
   if (!name) return res.status(400).json({ error: 'name required' })
@@ -749,7 +756,7 @@ router.post('/tags/create', requireRole('super_admin', 'gerente'), (req, res) =>
   } catch { res.status(400).json({ error: 'Tag ja existe' }) }
 })
 
-router.put('/tags/:tagId', requireRole('super_admin', 'gerente'), (req, res) => {
+router.put('/tags/:tagId', requireRole('super_admin', 'gerente', 'atendente'), (req, res) => {
   if (!req.accountId) return res.status(400).json({ error: 'account_id required' })
   const tag = db.prepare('SELECT * FROM tags WHERE id = ? AND account_id = ?').get(req.params.tagId, req.accountId)
   if (!tag) return res.status(404).json({ error: 'Tag nao encontrada' })
@@ -767,7 +774,7 @@ router.put('/tags/:tagId', requireRole('super_admin', 'gerente'), (req, res) => 
   } catch { res.status(400).json({ error: 'Nome ja existe' }) }
 })
 
-router.delete('/tags/:tagId', requireRole('super_admin', 'gerente'), (req, res) => {
+router.delete('/tags/:tagId', requireRole('super_admin', 'gerente', 'atendente'), (req, res) => {
   db.prepare('DELETE FROM lead_tags WHERE tag_id = ?').run(req.params.tagId)
   db.prepare('DELETE FROM tags WHERE id = ?').run(req.params.tagId)
   res.json({ ok: true })
@@ -794,6 +801,101 @@ router.post('/:id/opt-out', (req, res) => {
   res.json({ ok: true })
 })
 
+// Forca IA a responder a ultima msg inbound do lead, ignorando filtros normais
+// (etapa, tag, handoff previo, atendente humano). Super admin only — usado pra desbloquear
+// casos onde o lead caiu fora dos filtros (ex: lead em "Perdido" mas agente so atende "Em Atendimento").
+router.post('/:id/force-ai-respond', requireRole('super_admin'), async (req, res) => {
+  const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id)
+  if (!lead) return res.status(404).json({ error: 'Lead nao encontrado' })
+  if (req.accountId && lead.account_id !== req.accountId) {
+    return res.status(403).json({ error: 'Lead pertence a outra conta' })
+  }
+
+  // Pega a ultima msg inbound do lead pra simular trigger
+  const lastInbound = db.prepare(`
+    SELECT content, media_type, instance_id
+    FROM messages
+    WHERE lead_id = ? AND direction = 'inbound'
+    ORDER BY id DESC LIMIT 1
+  `).get(lead.id)
+  if (!lastInbound) return res.status(400).json({ error: 'Lead nao tem mensagem inbound pra responder' })
+
+  // instancia: usa a da ultima msg, ou a do lead, ou primeira conectada da conta
+  let instanceId = lastInbound.instance_id || lead.last_instance_id || null
+  if (!instanceId) {
+    const inst = db.prepare("SELECT id FROM whatsapp_instances WHERE account_id = ? AND status = 'connected' ORDER BY id LIMIT 1").get(lead.account_id)
+    instanceId = inst?.id || null
+  }
+  if (!instanceId) return res.status(400).json({ error: 'Nenhuma instancia disponivel pra essa conta' })
+
+  console.log(`[ForceAI] super_admin=${req.user?.id} tentou disparar IA pra lead=${lead.id} instance=${instanceId}`)
+
+  // Diagnostica bloqueios ANTES de tentar disparar. Botao roda o fluxo NORMAL —
+  // se algo bloqueia (atendente humano, handoff anterior, etapa/tag/instancia
+  // nao bate, lead bloqueado, etc), retorna mensagem especifica. Nao dispara
+  // bot em lead onde ele nao deveria atuar.
+  const diag = diagnoseForceAi(lead, instanceId)
+  if (diag.blockers.length > 0) {
+    console.log(`[ForceAI] bloqueios lead=${lead.id}: ${diag.blockers.join(' | ')}`)
+    return res.status(400).json({
+      error: 'Bot nao pode atuar nesse lead.',
+      blockers: diag.blockers,
+      message: diag.blockers.join('\n'),
+    })
+  }
+
+  // Passou no diagnostico — dispara normal. processInboundMessage faz o mesmo
+  // fluxo de uma msg inbound chegando agora.
+  // Snapshot ANTES: msg.id max + attendant_id atual. Se DEPOIS o bot nao gerou
+  // msg outbound (max_id nao subiu) mas o atendente mudou ou ai_handed_off_at
+  // foi setado, eh handoff silencioso — reporta como erro.
+  const beforeMaxMsgId = db.prepare("SELECT COALESCE(MAX(id), 0) as m FROM messages WHERE lead_id = ?").get(lead.id)?.m || 0
+  const beforeAttendantId = lead.attendant_id
+  const beforeHandoffAt = lead.ai_handed_off_at
+
+  try {
+    const result = await processInboundMessage(
+      lead,
+      lastInbound.content || '',
+      lastInbound.media_type || 'text',
+      instanceId
+    )
+    if (result && result.ok === false) {
+      return res.status(400).json({ error: 'Bot nao pode atuar', reason: result.reason || 'unknown' })
+    }
+
+    // Verifica se houve realmente envio de msg pelo bot
+    const after = db.prepare("SELECT COALESCE(MAX(m.id), 0) as max_id FROM messages m WHERE m.lead_id = ?").get(lead.id)
+    const newLeadState = db.prepare("SELECT attendant_id, ai_handed_off_at FROM leads WHERE id = ?").get(lead.id)
+    const wasMsgSent = (after?.max_id || 0) > beforeMaxMsgId
+    const wasHandoff = (newLeadState?.ai_handed_off_at && newLeadState.ai_handed_off_at !== beforeHandoffAt)
+                     || (newLeadState?.attendant_id !== beforeAttendantId && newLeadState?.attendant_id)
+
+    if (!wasMsgSent && wasHandoff) {
+      // Bot fez handoff silencioso (max_messages, token limit, etc) — atribuiu humano sem responder
+      const newAtt = newLeadState?.attendant_id
+        ? db.prepare('SELECT name FROM users WHERE id = ?').get(newLeadState.attendant_id)?.name || 'humano'
+        : null
+      const msg = newAtt
+        ? `Bot fez handoff silencioso pra ${newAtt} sem responder. Provavel limite atingido (max_messages ou tokens).`
+        : 'Bot fez handoff silencioso sem responder. Provavel limite atingido.'
+      return res.status(400).json({
+        error: msg,
+        blockers: [msg],
+        message: msg,
+      })
+    }
+    if (!wasMsgSent) {
+      const m = 'Bot processou mas nao enviou mensagem. Verifique logs do servidor (PM2).'
+      return res.status(400).json({ error: m, blockers: [m], message: m })
+    }
+    res.json({ ok: true, message: 'IA disparada — resposta deve chegar em alguns segundos.' })
+  } catch (e) {
+    console.error('[ForceAI]', e.message)
+    res.status(500).json({ error: 'Erro disparando IA', detail: e.message })
+  }
+})
+
 // Bulk opt-in
 router.post('/bulk/opt-in', (req, res) => {
   if (!req.accountId) return res.status(400).json({ error: 'account_id required' })
@@ -812,7 +914,16 @@ router.post('/bulk/opt-in', (req, res) => {
 router.post('/bulk/assign', requireRole('super_admin', 'gerente'), (req, res) => {
   const { lead_ids, attendant_id } = req.body
   if (!lead_ids || !Array.isArray(lead_ids)) return res.status(400).json({ error: 'lead_ids required' })
-  const stmt = db.prepare("UPDATE leads SET attendant_id = ?, updated_at = datetime('now') WHERE id = ?")
+  // Detecta se o novo atendente eh bot pra decidir se limpa ai_handed_off_at
+  let isBotBulk = false
+  if (attendant_id) {
+    const u = db.prepare('SELECT is_bot FROM users WHERE id = ?').get(attendant_id)
+    if (u?.is_bot === 1) isBotBulk = true
+  }
+  const sql = isBotBulk
+    ? "UPDATE leads SET attendant_id = ?, ai_handed_off_at = NULL, updated_at = datetime('now') WHERE id = ?"
+    : "UPDATE leads SET attendant_id = ?, ai_handed_off_at = COALESCE(ai_handed_off_at, datetime('now')), updated_at = datetime('now') WHERE id = ?"
+  const stmt = db.prepare(sql)
   const transaction = db.transaction(() => { for (const id of lead_ids) stmt.run(attendant_id || null, id) })
   transaction()
   res.json({ ok: true, count: lead_ids.length })

@@ -345,6 +345,27 @@ function addColumnIfNotExists(table, column, type) {
 addColumnIfNotExists('whatsapp_instances', 'qr_code', 'TEXT')
 // whatsapp_instances: default attendant for new inbound leads (overrides round-robin when set)
 addColumnIfNotExists('whatsapp_instances', 'default_attendant_id', 'INTEGER REFERENCES users(id) ON DELETE SET NULL')
+// Anti-ban: quota por instancia + warm-up gradual
+addColumnIfNotExists('whatsapp_instances', 'hourly_send_limit', 'INTEGER')  // null = default global 100
+addColumnIfNotExists('whatsapp_instances', 'daily_send_limit', 'INTEGER')   // null = default global 800
+addColumnIfNotExists('whatsapp_instances', 'warmup_until', 'TEXT')          // datetime fim do warm-up; null = sem warm-up
+// Anti-ban Tier 1+2: horario comercial, cap por lead, auto-pause por delivered_rate
+addColumnIfNotExists('whatsapp_instances', 'business_hours_json', 'TEXT')                    // {mon:[{start,end}],...}; null = 24/7
+addColumnIfNotExists('whatsapp_instances', 'lead_daily_msg_cap', 'INTEGER DEFAULT 5')        // max msgs automaticas pro mesmo lead em 24h
+addColumnIfNotExists('whatsapp_instances', 'paused_at', 'TEXT')                              // datetime pausa (auto ou manual); null = ativa
+addColumnIfNotExists('whatsapp_instances', 'paused_reason', 'TEXT')                          // 'delivered_rate_low' | 'manual' | 'ghost_detected'
+addColumnIfNotExists('whatsapp_instances', 'health_check_window_min', 'INTEGER DEFAULT 120') // janela pra delivered_rate (default 2h)
+// Backfill warm-up retroativo APENAS pra instancias recentes (created_at < 3 dias atras).
+// Instancias antigas nao sao afetadas — ja "esquentaram" naturalmente em prod.
+try {
+  const r = db.prepare(`
+    UPDATE whatsapp_instances
+       SET warmup_until = datetime(created_at, '+3 days')
+     WHERE warmup_until IS NULL
+       AND datetime(created_at, '+3 days') > datetime('now')
+  `).run()
+  if (r.changes > 0) console.log(`[db] migration: warmup_until set for ${r.changes} recent instances`)
+} catch (e) { console.warn('[db] warmup backfill:', e.message) }
 // leads: instance_id to track which WhatsApp number received this lead
 addColumnIfNotExists('leads', 'instance_id', 'INTEGER REFERENCES whatsapp_instances(id) ON DELETE SET NULL')
 // accounts: Evolution API credentials (shared across all instances)
@@ -638,8 +659,26 @@ addColumnIfNotExists('conversation_insights', 'confidence_score', 'REAL')       
 addColumnIfNotExists('conversation_insights', 'bot_analysis_json', 'TEXT')
 addColumnIfNotExists('conversation_insights', 'handoff_analysis_json', 'TEXT')
 addColumnIfNotExists('conversation_insights', 'coaching_recomendado', 'TEXT')
+// Incremental analysis: checkpoint por msg.id + counters anti-drift
+addColumnIfNotExists('conversation_insights', 'incremental_count', 'INTEGER NOT NULL DEFAULT 0')
+addColumnIfNotExists('conversation_insights', 'last_full_analysis_at', 'TEXT')          // datetime do ultimo FULL
+addColumnIfNotExists('conversation_insights', 'last_full_message_id', 'INTEGER')         // msg.id que delimitou o ultimo FULL
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_insights_version ON conversation_insights(account_id, insights_version)') } catch (e) {}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_insights_temperatura ON conversation_insights(account_id, temperatura_lead, chance_conversao)') } catch (e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_insights_checkpoint ON conversation_insights(account_id, last_message_id)') } catch (e) {}
+
+// Migration leve idempotente: popula last_message_id e last_full_* em insights v2 que nao tinham
+try {
+  const migrated = db.prepare(`
+    UPDATE conversation_insights
+       SET last_message_id = COALESCE(last_message_id, (SELECT MAX(id) FROM messages WHERE lead_id = conversation_insights.lead_id)),
+           last_full_analysis_at = COALESCE(last_full_analysis_at, analyzed_at),
+           last_full_message_id = COALESCE(last_full_message_id, last_message_id, (SELECT MAX(id) FROM messages WHERE lead_id = conversation_insights.lead_id))
+     WHERE insights_version >= 2
+       AND (last_message_id IS NULL OR last_full_analysis_at IS NULL OR last_full_message_id IS NULL)
+  `).run()
+  if (migrated.changes > 0) console.log(`[db] migration: last_message_id/last_full_* populated for ${migrated.changes} v2 insights`)
+} catch (e) { console.warn('[db] migration last_message_id:', e.message) }
 
 // Extender attendant_metrics_daily (V1 colunas permanecem).
 addColumnIfNotExists('attendant_metrics_daily', 'ttfr_human_avg_seconds', 'REAL')
@@ -685,6 +724,7 @@ db.exec(`
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_conv_errors_account_attendant ON conversation_errors(account_id, attendant_user_id, created_at)') } catch (e) {}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_conv_errors_code ON conversation_errors(code)') } catch (e) {}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_conv_errors_insight ON conversation_errors(insight_id)') } catch (e) {}
+addColumnIfNotExists('conversation_errors', 'created_via', "TEXT DEFAULT 'full'")        // 'full' | 'incremental'
 
 // 5. Acertos.
 db.exec(`
@@ -704,6 +744,7 @@ db.exec(`
 `)
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_conv_strengths_account_attendant ON conversation_strengths(account_id, attendant_user_id, created_at)') } catch (e) {}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_conv_strengths_insight ON conversation_strengths(insight_id)') } catch (e) {}
+addColumnIfNotExists('conversation_strengths', 'created_via', "TEXT DEFAULT 'full'")     // 'full' | 'incremental'
 
 // 6. Análise por participante (bot/atendente/gerente — 1 linha por insight × actor).
 db.exec(`

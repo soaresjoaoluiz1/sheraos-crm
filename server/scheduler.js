@@ -486,28 +486,37 @@ async function detectGhostInstancesAndRestart() {
 }
 
 // ─── Mark stale outbound messages as 'failed' ─────────────────────
-// Msg outbound marcada 'sent' que nao recebeu confirmacao delivered/read em STALE_MINUTES
-// vira 'failed' automaticamente. Cobre o caso "Evolution aceitou mas Whats nao entregou".
-//
-// 15min eh tolerante: alguns webhooks de status do Evolution atrasam em VPS sob carga.
-// Threshold menor (2min) gerava falsos positivos — msgs entregues marcadas X.
-// Guard adicional: se o lead respondeu APOS a msg outbound, ela claramente foi recebida
-// (cliente nao responde fantasma), entao NUNCA marca como failed.
-// Se destinatario estiver offline e voltar depois, webhook 'delivered' PROMOVE a msg
-// de volta pra 'delivered' automaticamente (rank em webhooks.js).
-const STALE_MINUTES = 15
+// Threshold dinamico por instancia:
+// - SAUDAVEL (webhook recente provou que delivered_at chega): 60s sem confirmacao -> failed.
+//   Feedback quase instantaneo. Risco minimo: se instancia ta entregando outras msgs com
+//   webhook funcional, essa msg especifica que ficou 60s sem confirmacao = falha real.
+// - NAO-PROVADA (instancia nova ou silenciosa ha >2h): 15min sem confirmacao -> failed.
+//   Conservador: webhook pode estar quebrado e ainda haver entrega real.
+// Guard absoluto: inbound posterior do mesmo lead = msg recebida, NUNCA marca failed.
+const STALE_HEALTHY_SECONDS = 60       // ~instantaneo do POV do user
+const STALE_UNVERIFIED_MINUTES = 15    // fallback conservador
+const HEALTH_LOOKBACK_HOURS = 2        // janela pra considerar instancia "saudavel"
 function markStaleMessagesAsFailed() {
   try {
-    // 1. messages outbound 'sent' antigas sem delivered_at -> failed
-    //    SKIP se houve inbound do MESMO lead APOS a msg (prova de entrega: cliente respondeu)
-    const msgUpdate = db.prepare(`
+    // SQL helper: subquery que define instancias "saudaveis" — receberam delivered_at recentemente
+    // (qualquer msg da instancia teve webhook delivered/read nas ultimas N horas)
+    const healthyInstancesSQL = `
+      SELECT DISTINCT instance_id FROM messages
+      WHERE instance_id IS NOT NULL
+        AND delivered_at IS NOT NULL
+        AND delivered_at >= datetime('now', '-${HEALTH_LOOKBACK_HOURS} hours')
+    `
+
+    // 1a. Fast path: instancias saudaveis, threshold 60s
+    const msgFastUpdate = db.prepare(`
       UPDATE messages
       SET delivery_status = 'failed'
       WHERE direction = 'outbound'
         AND delivery_status = 'sent'
         AND delivered_at IS NULL
         AND read_at IS NULL
-        AND created_at < datetime('now', '-${STALE_MINUTES} minutes')
+        AND created_at < datetime('now', '-${STALE_HEALTHY_SECONDS} seconds')
+        AND instance_id IN (${healthyInstancesSQL})
         AND NOT EXISTS (
           SELECT 1 FROM messages m_in
           WHERE m_in.lead_id = messages.lead_id
@@ -515,14 +524,37 @@ function markStaleMessagesAsFailed() {
             AND m_in.created_at > messages.created_at
         )
     `).run()
-    // 2. broadcast_recipients 'sent' antigos sem confirmacao da msg correspondente -> failed
-    //    Mesmo guard: skip se o lead respondeu apos receber.
-    const brUpdate = db.prepare(`
+
+    // 1b. Slow path: instancias nao-provadas, threshold 15min
+    const msgSlowUpdate = db.prepare(`
+      UPDATE messages
+      SET delivery_status = 'failed'
+      WHERE direction = 'outbound'
+        AND delivery_status = 'sent'
+        AND delivered_at IS NULL
+        AND read_at IS NULL
+        AND created_at < datetime('now', '-${STALE_UNVERIFIED_MINUTES} minutes')
+        AND (instance_id IS NULL OR instance_id NOT IN (${healthyInstancesSQL}))
+        AND NOT EXISTS (
+          SELECT 1 FROM messages m_in
+          WHERE m_in.lead_id = messages.lead_id
+            AND m_in.direction = 'inbound'
+            AND m_in.created_at > messages.created_at
+        )
+    `).run()
+    const msgUpdate = { changes: msgFastUpdate.changes + msgSlowUpdate.changes }
+
+    // 2a. broadcast_recipients fast path: instancia saudavel, threshold 60s
+    const brFastUpdate = db.prepare(`
       UPDATE broadcast_recipients
       SET status = 'failed',
-          error = COALESCE(error, '') || ' [stale_no_delivery_' || ? || 'min]'
+          error = COALESCE(error, '') || ' [stale_no_delivery_60s]'
       WHERE status = 'sent'
-        AND sent_at < datetime('now', '-${STALE_MINUTES} minutes')
+        AND sent_at < datetime('now', '-${STALE_HEALTHY_SECONDS} seconds')
+        AND EXISTS (
+          SELECT 1 FROM broadcasts b WHERE b.id = broadcast_recipients.broadcast_id
+            AND b.instance_id IN (${healthyInstancesSQL})
+        )
         AND NOT EXISTS (
           SELECT 1 FROM messages m
           WHERE m.wa_msg_id = broadcast_recipients.wa_msg_id
@@ -534,16 +566,42 @@ function markStaleMessagesAsFailed() {
             AND m_in.direction = 'inbound'
             AND m_in.created_at > broadcast_recipients.sent_at
         )
-    `).run(STALE_MINUTES)
+    `).run()
+
+    // 2b. broadcast_recipients slow path: instancia nao-provada, threshold 15min
+    const brSlowUpdate = db.prepare(`
+      UPDATE broadcast_recipients
+      SET status = 'failed',
+          error = COALESCE(error, '') || ' [stale_no_delivery_${STALE_UNVERIFIED_MINUTES}min]'
+      WHERE status = 'sent'
+        AND sent_at < datetime('now', '-${STALE_UNVERIFIED_MINUTES} minutes')
+        AND NOT EXISTS (
+          SELECT 1 FROM broadcasts b WHERE b.id = broadcast_recipients.broadcast_id
+            AND b.instance_id IN (${healthyInstancesSQL})
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM messages m
+          WHERE m.wa_msg_id = broadcast_recipients.wa_msg_id
+            AND (m.delivery_status = 'delivered' OR m.delivery_status = 'read')
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM messages m_in
+          WHERE m_in.lead_id = broadcast_recipients.lead_id
+            AND m_in.direction = 'inbound'
+            AND m_in.created_at > broadcast_recipients.sent_at
+        )
+    `).run()
+    const brUpdate = { changes: brFastUpdate.changes + brSlowUpdate.changes }
+
     if (msgUpdate.changes > 0 || brUpdate.changes > 0) {
-      console.log(`[MarkStale] msgs=${msgUpdate.changes} broadcast_recipients=${brUpdate.changes} marcados failed (>${STALE_MINUTES}min sem delivered_at)`)
+      console.log(`[MarkStale] msgs=${msgUpdate.changes} (fast=${msgFastUpdate.changes} slow=${msgSlowUpdate.changes}) br=${brUpdate.changes} (fast=${brFastUpdate.changes} slow=${brSlowUpdate.changes}) marcados failed`)
       // Re-sincroniza failed_count e sent_count dos broadcasts afetados
       if (brUpdate.changes > 0) {
         db.prepare(`
           UPDATE broadcasts SET
             sent_count = (SELECT COUNT(*) FROM broadcast_recipients WHERE broadcast_id = broadcasts.id AND status = 'sent'),
             failed_count = (SELECT COUNT(*) FROM broadcast_recipients WHERE broadcast_id = broadcasts.id AND status = 'failed')
-          WHERE id IN (SELECT DISTINCT broadcast_id FROM broadcast_recipients WHERE sent_at < datetime('now', '-${STALE_MINUTES} minutes'))
+          WHERE id IN (SELECT DISTINCT broadcast_id FROM broadcast_recipients WHERE sent_at < datetime('now', '-${STALE_UNVERIFIED_MINUTES} minutes'))
         `).run()
         // Marca broadcast inteiro como 'failed' se 100% dos recipients falharam (visualmente claro pro user)
         db.prepare(`
@@ -580,8 +638,16 @@ async function tick() {
     cleanupStaleQRCodes()
     // Re-register webhooks every tick to prevent stale webhooks
     await reRegisterWebhooks()
-    // Mark stale outbound msgs (sent ha > 10min sem delivered_at) -> failed
-    markStaleMessagesAsFailed()
+    // markStaleMessagesAsFailed DESATIVADO: gerava falsos positivos (msg entregue
+    // marcada ✗ porque webhook DELIVERY_ACK atrasou ou se perdeu).
+    // Falhas reais sao detectadas por: pre-flight de numero, erros do sendText
+    // (instantaneos no envio), e ghost detector (instancia inteira morta).
+    // Funcao continua no arquivo pra reativar facil se necessario.
+    // Reverte ✗ historicos: msgs failed com inbound posterior do mesmo lead = entregue
+    revertFalseFailures()
+    // Anti-ban: retoma instancias auto-pausadas por delivered_rate baixo apos 4h.
+    // Manual pause nunca eh tocado aqui (preserva paused_reason='manual').
+    autoResumePausedInstances()
     // Detecta instancias fantasma silenciosas (Evolution state=open mas msgs nao entregam)
     // e forca restart. Cooldown 15min entre tentativas.
     detectGhostInstancesAndRestart().catch(e => console.error('[GhostDetect]', e.message))
@@ -602,10 +668,8 @@ async function pollTick() {
   } catch (err) {
     console.error('[Polling] Error:', err.message)
   }
-  // Roda a cada 30s (junto com pollMissedMessages): marca msgs stale como failed.
-  // STALE_MINUTES=2 entao feedback chega rapido. Cron de 1min do tick principal cobre extras.
-  try { markStaleMessagesAsFailed() } catch (e) { console.error('[MarkStale poll]', e.message) }
-  // Detector de instancia fantasma: tambem roda no poll de 30s pra detectar rapido.
+  // markStaleMessagesAsFailed roda em seu proprio loop curto (10s) — ver startScheduler.
+  // Detector de instancia fantasma: roda no poll de 30s pra detectar rapido.
   try { await detectGhostInstancesAndRestart() } catch (e) { console.error('[GhostDetect poll]', e.message) }
 }
 
@@ -696,9 +760,26 @@ function scheduleDailyHealthCheck() {
   }, msUntilNext)
 }
 
-// Revert falsos positivos do cron antigo (STALE_MINUTES=2): msgs marcadas 'failed'
-// que tem inbound posterior do mesmo lead (= prova que foram entregues).
-// Roda 1x na inicializacao pra limpar o estrago do threshold de 2min.
+// Revert continuo: msgs outbound 'failed' que tem inbound posterior do mesmo lead
+// (= prova absoluta de entrega) voltam pra 'delivered'. Roda em todo tick de 10s no
+// scheduler + 1x na startup pra cobrir backlog. Idempotente.
+// Sem filtros restritivos (qualquer wa_msg_id, qualquer motivo de failed) — inbound
+// posterior do mesmo lead basta como prova.
+// Anti-ban: retoma instancias auto-pausadas por delivered_rate baixo apos 4h.
+// Pausas manuais (paused_reason='manual') nao sao tocadas — requerem UPDATE explicito.
+function autoResumePausedInstances() {
+  try {
+    const r = db.prepare(`
+      UPDATE whatsapp_instances
+         SET paused_at = NULL, paused_reason = NULL
+       WHERE paused_at IS NOT NULL
+         AND paused_reason = 'delivered_rate_low'
+         AND paused_at < datetime('now', '-4 hours')
+    `).run()
+    if (r.changes > 0) console.log(`[Health] ${r.changes} instancia(s) auto-resumida(s) apos 4h de pausa`)
+  } catch (e) { console.error('[Health autoResume]', e.message) }
+}
+
 function revertFalseFailures() {
   try {
     const r1 = db.prepare(`
@@ -707,7 +788,6 @@ function revertFalseFailures() {
           delivered_at = COALESCE(delivered_at, datetime('now'))
       WHERE direction = 'outbound'
         AND delivery_status = 'failed'
-        AND wa_msg_id IS NOT NULL
         AND EXISTS (
           SELECT 1 FROM messages m_in
           WHERE m_in.lead_id = messages.lead_id
@@ -720,8 +800,6 @@ function revertFalseFailures() {
       SET status = 'sent',
           error = NULL
       WHERE status = 'failed'
-        AND wa_msg_id IS NOT NULL
-        AND error LIKE '%stale_no_delivery%'
         AND EXISTS (
           SELECT 1 FROM messages m_in
           WHERE m_in.lead_id = broadcast_recipients.lead_id
@@ -730,7 +808,18 @@ function revertFalseFailures() {
         )
     `).run()
     if (r1.changes > 0 || r2.changes > 0) {
-      console.log(`[RevertFalseFailures] revertidas msgs=${r1.changes} broadcast_recipients=${r2.changes} (lead respondeu apos envio)`)
+      console.log(`[RevertFalseFailures] msgs=${r1.changes} broadcast_recipients=${r2.changes} revertidas (lead respondeu apos envio)`)
+      // SSE pra UI atualizar ✗ vermelho -> ✓✓ verde em segundos, sem reload
+      try {
+        const affected = db.prepare(`
+          SELECT DISTINCT account_id FROM messages
+          WHERE direction = 'outbound' AND delivery_status = 'delivered'
+            AND delivered_at >= datetime('now', '-30 seconds')
+        `).all()
+        for (const a of affected) {
+          broadcastSSE(a.account_id, 'message:status', { batch_reverted_to_delivered: true })
+        }
+      } catch (e) { console.error('[RevertFalseFailures SSE]', e.message) }
       // Re-sincroniza contadores de broadcasts afetados
       if (r2.changes > 0) {
         db.prepare(`
@@ -751,13 +840,19 @@ function revertFalseFailures() {
 }
 
 export function startScheduler() {
-  console.log('[Scheduler] Started — main every 5 min, polling every 30s, daily health 05h BRT')
-  try { revertFalseFailures() } catch (e) { console.error('[RevertFalseFailures]', e.message) }
+  console.log('[Scheduler] Started — main every 5 min, polling every 30s, revert-false every 10s, daily health 05h BRT')
+  try { revertFalseFailures() } catch (e) { console.error('[RevertFalseFailures startup]', e.message) }
   tick()
   setInterval(tick, INTERVAL_MS)
   // Polling runs aggressively (30s) so missed messages surface quickly when webhook misbehaves
   setTimeout(() => pollTick(), 10000) // first poll after 10s
   setInterval(pollTick, 30 * 1000)
+  // Loop continuo de revert: detecta ✗ historicos onde lead respondeu apos (= entregue)
+  // e volta pra ✓✓ verde. Cron de markStaleMessagesAsFailed foi DESATIVADO por gerar
+  // falsos positivos. Falhas reais: pre-flight + sendText erro + ghost detector.
+  setInterval(() => {
+    try { revertFalseFailures() } catch (e) { console.error('[RevertFalse tick]', e.message) }
+  }, 10 * 1000)
   // Daily instance health check (auto-reconecta disconnected)
   scheduleDailyHealthCheck()
 }
