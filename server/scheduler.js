@@ -314,8 +314,8 @@ async function reRegisterWebhooks() {
   const instances = db.prepare("SELECT wi.*, a.slug FROM whatsapp_instances wi JOIN accounts a ON a.id = wi.account_id WHERE wi.status = 'connected'").all()
   for (const inst of instances) {
     try {
-      const baseUrl = process.env.PUBLIC_BASE_URL || 'https://drosagencia.com.br/crm'
-      const webhookUrl = `${baseUrl}/api/webhooks/evolution/${inst.slug}`
+      const publicBaseUrl = process.env.PUBLIC_BASE_URL || 'https://drosagencia.com.br/crm'
+      const webhookUrl = `${publicBaseUrl}/api/webhooks/evolution/${inst.slug}`
       await fetch(`${inst.api_url}/webhook/set/${encodeURIComponent(inst.instance_name)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', apikey: inst.api_key },
