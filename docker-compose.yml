@@ -37,7 +37,7 @@ services:
 
   # Evolution API (WhatsApp) — acessada SOMENTE pelo CRM via network interna, nao exposta pro Traefik.
   evolution:
-    image: evoapicloud/evolution-api:v2.2.3
+    image: evoapicloud/evolution-api:v2.3.2
     container_name: sheraos-evolution-api
     restart: unless-stopped
     depends_on:
@@ -56,10 +56,7 @@ services:
       CONFIG_SESSION_PHONE_CLIENT: Sheraos CRM
       CONFIG_SESSION_PHONE_NAME: Chrome
       DEL_INSTANCE: 'false'
-      LOG_LEVEL: DEBUG
-      # v2.2.3 usa DATABASE_URL (Prisma), 2.3.x usa DATABASE_CONNECTION_URI. Passa os 2 pra dar match nas duas.
-      DATABASE_URL: postgresql://evo:${EVO_DB_PASSWORD}@evolution-postgres:5432/evolution
-      CONFIG_SESSION_PHONE_VERSION: 2,3000,1023223821
+      LOG_LEVEL: ERROR
     volumes:
       - sheraos-evo-instances:/evolution/instances
     mem_limit: 300m
