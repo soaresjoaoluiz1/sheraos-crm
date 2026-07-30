@@ -222,7 +222,7 @@ export default function Contratos() {
   const handleDownload = async (c: Contract) => {
     // Endpoint exige JWT — window.open direto perde o header.
     // Faz fetch autenticado, abre nova aba com about:blank, escreve o HTML e dispara print.
-    const token = localStorage.getItem('dros_crm_token')
+    const token = localStorage.getItem('sheraos_crm_token')
     try {
       const res = await fetch(`/crm/api/contracts/${c.id}/html`, {
         headers: { Authorization: `Bearer ${token}` },

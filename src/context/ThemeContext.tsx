@@ -14,7 +14,7 @@ const ThemeCtx = createContext<ThemeCtxValue>({
   toggleTheme: () => {},
 })
 
-const STORAGE_KEY = 'dros_crm_theme'
+const STORAGE_KEY = 'sheraos_crm_theme'
 
 function readInitialTheme(): Theme {
   try {

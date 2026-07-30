@@ -11,8 +11,8 @@ interface AccountCtx {
 
 const AccountContext = createContext<AccountCtx>({} as AccountCtx)
 
-const STORAGE_KEY = 'dros_crm_active_account'
-const SESSION_FLAG = 'dros_crm_session_started'
+const STORAGE_KEY = 'sheraos_crm_active_account'
+const SESSION_FLAG = 'sheraos_crm_session_started'
 
 export function AccountProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()

@@ -611,10 +611,10 @@ export default function Chat() {
     })
   }, [leads, search, tagFilter, attendantFilter, stageFilter])
 
-  // Title da aba: soma total de unread → mostra "(N) Dros CRM"
+  // Title da aba: soma total de unread → mostra "(N) Sheraos CRM"
   useEffect(() => {
     const total = leads.reduce((s, l) => s + (l.unread_count || 0), 0)
-    const base = 'Dros CRM'
+    const base = 'Sheraos CRM'
     document.title = total > 0 ? `(${total > 99 ? '99+' : total}) ${base}` : base
     return () => { document.title = base }
   }, [leads])

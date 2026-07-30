@@ -24,7 +24,7 @@ const AuthContext = createContext<AuthCtx>({} as AuthCtx)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
-  const [token, setToken] = useState<string | null>(localStorage.getItem('dros_crm_token'))
+  const [token, setToken] = useState<string | null>(localStorage.getItem('sheraos_crm_token'))
   const [loading, setLoading] = useState(true)
 
   const base = import.meta.env.BASE_URL.replace(/\/$/, '')
@@ -34,7 +34,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     fetch(`${base}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(data => setUser(data.user))
-      .catch(() => { localStorage.removeItem('dros_crm_token'); setToken(null); setUser(null) })
+      .catch(() => { localStorage.removeItem('sheraos_crm_token'); setToken(null); setUser(null) })
       .finally(() => setLoading(false))
   }, [token])
 
@@ -46,15 +46,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
     if (!res.ok) { const err = await res.json(); throw new Error(err.error || 'Erro') }
     const data = await res.json()
-    localStorage.removeItem('dros_crm_active_account')
-    localStorage.setItem('dros_crm_token', data.token)
+    localStorage.removeItem('sheraos_crm_active_account')
+    localStorage.setItem('sheraos_crm_token', data.token)
     setToken(data.token)
     setUser(data.user)
   }
 
   const logout = () => {
-    localStorage.removeItem('dros_crm_token')
-    localStorage.removeItem('dros_crm_active_account')
+    localStorage.removeItem('sheraos_crm_token')
+    localStorage.removeItem('sheraos_crm_active_account')
     setToken(null)
     setUser(null)
   }

@@ -335,6 +335,7 @@ db.exec(`
 // ─── Schema migrations (add columns safely) ─────────────────────
 function addColumnIfNotExists(table, column, type) {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all()
+  if (cols.length === 0) return // tabela ainda nao existe (DB fresh): pula sem crash
   if (!cols.some(c => c.name === column)) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`)
     console.log(`[DB] Added column ${table}.${column}`)
@@ -380,7 +381,7 @@ addColumnIfNotExists('accounts', 'sheets_default_tag_id', 'INTEGER REFERENCES ta
 
 // Defaults centralizados da Evolution API (ja preenche em todas contas)
 export const DEFAULT_EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://127.0.0.1:8080'
-export const DEFAULT_EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || 'dros-evo-key-2026'
+export const DEFAULT_EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || 'sheraos-evo-key-2026'
 
 // Backfill: aplica defaults em contas que ainda nao tem credenciais salvas
 db.prepare("UPDATE accounts SET evolution_api_url = ? WHERE evolution_api_url IS NULL OR evolution_api_url = ''").run(DEFAULT_EVOLUTION_API_URL)
@@ -1375,12 +1376,12 @@ addColumnIfNotExists('cadences', 'cloned_from_global_id', 'INTEGER REFERENCES gl
 addColumnIfNotExists('follow_ups', 'cloned_from_global_id', 'INTEGER REFERENCES global_follow_ups(id) ON DELETE SET NULL')
 
 // Seed super_admin if not exists
-const adminExists = db.prepare('SELECT id FROM users WHERE email = ?').get('admin@drosagencia.com.br')
+const adminExists = db.prepare('SELECT id FROM users WHERE email = ?').get('admin@sheraos.com')
 if (!adminExists) {
   db.prepare(`
     INSERT INTO users (name, email, password, role, account_id) VALUES (?, ?, ?, 'super_admin', NULL)
-  `).run('Dros Admin', 'admin@drosagencia.com.br', bcrypt.hashSync('dros2026', 10))
-  console.log('[DB] Super admin created: admin@drosagencia.com.br')
+  `).run('Sheraos Admin', 'admin@sheraos.com', bcrypt.hashSync('sheraos2026', 10))
+  console.log('[DB] Super admin created: admin@sheraos.com')
 }
 
 console.log('[DB] SQLite ready at', dbPath)

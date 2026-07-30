@@ -10,17 +10,21 @@ const MODEL = 'claude-haiku-4-5-20251001'
 const ANTHROPIC_VERSION = '2023-06-01'
 
 /**
- * Resolve a API key Anthropic da CONTA. Cada cliente usa a propria chave.
- * NAO ha fallback pra chave global da agencia em fluxo de conta: se a conta
- * nao tem chave, retorna null e o caller deve pular a chamada (IA nao roda).
+ * Resolve a API key Anthropic da CONTA. Cada cliente pode usar a propria chave.
+ * Fallback: se a conta nao tem chave configurada, tenta ANTHROPIC_API_KEY_GLOBAL do env
+ * (usado em deploys onde a agencia compartilha uma chave server-only sem expor pra UI).
+ * Se nem env nem conta tem chave, retorna null e o caller deve pular a chamada.
  * @param {number|null} accountId
  * @returns {string|null}
  */
 export function resolveAnthropicKey(accountId) {
-  if (!accountId) return null
-  const acc = db.prepare('SELECT anthropic_api_key FROM accounts WHERE id = ?').get(accountId)
-  const key = acc?.anthropic_api_key?.trim()
-  return key || null
+  if (accountId) {
+    const acc = db.prepare('SELECT anthropic_api_key FROM accounts WHERE id = ?').get(accountId)
+    const key = acc?.anthropic_api_key?.trim()
+    if (key) return key
+  }
+  const envKey = process.env.ANTHROPIC_API_KEY_GLOBAL?.trim()
+  return envKey || null
 }
 
 // Precos por MTok (Haiku 4.5 — atualizado conforme docs Anthropic)

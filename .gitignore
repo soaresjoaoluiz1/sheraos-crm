@@ -1,9 +1,12 @@
 node_modules/
+dist/
 server/data/*.db
 server/data/*.db-wal
 server/data/*.db-shm
+server/data/
 .env
 .env.local
+.env.production
 *.log
 .DS_Store
 Thumbs.db
@@ -11,3 +14,4 @@ CODEBASE_INDEX.md
 .claudeignore
 .tokenmiser/
 .claude/
+.gitignore.backup

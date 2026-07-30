@@ -121,7 +121,7 @@ export default function Clients() {
           <div className="modal" style={{ maxWidth: 580 }} onClick={e => e.stopPropagation()}>
             <h2>Novo Cliente</h2>
 
-            <div className="form-group"><label>Nome Fantasia *</label><input className="input" value={form.name} onChange={e => u('name', e.target.value)} placeholder="Ex: Dros Agencia" /></div>
+            <div className="form-group"><label>Nome Fantasia *</label><input className="input" value={form.name} onChange={e => u('name', e.target.value)} placeholder="Ex: Sheraos" /></div>
 
             <div className="form-row">
               <div className="form-group"><label>CNPJ</label><input className="input" value={form.cnpj} onChange={e => u('cnpj', e.target.value)} placeholder="00.000.000/0000-00" /></div>
