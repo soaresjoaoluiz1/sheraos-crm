@@ -37,7 +37,7 @@ services:
 
   # Evolution API (WhatsApp) — acessada SOMENTE pelo CRM via network interna, nao exposta pro Traefik.
   evolution:
-    image: evoapicloud/evolution-api:v2.3.6
+    image: evoapicloud/evolution-api:homolog
     container_name: sheraos-evolution-api
     restart: unless-stopped
     depends_on:
