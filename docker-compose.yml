@@ -57,6 +57,9 @@ services:
       CONFIG_SESSION_PHONE_NAME: Chrome
       DEL_INSTANCE: 'false'
       LOG_LEVEL: ERROR
+      # Redis desabilitado explicito (senao spammma logs). Se precisar cache no futuro, adicionar container Redis.
+      CACHE_REDIS_ENABLED: 'false'
+      CACHE_LOCAL_ENABLED: 'true'
     volumes:
       - sheraos-evo-instances:/evolution/instances
     mem_limit: 300m
