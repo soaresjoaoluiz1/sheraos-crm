@@ -93,7 +93,7 @@ export default function Sidebar() {
                 src={`${import.meta.env.BASE_URL}logo-sheraos-branco.png`}
                 alt="Sheraos"
                 className="sheraos-logo"
-                style={{ height: 52, width: 'auto', display: 'block' }}
+                style={{ height: 72, width: 'auto', display: 'block' }}
               />
               <div className="sidebar-subtitle" style={{ marginTop: 6 }}>CRM</div>
             </div>

@@ -25,10 +25,9 @@ export default function Login() {
           src={`${import.meta.env.BASE_URL}logo-sheraos-branco.png`}
           alt="Sheraos"
           className="sheraos-logo"
-          style={{ height: 100, width: 'auto', display: 'block', margin: '0 auto 20px' }}
+          style={{ height: 150, width: 'auto', display: 'block', margin: '0 auto 24px' }}
         />
-        <h1 style={{ textAlign: 'center' }}>Sheraos CRM</h1>
-        <div className="subtitle" style={{ textAlign: 'center' }}>Gestao de leads e pipeline de vendas</div>
+        <h1 style={{ textAlign: 'center' }}>A revolução no atendimento ao cliente</h1>
         {error && <div className="login-error">{error}</div>}
         <form onSubmit={handleSubmit}>
           <div className="form-group"><label>Email</label><input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)} required /></div>
