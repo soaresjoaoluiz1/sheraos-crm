@@ -89,8 +89,13 @@ export default function Sidebar() {
         <div className="sidebar-header">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-              <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '0.03em', color: '#FFB300' }}>SHERAOS</div>
-              <div className="sidebar-subtitle">CRM</div>
+              <img
+                src={`${import.meta.env.BASE_URL}logo-sheraos-branco.png`}
+                alt="Sheraos"
+                className="sheraos-logo"
+                style={{ height: 28, width: 'auto', display: 'block' }}
+              />
+              <div className="sidebar-subtitle" style={{ marginTop: 6 }}>CRM</div>
             </div>
             <button className="sidebar-close-btn" onClick={closeMobile}><X size={18} /></button>
           </div>

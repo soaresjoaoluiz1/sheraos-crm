@@ -466,6 +466,10 @@ th.right, td.right { text-align: right; }
 .login-card .btn { width: 100%; justify-content: center; padding: 13px; font-size: 14px; }
 .login-error { color: var(--negative); font-size: 12px; margin-bottom: 14px; text-align: center; background: var(--negative-bg); padding: 8px; border-radius: var(--radius-sm); }
 
+/* Logo Sheraos: PNG branco no dark, invertido pra escuro no light */
+.sheraos-logo { display: block; max-width: 100%; height: auto; }
+:root[data-theme="light"] .sheraos-logo { filter: invert(1) brightness(0.15); }
+
 /* =========================================
    LOADING & EMPTY STATES
    ========================================= */
