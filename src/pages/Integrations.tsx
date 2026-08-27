@@ -152,6 +152,14 @@ export default function Integrations() {
               clearInterval(pollRef.current[updated.id])
               delete pollRef.current[updated.id]
               setActiveQR(null)
+            } else if (updated.status === 'connecting' && !updated.qr_code) {
+              // Se ainda em connecting sem QR (Evolution recuperando ou 1a tentativa falhou),
+              // pede refresh pra garantir que o QR aparece assim que Evolution devolver.
+              try {
+                const refreshed = await refreshWhatsAppQR(updated.id, accountId)
+                setInstances(prev => prev.map(i => i.id === refreshed.id ? refreshed : i))
+                if (refreshed.qr_code) setActiveQR(refreshed.id)
+              } catch {}
             }
           } catch {}
         }, 5000)
@@ -192,7 +200,16 @@ export default function Integrations() {
     try {
       const updated = await connectWhatsAppInstance(inst.id, accountId)
       setInstances(prev => prev.map(i => i.id === updated.id ? updated : i))
-      if (updated.qr_code) setActiveQR(updated.id)
+      // Abre painel imediatamente se ficou em connecting, mesmo sem QR ainda
+      // (auto-poll vai pedir refresh e preencher em segundos)
+      if (updated.status === 'connecting' || updated.qr_code) setActiveQR(updated.id)
+      // Se qr veio null na 1a tentativa, faz refresh imediato pra recuperar
+      if (updated.status === 'connecting' && !updated.qr_code) {
+        try {
+          const refreshed = await refreshWhatsAppQR(inst.id, accountId)
+          setInstances(prev => prev.map(i => i.id === refreshed.id ? refreshed : i))
+        } catch {}
+      }
     } catch (e: any) { alert('Erro: ' + e.message) }
   }
 
