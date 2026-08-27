@@ -8,7 +8,7 @@ import { apiFetch, fetchTaskCounts, fetchPendingTransferRequests, fetchAlerts } 
 import {
   LayoutDashboard, Kanban, Users, MessageCircle, UserCog, GitBranch,
   Plug, Settings, Building2, LogOut, UsersRound, Menu, X,
-  ListOrdered, MessageSquarePlus, ClipboardList, Rocket, ListTodo, ExternalLink, Tag as TagIcon, FileText, FileSignature, ArrowRightLeft, Zap, Bot, Sun, Moon, BarChart3, Layers,
+  ListOrdered, MessageSquarePlus, ClipboardList, ListTodo, Tag as TagIcon, FileText, FileSignature, ArrowRightLeft, Zap, Bot, Sun, Moon, BarChart3, Layers,
 } from 'lucide-react'
 
 function getInitials(name: string): string {
@@ -214,9 +214,6 @@ export default function Sidebar() {
               )}
               <NavLink to="/ready-messages" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={closeMobile}><MessageSquarePlus size={16} /> Msgs Prontas</NavLink>
               <NavLink to="/qualifications" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={closeMobile}><ClipboardList size={16} /> Qualificacao</NavLink>
-              <NavLink to="/launches" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={closeMobile}><Rocket size={16} /> Lancamentos</NavLink>
-              <div className="nav-section">Sistemas</div>
-              <a href="/hub/" target="_blank" rel="noopener noreferrer" className="nav-item" style={{ textDecoration: 'none' }} onClick={closeMobile}><ExternalLink size={16} /> HUB</a>
             </>
           )}
         </nav>

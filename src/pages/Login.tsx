@@ -27,7 +27,8 @@ export default function Login() {
           className="sheraos-logo"
           style={{ height: 150, width: 'auto', display: 'block', margin: '0 auto 24px' }}
         />
-        <h1 style={{ textAlign: 'center' }}>A revolução no atendimento ao cliente</h1>
+        <h1 style={{ textAlign: 'center' }}>CRM</h1>
+        <div className="subtitle" style={{ textAlign: 'center' }}>A revolução no atendimento ao cliente</div>
         {error && <div className="login-error">{error}</div>}
         <form onSubmit={handleSubmit}>
           <div className="form-group"><label>Email</label><input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)} required /></div>
