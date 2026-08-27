@@ -99,7 +99,7 @@ export default function Cadences() {
       </div>
 
       {showVars && (
-        <div className="modal-overlay" onClick={() => setShowVars(false)}>
+        <div className="modal-overlay" onClick={() => setShowVars(false)} style={{ zIndex: 110 }}>
           <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 560 }}>
             <h2>Variaveis para mensagens de cadencia</h2>
             <p style={{ fontSize: 12, color: '#9B96B0', marginBottom: 16 }}>
@@ -224,7 +224,12 @@ export default function Cadences() {
       {editing && (
         <div className="modal-overlay" onClick={() => setEditing(null)}>
           <div className="modal" style={{ maxWidth: 650 }} onClick={e => e.stopPropagation()}>
-            <h2>Editar Etapas — {editing.name}</h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+              <h2 style={{ margin: 0 }}>Editar Etapas — {editing.name}</h2>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowVars(true)} title="Ver variaveis disponiveis para mensagens">
+                <HelpCircle size={14} /> Variaveis
+              </button>
+            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12, maxHeight: 400, overflowY: 'auto' }}>
               {editAttempts.map((a, i) => (
                 <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'flex-start', padding: '8px', background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid var(--border-subtle)' }}>
@@ -260,7 +265,7 @@ export default function Cadences() {
                     )}
                     <input className="input" value={a.instructions || ''} onChange={e => updateAttempt(i, 'instructions', e.target.value)} placeholder="Instrucoes (opcional)" style={{ fontSize: 12 }} />
                     {(a.action_type === 'whatsapp' || a.action_type === 'mensagem') && (
-                      <textarea className="input" value={a.auto_message || ''} onChange={e => updateAttempt(i, 'auto_message', e.target.value)} placeholder="Mensagem (opcional). Clique em 'Variaveis' no topo da tela para ver as tags disponiveis." rows={2} style={{ fontSize: 12, resize: 'vertical' }} />
+                      <textarea className="input" value={a.auto_message || ''} onChange={e => updateAttempt(i, 'auto_message', e.target.value)} placeholder="Mensagem (opcional). Clique em 'Variaveis' aqui em cima pra ver as tags disponiveis." rows={2} style={{ fontSize: 12, resize: 'vertical' }} />
                     )}
                     {a.action_type === 'ligacao' && (
                       <>
