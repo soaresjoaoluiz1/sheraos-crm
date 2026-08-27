@@ -25,7 +25,7 @@ export default function Login() {
           src={`${import.meta.env.BASE_URL}logo-sheraos-branco.png`}
           alt="Sheraos"
           className="sheraos-logo"
-          style={{ height: 56, width: 'auto', display: 'block', margin: '0 auto 18px' }}
+          style={{ height: 100, width: 'auto', display: 'block', margin: '0 auto 20px' }}
         />
         <h1 style={{ textAlign: 'center' }}>Sheraos CRM</h1>
         <div className="subtitle" style={{ textAlign: 'center' }}>Gestao de leads e pipeline de vendas</div>
