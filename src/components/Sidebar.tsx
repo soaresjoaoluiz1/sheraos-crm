@@ -93,9 +93,9 @@ export default function Sidebar() {
                 src={`${import.meta.env.BASE_URL}logo-sheraos-branco.png`}
                 alt="Sheraos"
                 className="sheraos-logo"
-                style={{ height: 72, width: 'auto', display: 'block' }}
+                style={{ height: 90, width: 'auto', display: 'block', marginBottom: -6 }}
               />
-              <div className="sidebar-subtitle" style={{ marginTop: 6 }}>CRM</div>
+              <div className="sidebar-subtitle" style={{ marginTop: 0, letterSpacing: '0.3px', textTransform: 'none', fontSize: 10, lineHeight: 1.35, maxWidth: 170 }}>A revolução no atendimento ao cliente</div>
             </div>
             <button className="sidebar-close-btn" onClick={closeMobile}><X size={18} /></button>
           </div>

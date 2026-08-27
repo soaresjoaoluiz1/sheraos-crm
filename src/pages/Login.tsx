@@ -25,9 +25,9 @@ export default function Login() {
           src={`${import.meta.env.BASE_URL}logo-sheraos-branco.png`}
           alt="Sheraos"
           className="sheraos-logo"
-          style={{ height: 150, width: 'auto', display: 'block', margin: '0 auto 24px' }}
+          style={{ height: 150, width: 'auto', display: 'block', margin: '0 auto -8px' }}
         />
-        <h1 style={{ textAlign: 'center' }}>CRM</h1>
+        <h1 style={{ textAlign: 'center', marginTop: 0 }}>CRM</h1>
         <div className="subtitle" style={{ textAlign: 'center' }}>A revolução no atendimento ao cliente</div>
         {error && <div className="login-error">{error}</div>}
         <form onSubmit={handleSubmit}>
