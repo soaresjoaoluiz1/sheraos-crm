@@ -106,8 +106,14 @@ export default function Funnels() {
         <div className="modal-overlay" onClick={() => setEditing(null)}>
           <div className="modal" style={{ maxWidth: 600 }} onClick={e => e.stopPropagation()}>
             <h2>Editar Etapas — {editing.name}</h2>
-            <div style={{ marginTop: 8, padding: 8, background: 'rgba(91,173,226,0.06)', borderRadius: 6, fontSize: 11, color: '#9B96B0', lineHeight: 1.5 }}>
-              💡 Para leads de <strong>Click-to-WhatsApp</strong> o Meta só aceita <code>LeadSubmitted</code> e <code>Purchase</code>. Qualquer outro evento é enviado automaticamente como <code>LeadSubmitted</code> nesses leads (em leads normais, vai o evento escolhido).
+            <div style={{ marginTop: 8, padding: 10, background: 'rgba(255,179,0,0.08)', border: '1px solid rgba(255,179,0,0.25)', borderRadius: 8, fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.55 }}>
+              <strong style={{ color: '#FFB300', display: 'block', marginBottom: 4, textTransform: 'uppercase', fontSize: 10, letterSpacing: 0.4 }}>Como o Meta trata os eventos</strong>
+              <div style={{ marginBottom: 4 }}>
+                <strong>Leads normais</strong> (form, planilha, orgânico): vai o evento escolhido no dropdown ao Meta como está (Lead, Contact, Schedule, AddToCart, etc).
+              </div>
+              <div>
+                <strong>Leads de Click-to-WhatsApp (CTWA)</strong>: o Meta business_messaging só aceita <code>LeadSubmitted</code> e <code>Purchase</code>. Nesses leads, qualquer evento configurado é <strong>traduzido automaticamente</strong> pra <code>LeadSubmitted</code> (ou <code>Purchase</code> se a etapa marcada tiver escolhido Purchase). Os dois com <strong>(CTWA ✓)</strong> no dropdown são os que passam com o nome original mesmo em CTWA.
+              </div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
               {editStages.map((s, i) => {

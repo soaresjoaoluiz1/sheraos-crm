@@ -1280,6 +1280,16 @@ function onChange(e) {
               </small>
             </div>
 
+            <div style={{ marginTop: 14, padding: 10, background: 'rgba(255,179,0,0.08)', border: '1px solid rgba(255,179,0,0.25)', borderRadius: 8, fontSize: 11, lineHeight: 1.5, color: 'var(--text-muted)' }}>
+              <strong style={{ color: '#FFB300', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4 }}>Requisitos pra msg disparar</strong>
+              <ul style={{ margin: '6px 0 0 18px', padding: 0 }}>
+                <li>Lead precisa ser <strong>atribuído a um atendente</strong> (via roleta, bot ou manual)</li>
+                <li>O atendente precisa ter <strong>esta instância como principal</strong> (config em <strong>Equipe → editar atendente → Instância principal</strong>)</li>
+                <li>A instância precisa estar <strong>Conectada</strong> (status verde aqui em Integrações)</li>
+                <li>Não dispara se o lead já mandou mensagem inbound antes (evita spam pra quem já iniciou conversa)</li>
+              </ul>
+            </div>
+
             <div className="modal-actions" style={{ marginTop: 16 }}>
               <button className="btn btn-secondary" onClick={() => setTplModal(null)} disabled={tplSaving}>Cancelar</button>
               <button
