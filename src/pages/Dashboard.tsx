@@ -135,7 +135,7 @@ export default function Dashboard() {
                 {agents.map(a => (
                   <tr key={a.id}>
                     <td className="name" style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ width: 6, height: 6, borderRadius: '50%', background: a.is_active ? '#34C759' : '#9B96B0' }} />{a.name}</td>
-                    <td className="right" style={{ fontWeight: 600, color: '#fff' }}>{a.leads_period}</td>
+                    <td className="right" style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{a.leads_period}</td>
                     <td className="right">{a.leads_total}</td>
                     <td className="right" style={{ color: a.conversions > 0 ? '#34C759' : undefined }}>{a.conversions}</td>
                     <td className="right">{a.leads_period > 0 ? ((a.conversions / a.leads_period) * 100).toFixed(1) + '%' : '0%'}</td>

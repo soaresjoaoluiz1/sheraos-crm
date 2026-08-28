@@ -401,7 +401,7 @@ export default function LeadDetail() {
                 <div key={h.id} style={{ display: 'flex', gap: 8, padding: '6px 0', borderBottom: i < Math.min(history.length, 10) - 1 ? '1px solid var(--border-subtle)' : 'none', fontSize: 11 }}>
                   <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#FFB300', marginTop: 4, flexShrink: 0 }} />
                   <div>
-                    <div style={{ color: '#fff' }}>{h.from_stage_name ? `${h.from_stage_name} → ${h.to_stage_name}` : `Entrada: ${h.to_stage_name}`}</div>
+                    <div style={{ color: 'var(--text-primary)' }}>{h.from_stage_name ? `${h.from_stage_name} → ${h.to_stage_name}` : `Entrada: ${h.to_stage_name}`}</div>
                     <div style={{ color: '#6B6580', fontSize: 10 }}>{h.trigger_type === 'manual' ? 'Manual' : h.trigger_type}{h.user_name ? ` por ${h.user_name}` : ''} · {parseSqlDate(h.created_at).toLocaleString('pt-BR')}</div>
                   </div>
                 </div>
@@ -500,7 +500,7 @@ export default function LeadDetail() {
         <div className="modal-overlay" onClick={() => setScriptModal(null)}>
           <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 600 }}>
             <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Phone size={16} style={{ color: '#FFB300' }} /> Script de Ligacao</h2>
-            <div style={{ background: 'rgba(255,179,0,0.05)', border: '1px solid rgba(255,179,0,0.2)', borderRadius: 8, padding: 16, marginTop: 12, maxHeight: 400, overflowY: 'auto', whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.6, color: '#F0EDF5' }}>
+            <div style={{ background: 'rgba(255,179,0,0.05)', border: '1px solid rgba(255,179,0,0.2)', borderRadius: 8, padding: 16, marginTop: 12, maxHeight: 400, overflowY: 'auto', whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.6, color: 'var(--text-primary)' }}>
               {scriptModal.text}
             </div>
             <div className="modal-actions">
