@@ -262,19 +262,19 @@ export default function Tasks() {
                 <Check size={28} style={{ color: '#34C759' }} />
               </div>
               <h2 style={{ margin: 0, fontSize: 18 }}>Mensagem enviada</h2>
-              <div style={{ fontSize: 13, color: '#9B96B0' }}>Para <b style={{ color: '#fff' }}>{confirmModal.leadName}</b></div>
+              <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Para <b style={{ color: 'var(--text-primary)' }}>{confirmModal.leadName}</b></div>
 
               {confirmModal.nextStep ? (
                 <div style={{ width: '100%', padding: 12, background: 'rgba(255,179,0,0.08)', border: '1px solid rgba(255,179,0,0.25)', borderRadius: 8, marginTop: 4 }}>
                   <div style={{ fontSize: 11, color: '#FFB300', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Próxima etapa</div>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
                     {ACTION_LABELS[confirmModal.nextStep.action_type] || confirmModal.nextStep.action_type}
-                    {confirmModal.nextStep.description && <span style={{ color: '#9B96B0', fontWeight: 400 }}> · {confirmModal.nextStep.description}</span>}
+                    {confirmModal.nextStep.description && <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}> · {confirmModal.nextStep.description}</span>}
                   </div>
-                  <div style={{ fontSize: 12, color: '#C8C4D4', marginTop: 4 }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary, var(--text-muted))', marginTop: 4 }}>
                     <Clock size={11} style={{ verticalAlign: -1, marginRight: 4 }} />
                     {parseSqlDate(confirmModal.nextStep.due_datetime).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                    <span style={{ color: '#6B6580', marginLeft: 6 }}>
+                    <span style={{ color: 'var(--text-muted)', marginLeft: 6 }}>
                       (D+{confirmModal.nextStep.delay_days}{confirmModal.nextStep.scheduled_time ? ` ${confirmModal.nextStep.scheduled_time}` : ''})
                     </span>
                   </div>
