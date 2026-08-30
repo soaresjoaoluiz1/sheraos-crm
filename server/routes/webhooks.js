@@ -359,7 +359,10 @@ router.post('/evolution/:accountSlug', (req, res) => {
     }
 
     // Prefer senderPn (real phone) over remoteJid (might be @lid = legacy ID)
-    const realJid = senderPn || remoteJid
+    // MAS: em fromMe=true, remoteJid eh o DESTINATARIO (o lead certo). senderPn nesse caso
+    // eh o numero do PROPRIO OWNER da conta WA — usar isso jogaria toda outbound num lead
+    // fantasma "do owner". Portanto: senderPn so vale quando fromMe=false.
+    const realJid = fromMe ? remoteJid : (senderPn || remoteJid)
     let phone = ''
     let dedupJid = ''
     let isLid = false
