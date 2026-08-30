@@ -131,7 +131,7 @@ export default function Tasks() {
 
             {isStandalone ? (
               <>
-                {t.lead_name && <div style={{ fontSize: 12, color: '#C8C4D4', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}><User size={11} /> {t.lead_name}</div>}
+                {t.lead_name && <div style={{ fontSize: 12, color: 'var(--text-secondary, var(--text-muted))', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}><User size={11} /> {t.lead_name}</div>}
                 {t.description && <div style={{ fontSize: 11, color: '#9B96B0', marginBottom: 4 }}>{t.description}</div>}
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', background: '#9B59B615', borderRadius: 6, fontSize: 11, color: '#9B59B6', fontWeight: 600 }}>
                   <ListTodo size={11} /> Tarefa avulsa
@@ -148,7 +148,7 @@ export default function Tasks() {
                   </span>
                   {t.stage_name && <span style={{ fontSize: 10, color: t.stage_color || '#9B96B0', background: `${t.stage_color || '#9B96B0'}15`, padding: '2px 6px', borderRadius: 6 }}>{t.stage_name}</span>}
                 </div>
-                {t.attempt_description && <div style={{ fontSize: 12, color: '#C8C4D4', marginBottom: 4 }}>{t.attempt_description}</div>}
+                {t.attempt_description && <div style={{ fontSize: 12, color: 'var(--text-secondary, var(--text-muted))', marginBottom: 4 }}>{t.attempt_description}</div>}
                 {t.attempt_instructions && <div style={{ fontSize: 11, color: '#9B96B0', marginBottom: 4, fontStyle: 'italic' }}>{t.attempt_instructions}</div>}
                 {t.auto_message && <div style={{ fontSize: 11, color: '#34C759', background: 'rgba(52,199,89,0.08)', padding: '6px 8px', borderRadius: 6, marginTop: 4 }}>Msg automatica: "{t.auto_message.substring(0, 60)}{t.auto_message.length > 60 ? '...' : ''}"</div>}
               </>

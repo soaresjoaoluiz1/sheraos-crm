@@ -672,7 +672,7 @@ function VariablesModal({ onClose, copiedVar, onCopy }: { onClose: () => void; c
             <div key={v.token} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-subtle)', borderRadius: 8 }}>
               <code style={{ fontSize: 13, color: '#FFB300', fontFamily: 'monospace', flexShrink: 0, minWidth: 160 }}>{v.token}</code>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 12, color: '#E8E4F0' }}>{v.label}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary, var(--text-muted))' }}>{v.label}</div>
                 <div style={{ fontSize: 11, color: '#6B6580' }}>Ex: <em>{v.example}</em></div>
               </div>
               <button className="btn btn-secondary btn-sm btn-icon" onClick={() => onCopy(v.token)}>

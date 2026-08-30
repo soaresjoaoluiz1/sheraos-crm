@@ -379,13 +379,19 @@ addColumnIfNotExists('accounts', 'evolution_api_key', 'TEXT')
 // Tag default pra todo lead novo vindo da planilha (webhook /sheets/:slug). NULL = sem tag automatica.
 addColumnIfNotExists('accounts', 'sheets_default_tag_id', 'INTEGER REFERENCES tags(id) ON DELETE SET NULL')
 
-// Defaults centralizados da Evolution API (ja preenche em todas contas)
-export const DEFAULT_EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://127.0.0.1:8080'
-export const DEFAULT_EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || 'sheraos-evo-key-2026'
+// Defaults centralizados da Evolution API (ja preenche em todas contas — auto-setup, user nao configura nada).
+// FIX #2 — remove fallback publico da EVOLUTION_API_KEY. URL pode ter fallback docker interno.
+// Se .env.production nao setar EVOLUTION_API_KEY, aplicacao FALHA imediatamente (fail-safe visivel).
+export const DEFAULT_EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://evolution:8080'
+if (!process.env.EVOLUTION_API_KEY || process.env.EVOLUTION_API_KEY.length < 16) {
+  throw new Error('[FATAL] EVOLUTION_API_KEY nao setada ou muito curta (min 16 chars). Verifique .env.production.')
+}
+export const DEFAULT_EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY
 
-// Backfill: aplica defaults em contas que ainda nao tem credenciais salvas
+// Backfill + self-heal: aplica defaults em contas sem credenciais OU com credenciais antigas hardcoded.
+// Assim se usuario apagar por engano OU se rotacionamos chave via env, todas as contas sao atualizadas na inicializacao.
 db.prepare("UPDATE accounts SET evolution_api_url = ? WHERE evolution_api_url IS NULL OR evolution_api_url = ''").run(DEFAULT_EVOLUTION_API_URL)
-db.prepare("UPDATE accounts SET evolution_api_key = ? WHERE evolution_api_key IS NULL OR evolution_api_key = ''").run(DEFAULT_EVOLUTION_API_KEY)
+db.prepare("UPDATE accounts SET evolution_api_key = ? WHERE evolution_api_key IS NULL OR evolution_api_key = '' OR evolution_api_key = 'sheraos-evo-key-2026'").run(DEFAULT_EVOLUTION_API_KEY)
 // cadence_attempts: D+N days from lead creation + scheduled time
 addColumnIfNotExists('cadence_attempts', 'delay_days', 'INTEGER NOT NULL DEFAULT 0')
 addColumnIfNotExists('cadence_attempts', 'scheduled_time', 'TEXT')

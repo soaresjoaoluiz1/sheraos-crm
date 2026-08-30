@@ -68,7 +68,7 @@ export default function Launches() {
               {l.messages.length > 0 && (
                 <div style={{ marginTop: 8 }}>
                   {l.messages.slice(0, 2).map((m, i) => (
-                    <div key={m.id} style={{ fontSize: 11, color: '#C8C4D4', padding: '4px 0', borderTop: i > 0 ? '1px solid var(--border-subtle)' : 'none' }}>
+                    <div key={m.id} style={{ fontSize: 11, color: 'var(--text-secondary, var(--text-muted))', padding: '4px 0', borderTop: i > 0 ? '1px solid var(--border-subtle)' : 'none' }}>
                       <strong style={{ color: '#FFB300' }}>P:</strong> {m.question.substring(0, 50)}{m.question.length > 50 ? '...' : ''}
                     </div>
                   ))}

@@ -1020,7 +1020,7 @@ export default function Chat() {
                     className="chat-contact-archive"
                     title="Arquivar"
                     onClick={e => handleArchiveLead(l.id, e)}
-                    style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(0,0,0,0.35)', border: 'none', color: '#C8C4D4', cursor: 'pointer', padding: 4, borderRadius: 4, display: 'none' }}>
+                    style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(0,0,0,0.35)', border: 'none', color: 'var(--text-secondary, var(--text-muted))', cursor: 'pointer', padding: 4, borderRadius: 4, display: 'none' }}>
                     <Archive size={11} />
                   </button>
                 </div>
@@ -1448,7 +1448,7 @@ export default function Chat() {
                       <textarea className="input" value={notesDraft} onChange={e => setNotesDraft(e.target.value)} rows={4} style={{ width: '100%', resize: 'vertical', fontSize: 11, lineHeight: 1.4 }} placeholder="Anotacoes sobre o lead..." />
                     ) : (
                       lead.notes ? (
-                        <div style={{ fontSize: 11, color: '#C8C4D4', whiteSpace: 'pre-wrap', lineHeight: 1.4 }}>{lead.notes}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary, var(--text-muted))', whiteSpace: 'pre-wrap', lineHeight: 1.4 }}>{lead.notes}</div>
                       ) : (
                         <div style={{ fontSize: 10, color: '#6B6580' }}>Sem observacoes</div>
                       )

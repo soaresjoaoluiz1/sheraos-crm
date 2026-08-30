@@ -303,7 +303,7 @@ export default function LeadDetail() {
               <textarea className="input" value={notesDraft} onChange={e => setNotesDraft(e.target.value)} rows={5} style={{ width: '100%', resize: 'vertical', fontFamily: 'inherit', fontSize: 13, lineHeight: 1.5 }} placeholder="Anote qualquer informacao extra sobre o lead..." />
             ) : (
               lead.notes ? (
-                <div style={{ fontSize: 13, color: '#C8C4D4', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{lead.notes}</div>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary, var(--text-muted))', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{lead.notes}</div>
               ) : (
                 <div style={{ fontSize: 11, color: '#6B6580' }}>Sem observacoes</div>
               )
@@ -375,7 +375,7 @@ export default function LeadDetail() {
                     <div style={{ fontSize: 12, color: '#FFB300', display: 'flex', alignItems: 'center', gap: 4 }}>
                       Etapa {(leadCadence.attempt_position ?? 0) + 1}/{leadCadence.total_attempts}: {leadCadence.action_type?.toUpperCase()}
                     </div>
-                    {leadCadence.attempt_description && <div style={{ fontSize: 11, color: '#C8C4D4', marginTop: 2 }}>{leadCadence.attempt_description}</div>}
+                    {leadCadence.attempt_description && <div style={{ fontSize: 11, color: 'var(--text-secondary, var(--text-muted))', marginTop: 2 }}>{leadCadence.attempt_description}</div>}
                     {leadCadence.attempt_instructions && <div style={{ fontSize: 11, color: '#9B96B0', marginTop: 2, fontStyle: 'italic' }}>{leadCadence.attempt_instructions}</div>}
                     {leadCadence.attempt_script ? (
                       <>
@@ -460,7 +460,7 @@ export default function LeadDetail() {
                       </div>
                       {q.answer ? (
                         <div style={{ marginLeft: 26 }}>
-                          <div style={{ fontSize: 12, color: '#C8C4D4' }}>{q.answer}</div>
+                          <div style={{ fontSize: 12, color: 'var(--text-secondary, var(--text-muted))' }}>{q.answer}</div>
                           <div style={{ fontSize: 10, color: '#6B6580', marginTop: 2 }}>{q.answered_by_name} · {q.answered_at ? new Date(q.answered_at).toLocaleString('pt-BR') : ''}</div>
                         </div>
                       ) : (

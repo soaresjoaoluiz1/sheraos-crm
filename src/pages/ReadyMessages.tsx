@@ -64,7 +64,7 @@ export default function ReadyMessages() {
                   <button className="btn btn-danger btn-sm btn-icon" onClick={() => handleDelete(m.id)}><Trash2 size={12} /></button>
                 </div>
               </div>
-              <p style={{ fontSize: 12, color: '#C8C4D4', lineHeight: 1.5, maxHeight: 60, overflow: 'hidden' }}>{m.content}</p>
+              <p style={{ fontSize: 12, color: 'var(--text-secondary, var(--text-muted))', lineHeight: 1.5, maxHeight: 60, overflow: 'hidden' }}>{m.content}</p>
               <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
                 {m.stage_name && (
                   <span className="stage-badge" style={{ background: `${m.stage_color || '#FFB300'}20`, color: m.stage_color || '#FFB300', fontSize: 10 }}>{m.stage_name}</span>

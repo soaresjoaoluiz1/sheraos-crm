@@ -40,6 +40,7 @@ export default function Leads() {
   const [dateTo, setDateTo] = useState('')
   const [tagFilter, setTagFilter] = useState('')
   const [showNew, setShowNew] = useState(false)
+  const [creatingLead, setCreatingLead] = useState(false)
   const [newLead, setNewLead] = useState<Record<string, any>>({ name: '', phone: '', email: '', city: '', source: 'manual', empresa: '', cpf_cnpj: '', instagram: '', trabalha_anuncio: 0, investimento_anuncios: '' })
   const [showArchived, setShowArchived] = useState(false)
   const [archivedCount, setArchivedCount] = useState<{ count: number; withActivity: number }>({ count: 0, withActivity: 0 })
@@ -98,9 +99,14 @@ export default function Leads() {
   }
 
   const handleCreate = async () => {
-    if (!accountId || !newLead.name) return
-    await createLead(accountId, newLead)
-    setShowNew(false); setNewLead({ name: '', phone: '', email: '', city: '', source: 'manual', empresa: '', cpf_cnpj: '', instagram: '', trabalha_anuncio: 0, investimento_anuncios: '' }); loadLeads()
+    if (!accountId || !newLead.name || creatingLead) return
+    // FASE 1 bloco D — disabled state pra evitar double-click criando 2 leads identicos
+    setCreatingLead(true)
+    try {
+      await createLead(accountId, newLead)
+      setShowNew(false); setNewLead({ name: '', phone: '', email: '', city: '', source: 'manual', empresa: '', cpf_cnpj: '', instagram: '', trabalha_anuncio: 0, investimento_anuncios: '' }); loadLeads()
+    } catch (e: any) { alert('Erro: ' + (e?.message || 'desconhecido')) }
+    setCreatingLead(false)
   }
 
   const toggleSelect = (id: number) => {
@@ -339,7 +345,7 @@ export default function Leads() {
                 </div>
               )}
             </div>
-            <div className="modal-actions"><button className="btn btn-secondary" onClick={() => setShowNew(false)}>Cancelar</button><button className="btn btn-primary" onClick={handleCreate}>Criar Lead</button></div>
+            <div className="modal-actions"><button className="btn btn-secondary" onClick={() => setShowNew(false)} disabled={creatingLead}>Cancelar</button><button className="btn btn-primary" onClick={handleCreate} disabled={creatingLead || !newLead.name}>{creatingLead ? 'Criando...' : 'Criar Lead'}</button></div>
           </div>
         </div>
       )}

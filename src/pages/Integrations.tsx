@@ -223,6 +223,8 @@ export default function Integrations() {
 
   const handleDisconnect = async (inst: WhatsAppInstance) => {
     if (!accountId) return
+    // FASE 1 bloco D — confirm antes de derrubar sessao WhatsApp (evita clique acidental)
+    if (!confirm(`Desconectar "${inst.instance_name}"?\n\nO WhatsApp vai sair da sessao e todo cliente que tentar mandar msg NAO vai chegar ate reconectar (leva minutos).`)) return
     await disconnectWhatsApp(inst.id, accountId)
     setActiveQR(null)
     load()
@@ -409,28 +411,26 @@ export default function Integrations() {
         <BlockedBanner message="Voce ainda nao tem WhatsApp atribuido. Peca pro gerente atribuir em Equipe > Editar, ou conecte um novo WhatsApp acima (voce vira dono automaticamente)." />
       )}
 
-      {/* Evolution API Config — gerente/admin only */}
+      {/* Evolution API Config — so-leitura (auto-configurada pela infra Sheraos) */}
       {isGerenteOuAdmin && (
       <section className="dash-section">
         <div className="section-title"><Settings size={14} /> Configuracao Evolution API</div>
         <div className="card">
-          <p style={{ fontSize: 12, color: '#9B96B0', marginBottom: 12 }}>Configure uma vez a URL e API Key do seu servidor Evolution API. Todos os numeros WhatsApp desta conta usarao estas credenciais.</p>
+          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
+            <Check size={12} style={{ verticalAlign: -1, marginRight: 4, color: '#34C759' }} />
+            Configurado automaticamente pela infra Sheraos. Voce nao precisa preencher nada aqui.
+          </p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <div style={{ flex: 1, minWidth: 200 }}>
-              <label style={{ fontSize: 11, color: '#9B96B0', display: 'block', marginBottom: 4 }}>URL da API</label>
-              <input className="input" value={evoUrl} onChange={e => setEvoUrl(e.target.value)} placeholder="https://evo.exemplo.com.br" />
+              <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>URL da API</label>
+              <input className="input" value={evoUrl} readOnly style={{ opacity: 0.7, cursor: 'not-allowed' }} />
             </div>
             <div style={{ flex: 1, minWidth: 200 }}>
-              <label style={{ fontSize: 11, color: '#9B96B0', display: 'block', marginBottom: 4 }}>API Key</label>
-              <input className="input" type="password" value={evoKey} onChange={e => setEvoKey(e.target.value)} placeholder="sua-api-key" />
-            </div>
-            <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-              <button className="btn btn-primary btn-sm" onClick={handleSaveConfig} disabled={savingConfig || !evoUrl || !evoKey} style={{ height: 38 }}>
-                {evoSaved ? <><Check size={14} /> Salvo</> : <><Save size={14} /> Salvar</>}
-              </button>
+              <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>API Key</label>
+              <input className="input" type="password" value={evoKey ? '••••••••••••••••' : ''} readOnly style={{ opacity: 0.7, cursor: 'not-allowed' }} />
             </div>
           </div>
-          {evoConfigured && <div style={{ fontSize: 11, color: '#34C759', marginTop: 8, display: 'flex', alignItems: 'center', gap: 4 }}><Check size={12} /> Evolution API configurada</div>}
+          {evoConfigured && <div style={{ fontSize: 11, color: '#34C759', marginTop: 8, display: 'flex', alignItems: 'center', gap: 4 }}><Check size={12} /> Evolution API ativa</div>}
         </div>
       </section>
       )}
@@ -475,7 +475,7 @@ export default function Integrations() {
                     </div>
                     <div>
                       <div style={{ fontWeight: 600, fontSize: 15 }}>{inst.instance_name}</div>
-                      {inst.phone_number && <div style={{ fontSize: 12, color: '#C8C4D4' }}>{inst.phone_number}</div>}
+                      {inst.phone_number && <div style={{ fontSize: 12, color: 'var(--text-secondary, var(--text-muted))' }}>{inst.phone_number}</div>}
                       {(
                         <>
                           <div style={{ fontSize: 11, color: '#9B96B0', marginTop: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -935,7 +935,7 @@ function onChange(e) {
                     >
                       {scriptCopied ? <><Check size={12} /> Script copiado</> : <><Copy size={12} /> Copiar script</>}
                     </button>
-                    <pre style={{ padding: 12, background: '#0A0118', borderRadius: 8, fontSize: 10, color: '#C8C4D4', overflow: 'auto', maxHeight: 400, whiteSpace: 'pre-wrap' }}>{script}</pre>
+                    <pre style={{ padding: 12, background: '#0A0118', borderRadius: 8, fontSize: 10, color: 'var(--text-secondary, var(--text-muted))', overflow: 'auto', maxHeight: 400, whiteSpace: 'pre-wrap' }}>{script}</pre>
                   </>
                 )
               })()}
@@ -1124,7 +1124,7 @@ function onChange(e) {
             <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <Activity size={18} style={{ color: '#FFB300' }} /> Confirmar teste de conexão
             </h2>
-            <div style={{ marginTop: 12, fontSize: 13, color: '#C8C4D4', lineHeight: 1.6 }}>
+            <div style={{ marginTop: 12, fontSize: 13, color: 'var(--text-secondary, var(--text-muted))', lineHeight: 1.6 }}>
               <p style={{ marginBottom: 10 }}>
                 Isso vai enviar um evento <strong style={{ color: '#FFB300' }}>"Lead" real</strong> pro seu Pixel da Meta, sem código de teste.
               </p>

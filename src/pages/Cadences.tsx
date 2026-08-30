@@ -85,6 +85,10 @@ export default function Cadences() {
 
   const handleDelete = async (id: number) => {
     if (!accountId) return
+    // FASE 1 bloco D — confirm antes de apagar cadencia. Trash icon eh 1 clique,
+    // sem confirm = todos os leads na cadencia viram orfaos silenciosamente.
+    const c = cadences.find(x => x.id === id)
+    if (!confirm(`Excluir cadencia "${c?.name || id}"?\n\nEsta acao remove a cadencia e desatribui TODOS os leads que estao nela. Nao pode ser desfeita.`)) return
     await deleteCadence(id, accountId); load()
   }
 
@@ -110,7 +114,7 @@ export default function Cadences() {
                 <div key={v.token} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-subtle)', borderRadius: 8 }}>
                   <code style={{ fontSize: 13, color: '#FFB300', fontFamily: 'monospace', flexShrink: 0, minWidth: 160 }}>{v.token}</code>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12, color: '#E8E4F0' }}>{v.label}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary, var(--text-muted))' }}>{v.label}</div>
                     <div style={{ fontSize: 11, color: '#6B6580' }}>Ex: <em>{v.example}</em></div>
                   </div>
                   <button className="btn btn-secondary btn-sm btn-icon" onClick={() => copyVar(v.token)} title="Copiar">
@@ -119,7 +123,7 @@ export default function Cadences() {
                 </div>
               ))}
             </div>
-            <div style={{ marginTop: 16, padding: 12, background: 'rgba(255,179,0,0.06)', border: '1px solid rgba(255,179,0,0.2)', borderRadius: 8, fontSize: 11, color: '#C8C4D4', lineHeight: 1.6 }}>
+            <div style={{ marginTop: 16, padding: 12, background: 'rgba(255,179,0,0.06)', border: '1px solid rgba(255,179,0,0.2)', borderRadius: 8, fontSize: 11, color: 'var(--text-secondary, var(--text-muted))', lineHeight: 1.6 }}>
               <strong style={{ color: '#FFB300' }}>Exemplo:</strong><br />
               <em>"Oi, {'{{primeiro_nome}}'}! Aqui e o {'{{atendente_nome}}'} da Dros. Vi que voce e de {'{{cidade}}'}, certo?"</em><br />
               Com lead "Daniel Paulo" de Porto Alegre + Hemily atendendo, vira:<br />
