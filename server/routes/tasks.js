@@ -375,14 +375,21 @@ router.put('/standalone/:id', (req, res) => {
 
 // Complete standalone task
 router.post('/standalone/:id/complete', (req, res) => {
+  // FIX #6 (multi-tenant) — checa antes de mutar
+  const existing = db.prepare('SELECT account_id FROM standalone_tasks WHERE id = ?').get(req.params.id)
+  if (!existing) return res.status(404).json({ error: 'Nao encontrada' })
+  if (req.accountId && existing.account_id !== req.accountId) return res.status(403).json({ error: 'Sem permissao' })
   db.prepare("UPDATE standalone_tasks SET status = 'completed', completed_at = datetime('now') WHERE id = ?").run(req.params.id)
-  const task = db.prepare('SELECT account_id FROM standalone_tasks WHERE id = ?').get(req.params.id)
-  if (task) broadcastSSE(task.account_id, 'task:updated', { standalone_task_id: req.params.id })
+  broadcastSSE(existing.account_id, 'task:updated', { standalone_task_id: req.params.id })
   res.json({ ok: true })
 })
 
 // Delete standalone task
 router.delete('/standalone/:id', (req, res) => {
+  // FIX #6 (multi-tenant)
+  const existing = db.prepare('SELECT account_id FROM standalone_tasks WHERE id = ?').get(req.params.id)
+  if (!existing) return res.status(404).json({ error: 'Nao encontrada' })
+  if (req.accountId && existing.account_id !== req.accountId) return res.status(403).json({ error: 'Sem permissao' })
   db.prepare('DELETE FROM standalone_tasks WHERE id = ?').run(req.params.id)
   res.json({ ok: true })
 })

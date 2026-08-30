@@ -129,6 +129,8 @@ router.get('/:id', requireRole('super_admin', 'gerente'), (req, res) => {
     WHERE b.id = ?
   `).get(req.params.id)
   if (!broadcast) return res.status(404).json({ error: 'Disparo nao encontrado' })
+  // FIX #6 (multi-tenant) — gerente da Alpha nao pode listar broadcast da Sheraos
+  if (req.accountId && broadcast.account_id !== req.accountId) return res.status(403).json({ error: 'Sem permissao' })
 
   const recipients = db.prepare(`
     SELECT br.*, l.name as lead_name
@@ -295,6 +297,8 @@ async function runBroadcastLoopInner(broadcastId) {
 router.post('/:id/send', requireRole('super_admin', 'gerente'), async (req, res) => {
   const broadcast = db.prepare('SELECT * FROM broadcasts WHERE id = ?').get(req.params.id)
   if (!broadcast) return res.status(404).json({ error: 'Disparo nao encontrado' })
+  // FIX #6 (multi-tenant)
+  if (req.accountId && broadcast.account_id !== req.accountId) return res.status(403).json({ error: 'Sem permissao' })
   if (broadcast.status === 'scheduled') return res.status(400).json({ error: 'Disparo esta agendado. Cancele o agendamento antes de enviar agora.' })
   if (broadcast.status !== 'draft') return res.status(400).json({ error: 'Disparo ja enviado ou em andamento' })
 
@@ -363,6 +367,8 @@ router.post('/:id/pause', requireRole('super_admin', 'gerente'), (req, res) => {
 router.post('/:id/resume', requireRole('super_admin', 'gerente'), async (req, res) => {
   const broadcast = db.prepare('SELECT * FROM broadcasts WHERE id = ?').get(req.params.id)
   if (!broadcast) return res.status(404).json({ error: 'Disparo nao encontrado' })
+  // FIX #6 (multi-tenant)
+  if (req.accountId && broadcast.account_id !== req.accountId) return res.status(403).json({ error: 'Sem permissao' })
   if (broadcast.status !== 'sending') return res.status(400).json({ error: 'Disparo nao esta em andamento' })
   // Limpa pause se houver
   db.prepare("UPDATE broadcasts SET paused_at = NULL, paused_reason = NULL WHERE id = ?").run(broadcast.id)

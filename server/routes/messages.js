@@ -89,6 +89,8 @@ router.post('/:leadId', async (req, res) => {
 
     const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.leadId)
     if (!lead) return res.status(404).json({ error: 'Lead nao encontrado' })
+    // FIX #5 (multi-tenant) — atendente/gerente de conta A nao pode enviar via inst da conta B
+    if (req.accountId && lead.account_id !== req.accountId) return res.status(403).json({ error: 'Sem permissao' })
 
     // Anti-duplicate: check if same message was sent to this lead in last 5 minutes
     const duplicate = db.prepare(`
@@ -173,6 +175,9 @@ router.get('/:leadId/media/:msgId', async (req, res) => {
     if (message.media_type === 'text') return res.status(400).json({ error: 'Sem midia' })
 
     const lead = db.prepare('SELECT account_id, instance_id FROM leads WHERE id = ?').get(message.lead_id)
+    // FIX #5 (multi-tenant) — nao baixar midia privada de outra conta
+    if (!lead) return res.status(404).json({ error: 'Lead nao encontrado' })
+    if (req.accountId && lead.account_id !== req.accountId) return res.status(403).json({ error: 'Sem permissao' })
     const instance = lead?.instance_id
       ? db.prepare('SELECT * FROM whatsapp_instances WHERE id = ?').get(lead.instance_id)
       : db.prepare('SELECT * FROM whatsapp_instances WHERE account_id = ? AND status = ? LIMIT 1').get(lead?.account_id, 'connected')

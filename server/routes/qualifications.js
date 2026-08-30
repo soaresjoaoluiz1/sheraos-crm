@@ -27,6 +27,10 @@ router.post('/', requireRole('super_admin', 'gerente'), (req, res) => {
 
 // Update question
 router.put('/:id', requireRole('super_admin', 'gerente'), (req, res) => {
+  // FIX #6 (multi-tenant)
+  const existing = db.prepare('SELECT account_id FROM qualification_sequences WHERE id = ?').get(req.params.id)
+  if (!existing) return res.status(404).json({ error: 'Nao encontrada' })
+  if (req.accountId && existing.account_id !== req.accountId) return res.status(403).json({ error: 'Sem permissao' })
   const { question, position, is_active } = req.body
   const sets = []; const params = []
   if (question !== undefined) { sets.push('question = ?'); params.push(question) }
@@ -41,6 +45,10 @@ router.put('/:id', requireRole('super_admin', 'gerente'), (req, res) => {
 
 // Delete question
 router.delete('/:id', requireRole('super_admin', 'gerente'), (req, res) => {
+  // FIX #6 (multi-tenant)
+  const existing = db.prepare('SELECT account_id FROM qualification_sequences WHERE id = ?').get(req.params.id)
+  if (!existing) return res.status(404).json({ error: 'Nao encontrada' })
+  if (req.accountId && existing.account_id !== req.accountId) return res.status(403).json({ error: 'Sem permissao' })
   db.prepare('DELETE FROM qualification_sequences WHERE id = ?').run(req.params.id)
   res.json({ ok: true })
 })

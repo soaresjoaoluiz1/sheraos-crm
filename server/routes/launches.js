@@ -36,6 +36,8 @@ router.post('/', requireRole('super_admin', 'gerente'), (req, res) => {
 router.get('/:id', (req, res) => {
   const launch = db.prepare('SELECT * FROM launches WHERE id = ?').get(req.params.id)
   if (!launch) return res.status(404).json({ error: 'Lancamento nao encontrado' })
+  if (req.accountId && launch.account_id !== req.accountId) return res.status(403).json({ error: 'Sem permissao' })
+  if (req.accountId && launch.account_id !== req.accountId) return res.status(403).json({ error: 'Sem permissao' })
   launch.messages = db.prepare('SELECT * FROM launch_messages WHERE launch_id = ? ORDER BY position').all(launch.id)
   res.json({ launch })
 })

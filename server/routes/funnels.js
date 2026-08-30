@@ -39,6 +39,8 @@ router.post('/', requireRole('super_admin', 'gerente'), (req, res) => {
 router.get('/:id', (req, res) => {
   const funnel = db.prepare('SELECT * FROM funnels WHERE id = ?').get(req.params.id)
   if (!funnel) return res.status(404).json({ error: 'Funil nao encontrado' })
+  // FIX #6 (multi-tenant)
+  if (req.accountId && funnel.account_id !== req.accountId) return res.status(403).json({ error: 'Sem permissao' })
   funnel.stages = db.prepare('SELECT * FROM funnel_stages WHERE funnel_id = ? ORDER BY position').all(funnel.id)
   res.json({ funnel })
 })
@@ -50,6 +52,8 @@ router.put('/:id/stages', requireRole('super_admin', 'gerente'), (req, res) => {
 
   const funnel = db.prepare('SELECT * FROM funnels WHERE id = ?').get(req.params.id)
   if (!funnel) return res.status(404).json({ error: 'Funil nao encontrado' })
+  // FIX #6 (multi-tenant)
+  if (req.accountId && funnel.account_id !== req.accountId) return res.status(403).json({ error: 'Sem permissao' })
 
   // IDs que o frontend enviou (stages que existem e devem ser mantidas/atualizadas)
   const sentStageIds = new Set(stages.filter(s => s.id).map(s => s.id))

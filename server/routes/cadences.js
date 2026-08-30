@@ -38,6 +38,8 @@ router.post('/', requireRole('super_admin', 'gerente'), (req, res) => {
 router.get('/:id', (req, res) => {
   const cadence = db.prepare('SELECT * FROM cadences WHERE id = ?').get(req.params.id)
   if (!cadence) return res.status(404).json({ error: 'Cadencia nao encontrada' })
+  if (req.accountId && cadence.account_id !== req.accountId) return res.status(403).json({ error: 'Sem permissao' })
+  if (req.accountId && cadence.account_id !== req.accountId) return res.status(403).json({ error: 'Sem permissao' })
   cadence.attempts = db.prepare('SELECT * FROM cadence_attempts WHERE cadence_id = ? ORDER BY position').all(cadence.id)
   res.json({ cadence })
 })

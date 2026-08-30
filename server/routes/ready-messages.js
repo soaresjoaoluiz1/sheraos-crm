@@ -32,6 +32,10 @@ router.post('/', requireRole('super_admin', 'gerente'), (req, res) => {
 
 // Update
 router.put('/:id', requireRole('super_admin', 'gerente'), (req, res) => {
+  // FIX #6 (multi-tenant)
+  const existing = db.prepare('SELECT account_id FROM ready_messages WHERE id = ?').get(req.params.id)
+  if (!existing) return res.status(404).json({ error: 'Nao encontrado' })
+  if (req.accountId && existing.account_id !== req.accountId) return res.status(403).json({ error: 'Sem permissao' })
   const { title, content, image_url, video_url, stage_id, is_active } = req.body
   const sets = []; const params = []
   if (title !== undefined) { sets.push('title = ?'); params.push(title) }
@@ -50,6 +54,10 @@ router.put('/:id', requireRole('super_admin', 'gerente'), (req, res) => {
 
 // Delete (soft)
 router.delete('/:id', requireRole('super_admin', 'gerente'), (req, res) => {
+  // FIX #6 (multi-tenant)
+  const existing = db.prepare('SELECT account_id FROM ready_messages WHERE id = ?').get(req.params.id)
+  if (!existing) return res.status(404).json({ error: 'Nao encontrado' })
+  if (req.accountId && existing.account_id !== req.accountId) return res.status(403).json({ error: 'Sem permissao' })
   db.prepare("UPDATE ready_messages SET is_active = 0, updated_at = datetime('now') WHERE id = ?").run(req.params.id)
   res.json({ ok: true })
 })

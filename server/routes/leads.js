@@ -376,6 +376,8 @@ router.post('/transfer-requests/:reqId/accept', (req, res) => {
   const tr = db.prepare('SELECT * FROM lead_transfer_requests WHERE id = ?').get(req.params.reqId)
   if (!tr) return res.status(404).json({ error: 'Pedido nao encontrado' })
   if (tr.status !== 'pending') return res.status(400).json({ error: 'Pedido ja respondido' })
+  // FIX #4 (multi-tenant) — transfer request de outra conta nao pode ser aceito
+  if (req.accountId && tr.account_id !== req.accountId) return res.status(403).json({ error: 'Sem permissao' })
   // Quem pode aceitar: o destinatario (to_attendant_id) OU gerente/super_admin da conta
   const canAccept = tr.to_attendant_id === req.user.id || ['gerente','super_admin'].includes(req.user.role)
   if (!canAccept) return res.status(403).json({ error: 'Sem permissao pra aceitar este pedido' })
@@ -411,6 +413,8 @@ router.post('/transfer-requests/:reqId/reject', (req, res) => {
   const tr = db.prepare('SELECT * FROM lead_transfer_requests WHERE id = ?').get(req.params.reqId)
   if (!tr) return res.status(404).json({ error: 'Pedido nao encontrado' })
   if (tr.status !== 'pending') return res.status(400).json({ error: 'Pedido ja respondido' })
+  // FIX #4 (multi-tenant)
+  if (req.accountId && tr.account_id !== req.accountId) return res.status(403).json({ error: 'Sem permissao' })
   const canReject = tr.to_attendant_id === req.user.id || ['gerente','super_admin'].includes(req.user.role)
   if (!canReject) return res.status(403).json({ error: 'Sem permissao' })
 
@@ -428,6 +432,8 @@ router.get('/:id', (req, res) => {
     WHERE l.id = ?
   `).get(req.params.id)
   if (!lead) return res.status(404).json({ error: 'Lead nao encontrado' })
+  // FIX #4 (multi-tenant) — gerente/atendente da conta A nao pode ver lead da conta B trocando ID na URL
+  if (req.accountId && lead.account_id !== req.accountId) return res.status(403).json({ error: 'Sem permissao' })
   if (req.user.role === 'atendente' && !canAtendenteAccessLead(req.user.id, lead)) return res.status(403).json({ error: 'Sem permissao' })
 
   // Opening an archived lead acknowledges any new activity — clear the badge
@@ -483,6 +489,8 @@ router.get('/:id/conversations', (req, res) => {
 router.put('/:id', (req, res) => {
   const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id)
   if (!lead) return res.status(404).json({ error: 'Lead nao encontrado' })
+  // FIX #4 (multi-tenant)
+  if (req.accountId && lead.account_id !== req.accountId) return res.status(403).json({ error: 'Sem permissao' })
 
   let { name, phone, email, city, notes, custom_fields, empresa, cpf_cnpj, instagram, trabalha_anuncio, investimento_anuncios } = req.body
 
@@ -534,6 +542,9 @@ router.put('/:id/stage', (req, res) => {
 
   const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id)
   if (!lead) return res.status(404).json({ error: 'Lead nao encontrado' })
+  // FIX #4 (multi-tenant)
+  if (req.accountId && lead.account_id !== req.accountId) return res.status(403).json({ error: 'Sem permissao' })
+  if (req.user.role === 'atendente' && !canAtendenteAccessLead(req.user.id, lead)) return res.status(403).json({ error: 'Sem permissao' })
 
   const oldStageId = lead.stage_id
   // Mudanca de etapa MANUAL (via UI) trava bot pra esse lead — gerente/atendente assumiu controle.
@@ -555,6 +566,8 @@ router.put('/:id/stage', (req, res) => {
 router.patch('/:id/archive', (req, res) => {
   const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id)
   if (!lead) return res.status(404).json({ error: 'Lead nao encontrado' })
+  // FIX #4 (multi-tenant)
+  if (req.accountId && lead.account_id !== req.accountId) return res.status(403).json({ error: 'Sem permissao' })
   if (req.user.role === 'atendente' && !canAtendenteAccessLead(req.user.id, lead)) return res.status(403).json({ error: 'Sem permissao' })
   db.prepare("UPDATE leads SET is_archived = 1, archived_at = datetime('now'), has_new_after_archive = 0, updated_at = datetime('now') WHERE id = ?").run(lead.id)
   const updated = db.prepare('SELECT * FROM leads WHERE id = ?').get(lead.id)
@@ -566,6 +579,8 @@ router.patch('/:id/archive', (req, res) => {
 router.patch('/:id/unarchive', (req, res) => {
   const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id)
   if (!lead) return res.status(404).json({ error: 'Lead nao encontrado' })
+  // FIX #4 (multi-tenant)
+  if (req.accountId && lead.account_id !== req.accountId) return res.status(403).json({ error: 'Sem permissao' })
   if (req.user.role === 'atendente' && !canAtendenteAccessLead(req.user.id, lead)) return res.status(403).json({ error: 'Sem permissao' })
   db.prepare("UPDATE leads SET is_archived = 0, archived_at = NULL, has_new_after_archive = 0, updated_at = datetime('now') WHERE id = ?").run(lead.id)
   const updated = db.prepare('SELECT * FROM leads WHERE id = ?').get(lead.id)
@@ -603,6 +618,8 @@ router.put('/:id/assign', requireRole('super_admin', 'gerente'), (req, res) => {
   const { attendant_id, notify_attendant } = req.body
   const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id)
   if (!lead) return res.status(404).json({ error: 'Lead nao encontrado' })
+  // FIX #4 (multi-tenant) — gerente da Alpha nao pode sequestrar lead da Sheraos trocando ID
+  if (req.accountId && lead.account_id !== req.accountId) return res.status(403).json({ error: 'Sem permissao' })
 
   // Se novo atendente eh um bot (is_bot=1), limpa ai_handed_off_at pra bot voltar a atender
   let clearHandoff = false
@@ -677,6 +694,13 @@ router.post('/:id/refresh-profile-pic', async (req, res) => {
 router.post('/:id/tags', (req, res) => {
   const { tag_id } = req.body
   if (!tag_id) return res.status(400).json({ error: 'tag_id required' })
+  // FIX #4 (multi-tenant) — checar ownership do lead E da tag
+  const lead = db.prepare('SELECT account_id FROM leads WHERE id = ?').get(req.params.id)
+  if (!lead) return res.status(404).json({ error: 'Lead nao encontrado' })
+  if (req.accountId && lead.account_id !== req.accountId) return res.status(403).json({ error: 'Sem permissao' })
+  const tag = db.prepare('SELECT account_id FROM tags WHERE id = ?').get(tag_id)
+  if (!tag) return res.status(404).json({ error: 'Tag nao encontrada' })
+  if (req.accountId && tag.account_id !== req.accountId) return res.status(403).json({ error: 'Tag de outra conta' })
   try {
     db.prepare('INSERT OR IGNORE INTO lead_tags (lead_id, tag_id) VALUES (?, ?)').run(req.params.id, tag_id)
   } catch {}
@@ -685,6 +709,10 @@ router.post('/:id/tags', (req, res) => {
 
 // Remove tag
 router.delete('/:id/tags/:tagId', (req, res) => {
+  // FIX #4 (multi-tenant)
+  const lead = db.prepare('SELECT account_id FROM leads WHERE id = ?').get(req.params.id)
+  if (!lead) return res.status(404).json({ error: 'Lead nao encontrado' })
+  if (req.accountId && lead.account_id !== req.accountId) return res.status(403).json({ error: 'Sem permissao' })
   db.prepare('DELETE FROM lead_tags WHERE lead_id = ? AND tag_id = ?').run(req.params.id, req.params.tagId)
   res.json({ ok: true })
 })
