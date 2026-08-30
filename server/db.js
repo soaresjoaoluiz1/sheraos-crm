@@ -1028,6 +1028,40 @@ try { db.exec('CREATE INDEX IF NOT EXISTS idx_messages_wa_msg_id ON messages(wa_
 // constraint violation e o try/catch no handler ignora — msg fica salva 1x apenas.
 try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS uniq_messages_wa_msg_id ON messages(wa_msg_id) WHERE wa_msg_id IS NOT NULL') } catch (e) { console.warn('[db] uniq_messages_wa_msg_id:', e.message) }
 
+// FASE 3+ Opcao 1 — historico de JIDs por lead (nao refatora lookup, so registra).
+// Toda vez que um lead recebe/envia msg com um JID, registramos aqui. Assim:
+// - Consulta consegue ver todos os JIDs historicos que um lead ja usou (@lid1, @lid2, @s.whatsapp.net)
+// - Se futuro precisar merge complexo, os dados historicos ja estao la
+// - UNIQUE(lead_id, jid) evita duplicata do mesmo par
+// - jid_type facilita analise: 'lid' | 's.whatsapp.net' | 'c.us' | 'unknown'
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS lead_wa_jids (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      lead_id INTEGER NOT NULL,
+      jid TEXT NOT NULL,
+      jid_type TEXT NOT NULL DEFAULT 'unknown',
+      first_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (lead_id, jid)
+    )
+  `)
+  db.exec('CREATE INDEX IF NOT EXISTS idx_lead_wa_jids_jid ON lead_wa_jids(jid)')
+  db.exec('CREATE INDEX IF NOT EXISTS idx_lead_wa_jids_lead ON lead_wa_jids(lead_id, last_seen_at DESC)')
+  // Backfill inicial (idempotente): pra cada lead com wa_remote_jid, registra 1 linha
+  db.exec(`
+    INSERT OR IGNORE INTO lead_wa_jids (lead_id, jid, jid_type)
+    SELECT id, wa_remote_jid,
+      CASE
+        WHEN wa_remote_jid LIKE '%@lid' THEN 'lid'
+        WHEN wa_remote_jid LIKE '%@s.whatsapp.net' THEN 's.whatsapp.net'
+        WHEN wa_remote_jid LIKE '%@c.us' THEN 'c.us'
+        ELSE 'unknown'
+      END
+    FROM leads WHERE wa_remote_jid IS NOT NULL AND wa_remote_jid != ''
+  `)
+} catch (e) { console.warn('[db] lead_wa_jids:', e.message) }
+
 // FASE 1 — UNIQUE parcial em leads pra bloquear duplicidade estrutural.
 // Combinado com retry logic no getOrCreateLead (webhooks.js), garante zero perda:
 // se webhook race criar 2 INSERT, o 2o falha por UNIQUE, retry-SELECT acha o 1o, msg cai no lead certo.
