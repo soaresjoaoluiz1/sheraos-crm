@@ -77,6 +77,26 @@ app.use('/api/launches', authenticate, scopeToAccount, launchRoutes)
 app.use('/api/tasks', authenticate, scopeToAccount, taskRoutes)
 app.use('/api/proposals', authenticate, proposalRoutes)
 app.use('/api/contracts', authenticate, contractRoutes)
+// FASE 1 — Health check publico (sem auth) pro Docker healthcheck.
+// Retorna 200 se DB responde + Evolution API responde. Retorna 503 se algo tá down.
+app.get('/api/health', async (req, res) => {
+  const health = { status: 'ok', db: false, evolution: false, timestamp: new Date().toISOString() }
+  try {
+    db.prepare('SELECT 1').get()
+    health.db = true
+  } catch (e) { health.db_error = e.message }
+  try {
+    const evoUrl = process.env.EVOLUTION_API_URL || 'http://evolution:8080'
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 3000)
+    const r = await fetch(evoUrl, { signal: controller.signal })
+    clearTimeout(timeout)
+    health.evolution = r.ok
+  } catch (e) { health.evolution_error = e.message }
+  const ok = health.db && health.evolution
+  res.status(ok ? 200 : 503).json(health)
+})
+
 app.use('/api/follow-ups', authenticate, scopeToAccount, followUpRoutes)
 app.use('/api/agents', authenticate, scopeToAccount, agentRoutes)
 app.use('/api/admin', authenticate, adminRoutes)
@@ -115,7 +135,8 @@ app.get('/api/events', async (req, res) => {
   let user
   try {
     const jwtMod = await import('jsonwebtoken')
-    user = jwtMod.default.verify(token, process.env.JWT_SECRET || 'sheraos-crm-secret-2026')
+    // FIX #1 — sem fallback. Se JWT_SECRET falhou, o auth.js ja terminou o processo na inicializacao.
+    user = jwtMod.default.verify(token, process.env.JWT_SECRET)
   } catch { return res.status(401).end() }
 
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' })

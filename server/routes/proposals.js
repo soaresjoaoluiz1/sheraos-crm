@@ -53,14 +53,25 @@ function renderTemplate(p) {
     html = html.replace(/<!--\s*BEGIN:COMISSAO\s*-->[\s\S]*?<!--\s*END:COMISSAO\s*-->/g, '')
   }
 
+  // FIX #7 (XSS) — escape HTML em TODA substituicao pra impedir injecao via nome de cliente.
+  // Antes: nome com <script> era interpolado literal e executava no browser do prospect.
+  function escapeHtml(s) {
+    return String(s ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+  }
+
   const replacements = {
-    CLIENT_NAME: p.client_name || '',
-    CLIENT_NAME_URL: encodeURIComponent(p.client_name || ''),
-    NUM_VIDEOS: String(p.num_videos || 0),
-    NUM_IMAGES: String(p.num_images || 0),
-    VALOR: formatBRL(p.valor),
-    CONTRATO_MESES: String(p.contrato_meses || 3),
-    COMISSAO_PERCENT: String(p.comissao_percent || 0).replace('.', ','),
+    CLIENT_NAME: escapeHtml(p.client_name),
+    CLIENT_NAME_URL: encodeURIComponent(p.client_name || ''), // ja seguro (URL encoding)
+    NUM_VIDEOS: escapeHtml(p.num_videos || 0),
+    NUM_IMAGES: escapeHtml(p.num_images || 0),
+    VALOR: escapeHtml(formatBRL(p.valor)),
+    CONTRATO_MESES: escapeHtml(p.contrato_meses || 3),
+    COMISSAO_PERCENT: escapeHtml(String(p.comissao_percent || 0).replace('.', ',')),
   }
 
   for (const [k, v] of Object.entries(replacements)) {

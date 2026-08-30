@@ -18,10 +18,12 @@ export function pickFromRoulette(accountId, instanceId, opts = {}) {
   const isUserOk = (uid) => {
     if (uid == null) return false
     if (excludeUserId != null && uid === excludeUserId) return false
-    if (excludeBots) {
-      const u = db.prepare('SELECT is_active, is_bot FROM users WHERE id = ?').get(uid)
-      if (!u || !u.is_active || u.is_bot) return false
-    }
+    // FIX #8 — SEMPRE valida is_active (nao so quando excludeBots).
+    // Antes: se caller nao passasse excludeBots, roleta atribuia lead a user desativado,
+    // handoff silenciava e lead virava orfao invisivel.
+    const u = db.prepare('SELECT is_active, is_bot FROM users WHERE id = ?').get(uid)
+    if (!u || !u.is_active) return false
+    if (excludeBots && u.is_bot) return false
     return true
   }
 

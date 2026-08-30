@@ -1,6 +1,11 @@
 import jwt from 'jsonwebtoken'
 
-const JWT_SECRET = process.env.JWT_SECRET || 'sheraos-crm-secret-2026'
+// FIX #1 — remove fallback publico. Se JWT_SECRET nao esta setado no env, aplicacao
+// FALHA IMEDIATAMENTE em vez de rodar com secret que qualquer um pode ler no repo.
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
+  throw new Error('[FATAL] JWT_SECRET nao setado ou muito curto (min 32 chars). Verifique .env.production e o symlink .env → .env.production.')
+}
+const JWT_SECRET = process.env.JWT_SECRET
 
 // Verify JWT and attach user to request
 export function authenticate(req, res, next) {

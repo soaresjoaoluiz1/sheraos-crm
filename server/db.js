@@ -1022,6 +1022,12 @@ try { db.exec('CREATE INDEX IF NOT EXISTS idx_messages_wa_msg_id ON messages(wa_
 // constraint violation e o try/catch no handler ignora — msg fica salva 1x apenas.
 try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS uniq_messages_wa_msg_id ON messages(wa_msg_id) WHERE wa_msg_id IS NOT NULL') } catch (e) { console.warn('[db] uniq_messages_wa_msg_id:', e.message) }
 
+// FASE 1 — UNIQUE parcial em leads pra bloquear duplicidade estrutural.
+// Combinado com retry logic no getOrCreateLead (webhooks.js), garante zero perda:
+// se webhook race criar 2 INSERT, o 2o falha por UNIQUE, retry-SELECT acha o 1o, msg cai no lead certo.
+try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS uniq_leads_account_phone ON leads(account_id, phone) WHERE phone IS NOT NULL') } catch (e) { console.warn('[db] uniq_leads_account_phone:', e.message) }
+try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS uniq_leads_account_wajid ON leads(account_id, wa_remote_jid) WHERE wa_remote_jid IS NOT NULL') } catch (e) { console.warn('[db] uniq_leads_account_wajid:', e.message) }
+
 // FIX D — Dead-letter table: guarda payload de msgs que NAO conseguimos linkar a lead.
 // Quando o webhook cai em algum early-return silencioso (sem phone, sem lead, normalize failed),
 // ao inves de descartar, grava aqui pra investigacao/replay futuro.

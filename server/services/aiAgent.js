@@ -296,13 +296,21 @@ function executeHandoff(agent, lead, reason, instanceId) {
     targetUserId = pickFromRoulette(lead.account_id, instanceId, agent.user_id)
   }
 
-  // Atribui (se conseguiu pegar atendente)
+  // FIX #9 — Se roleta nao achou ninguem, NAO marca handoff (bot continua respondendo).
+  // Antes: marcava ai_handed_off_at mesmo sem atendente, bot parava e ninguem via —
+  // lead virava buraco negro. Agora: sem atendente = bot continua + alerta interno.
   if (targetUserId) {
     db.prepare("UPDATE leads SET attendant_id = ?, updated_at = datetime('now') WHERE id = ?").run(targetUserId, lead.id)
+    db.prepare("UPDATE leads SET ai_handed_off_at = datetime('now') WHERE id = ?").run(lead.id)
+  } else {
+    // Alerta pra gestor investigar (nenhum atendente disponivel)
+    console.warn(`[AI Agent] Handoff FALHOU lead=${lead.id} reason=${reason} — nenhum atendente ativo disponivel. Bot continua respondendo.`)
+    try {
+      db.prepare(`INSERT INTO analyst_alerts (account_id, lead_id, type, severity, title, description, status, created_at)
+                  VALUES (?, ?, 'handoff_failed', 'high', ?, ?, 'open', datetime('now'))`)
+        .run(lead.account_id, lead.id, 'Handoff sem atendente', `Bot tentou entregar lead pra humano (reason=${reason}) mas roleta nao achou ninguem ativo. Bot continua respondendo. Configure atendente ativo com primary_instance_id.`)
+    } catch (e) { console.warn('[AI Agent] Falha ao criar analyst_alert:', e.message) }
   }
-
-  // Marca como handoff'ed pra bot nao voltar
-  db.prepare("UPDATE leads SET ai_handed_off_at = datetime('now') WHERE id = ?").run(lead.id)
 
   // Move etapa (se configurado)
   if (rule?.move_to_stage_id) {
