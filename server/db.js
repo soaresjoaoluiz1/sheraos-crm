@@ -1017,6 +1017,30 @@ addColumnIfNotExists('leads', 'unread_count', 'INTEGER NOT NULL DEFAULT 0')
 // Indexes pra lookup de status (webhook update por wa_msg_id) e badge sidebar.
 // Sem WHERE clause: sqlite3 CLI do CentOS 7 nao parseia partial index, quebra inspecao manual.
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_messages_wa_msg_id ON messages(wa_msg_id)') } catch (e) { console.warn('[db] idx_messages_wa_msg_id:', e.message) }
+// FIX B — UNIQUE constraint em wa_msg_id: elimina duplicidade por retry do webhook Evolution.
+// Se webhook chegar 2x muito rapido (antes do primeiro INSERT commitar), o segundo falha por
+// constraint violation e o try/catch no handler ignora — msg fica salva 1x apenas.
+try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS uniq_messages_wa_msg_id ON messages(wa_msg_id) WHERE wa_msg_id IS NOT NULL') } catch (e) { console.warn('[db] uniq_messages_wa_msg_id:', e.message) }
+
+// FIX D — Dead-letter table: guarda payload de msgs que NAO conseguimos linkar a lead.
+// Quando o webhook cai em algum early-return silencioso (sem phone, sem lead, normalize failed),
+// ao inves de descartar, grava aqui pra investigacao/replay futuro.
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS messages_orphan (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      received_at TEXT NOT NULL DEFAULT (datetime('now')),
+      account_slug TEXT,
+      reason TEXT NOT NULL,
+      wa_msg_id TEXT,
+      remote_jid TEXT,
+      push_name TEXT,
+      from_me INTEGER,
+      payload_raw TEXT
+    )
+  `)
+  db.exec('CREATE INDEX IF NOT EXISTS idx_msgs_orphan_reason ON messages_orphan(reason, received_at DESC)')
+} catch (e) { console.warn('[db] messages_orphan:', e.message) }
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_leads_unread ON leads(account_id, unread_count)') } catch (e) { console.warn('[db] idx_leads_unread:', e.message) }
 
 // ─── FASE 1 PERFORMANCE — indices compostos pra contas grandes (1500+ leads) ───

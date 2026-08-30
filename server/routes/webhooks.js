@@ -10,6 +10,28 @@ import { notifyAndOpenLead } from '../services/leadHandoff.js'
 
 const router = Router()
 
+// FIX D — Helper: grava msg orfa (que nao conseguiu ser linkada a lead) na dead-letter table.
+// Nunca joga msg fora silenciosamente. Chame ANTES do return res.json({ok:true}) em cenarios
+// onde a msg deveria ter sido gravada mas algo impediu.
+function saveOrphanMessage(accountSlug, reason, data, extra = {}) {
+  try {
+    db.prepare(`
+      INSERT INTO messages_orphan (account_slug, reason, wa_msg_id, remote_jid, push_name, from_me, payload_raw)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      accountSlug || null,
+      reason,
+      data?.key?.id || null,
+      data?.key?.remoteJid || extra.remoteJid || null,
+      data?.pushName || null,
+      data?.key?.fromMe ? 1 : 0,
+      JSON.stringify({ key: data?.key, pushName: data?.pushName, senderPn: data?.key?.senderPn || data?.senderPn, ...extra }).slice(0, 4000)
+    )
+  } catch (e) {
+    console.error('[Webhook orphan-save FAILED]', reason, e.message)
+  }
+}
+
 // Helper: fetch profile picture URL from Evolution (async, fire-and-forget)
 async function fetchAndSaveProfilePic(instance, phone, leadId) {
   if (!instance || !phone || !leadId) return
@@ -355,7 +377,10 @@ router.post('/evolution/:accountSlug', (req, res) => {
 
     // Skip groups, status, broadcasts
     if (!remoteJid || remoteJid.includes('@g.us') || remoteJid.includes('@broadcast') || remoteJid.includes('status@')) {
-      return res.json({ ok: true })
+      // FIX A — log em vez de silencio
+      const kind = !remoteJid ? 'sem_remoteJid' : (remoteJid.includes('@g.us') ? 'grupo' : (remoteJid.includes('@broadcast') ? 'broadcast' : 'status'))
+      console.warn(`[Webhook] Msg ignorada — motivo=${kind} account=${account.slug} remoteJid=${remoteJid || 'null'} fromMe=${fromMe}`)
+      return res.json({ ok: true, reason: kind })
     }
 
     // Prefer senderPn (real phone) over remoteJid (might be @lid = legacy ID)
@@ -371,19 +396,31 @@ router.post('/evolution/:accountSlug', (req, res) => {
       phone = normalizePhone(senderPn.replace('@s.whatsapp.net', '').replace('@c.us', '').replace(/[^\d]/g, ''))
       dedupJid = `${phone}@s.whatsapp.net`
     } else if (realJid.endsWith('@lid')) {
-      if (!pushName) return res.json({ ok: true })
+      // FIX C — @lid sem pushName: em vez de descartar, cria lead placeholder com nome
+      // "Contato @lid <6-dig>" e segue. Assim nunca perde msg mesmo antes do WA sincronizar nome.
       isLid = true
       phone = realJid.replace('@lid', '')
       dedupJid = realJid
+      // (removido o antigo: if (!pushName) return — agora criamos lead placeholder mais abaixo)
     } else {
       phone = normalizePhone(realJid.replace('@s.whatsapp.net', '').replace('@c.us', '').replace(/[^\d]/g, ''))
       dedupJid = `${phone}@s.whatsapp.net`
     }
-    if (!phone) return res.json({ ok: true })
+    if (!phone) {
+      // FIX A + D — sem phone normalizavel: log + salva payload orfa pra investigacao
+      console.warn(`[Webhook] Msg ignorada — motivo=phone_normalize_failed account=${account.slug} realJid=${realJid} pushName="${pushName}" fromMe=${fromMe}`)
+      saveOrphanMessage(account.slug, 'phone_normalize_failed', data, { realJid, senderPn })
+      return res.json({ ok: true, reason: 'phone_normalize_failed' })
+    }
 
     // Quando fromMe=true, o pushName e o nome de quem ENVIOU (atendente/operador da conta WhatsApp),
     // nao do lead. Nao podemos usar como nome do lead — fallback pra telefone.
-    const leadName = fromMe ? '' : pushName
+    // FIX C — se @lid sem pushName (e nao eh fromMe), usa placeholder "Contato @lid <ultimos 6>"
+    // Assim o lead eh criado e a msg gravada; usuario pode renomear depois quando WA sincronizar.
+    const lidTail = isLid ? String(phone).slice(-6) : ''
+    const leadName = fromMe
+      ? ''
+      : (pushName || (isLid ? `Contato @lid ${lidTail}` : ''))
 
     // Get or create lead
     let lead, isNew
@@ -398,8 +435,11 @@ router.post('/evolution/:accountSlug', (req, res) => {
         }
       }
       if (!lead && fromMe) {
-        // fromMe pra @lid sem lead existente: nao temos info real, ignora
-        return res.json({ ok: true })
+        // fromMe pra @lid sem lead existente: nao temos info real do destinatario.
+        // FIX A + D — log e salva orfa em vez de ignorar silenciosamente.
+        console.warn(`[Webhook] Outbound @lid sem lead — motivo=lid_fromme_no_lead account=${account.slug} lidJid=${dedupJid}`)
+        saveOrphanMessage(account.slug, 'lid_fromme_no_lead', data, { dedupJid })
+        return res.json({ ok: true, reason: 'lid_fromme_no_lead' })
       }
       if (!lead) {
         // Create new lead with LID (no real phone)
@@ -439,7 +479,12 @@ router.post('/evolution/:accountSlug', (req, res) => {
       }
       lead = r.lead; isNew = r.isNew
     }
-    if (!lead) return res.json({ ok: true })
+    if (!lead) {
+      // FIX A + D — catch-all: nunca deveria acontecer, mas se acontecer NUNCA descarta silencioso.
+      console.warn(`[Webhook] Msg orfa — motivo=no_lead_after_get_or_create account=${account.slug} phone=${phone} dedupJid=${dedupJid} pushName="${pushName}"`)
+      saveOrphanMessage(account.slug, 'no_lead_after_get_or_create', data, { phone, dedupJid })
+      return res.json({ ok: true, reason: 'no_lead_after_get_or_create' })
+    }
 
     // Se identificamos uma fonte de Ad e o lead ainda esta com source=whatsapp, atualiza pra fonte real
     if (adSourceLabel && lead.source === 'whatsapp') {
@@ -553,12 +598,28 @@ router.post('/evolution/:accountSlug', (req, res) => {
     }
 
     // Store message (dedup by wa_msg_id) + track instance
+    // FIX B — envolve INSERT em try/catch pra capturar UNIQUE constraint violation (race condition
+    // entre webhooks concorrentes). Se a violation acontecer, msg ja esta salva pela outra requisicao.
     const existing = msgId ? db.prepare('SELECT id FROM messages WHERE wa_msg_id = ?').get(msgId) : null
     if (!existing) {
-      db.prepare(`
-        INSERT INTO messages (lead_id, account_id, direction, content, media_type, media_url, sender_name, wa_msg_id, wa_timestamp, instance_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(lead.id, account.id, fromMe ? 'outbound' : 'inbound', content, mediaType, mediaUrl, fromMe ? '' : pushName, msgId || null, timestamp, waInstance?.id || null)
+      let insertedNew = false
+      try {
+        db.prepare(`
+          INSERT INTO messages (lead_id, account_id, direction, content, media_type, media_url, sender_name, wa_msg_id, wa_timestamp, instance_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(lead.id, account.id, fromMe ? 'outbound' : 'inbound', content, mediaType, mediaUrl, fromMe ? '' : pushName, msgId || null, timestamp, waInstance?.id || null)
+        insertedNew = true
+      } catch (e) {
+        if (e && String(e.code || '').includes('SQLITE_CONSTRAINT')) {
+          console.log(`[Webhook] Dedup por UNIQUE: msg wa_msg_id=${msgId} ja gravada por outra requisicao (race)`)
+        } else {
+          throw e
+        }
+      }
+      if (!insertedNew) {
+        // Se caiu no catch por UNIQUE, pula os side-effects (unread, last_instance) — ja foram feitos pela requisicao vencedora
+        return res.json({ ok: true, reason: 'race_dedup' })
+      }
       // Incrementa unread_count se msg eh inbound e lead nao arquivado (arquivados usam has_new_after_archive).
       if (!fromMe && !lead.is_archived) {
         db.prepare("UPDATE leads SET unread_count = unread_count + 1, updated_at = datetime('now') WHERE id = ?").run(lead.id)
