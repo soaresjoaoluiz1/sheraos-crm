@@ -74,9 +74,11 @@ router.get('/:leadId', (req, res) => {
   if (req.accountId && lead.account_id !== req.accountId) return res.status(403).json({ error: 'Sem permissao' })
   if (req.user.role === 'atendente' && !canAtendenteAccessLead(req.user.id, lead)) return res.status(403).json({ error: 'Sem permissao' })
 
-  const { page = '1', limit = '50' } = req.query
-  const offset = (parseInt(page) - 1) * parseInt(limit)
-  const messages = db.prepare('SELECT * FROM messages WHERE lead_id = ? ORDER BY created_at ASC LIMIT ? OFFSET ?').all(req.params.leadId, parseInt(limit), offset)
+  const { page = '1', limit: rawLimit = '50' } = req.query
+  // FASE 2 — clamp limit em 200 pra evitar DoS trivial
+  const limit = Math.max(1, Math.min(200, parseInt(rawLimit) || 50))
+  const offset = (parseInt(page) - 1) * limit
+  const messages = db.prepare('SELECT * FROM messages WHERE lead_id = ? ORDER BY created_at ASC LIMIT ? OFFSET ?').all(req.params.leadId, limit, offset)
   const total = db.prepare('SELECT COUNT(*) as total FROM messages WHERE lead_id = ?').get(req.params.leadId).total
   res.json({ messages, total })
 })

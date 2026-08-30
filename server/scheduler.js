@@ -851,15 +851,15 @@ export function startScheduler() {
   try { revertFalseFailures() } catch (e) { console.error('[RevertFalseFailures startup]', e.message) }
   tick()
   setInterval(tick, INTERVAL_MS)
-  // Polling runs aggressively (30s) so missed messages surface quickly when webhook misbehaves
+  // FASE 2 (fix performance) — polling era 30s (2400 queries/min com N+1). Agora 5min.
+  // Webhook eh a fonte primaria; polling eh backup pra casos raros de webhook falhar.
+  // Se escalar acima de 5 instancias/500 leads, refatorar polling pra batch WHERE wa_msg_id IN(...).
   setTimeout(() => pollTick(), 10000) // first poll after 10s
-  setInterval(pollTick, 30 * 1000)
-  // Loop continuo de revert: detecta ✗ historicos onde lead respondeu apos (= entregue)
-  // e volta pra ✓✓ verde. Cron de markStaleMessagesAsFailed foi DESATIVADO por gerar
-  // falsos positivos. Falhas reais: pre-flight + sendText erro + ghost detector.
+  setInterval(pollTick, 5 * 60 * 1000)
+  // Loop continuo de revert: aumentado de 10s pra 60s (menos agressivo, ajuda WAL checkpoint)
   setInterval(() => {
     try { revertFalseFailures() } catch (e) { console.error('[RevertFalse tick]', e.message) }
-  }, 10 * 1000)
+  }, 60 * 1000)
   // Auto-rescue do bot: a cada 30min, dispara bot pra leads com inbound sem resposta.
   // Resolve casos onde bot ficou travado (cap antigo, race, falha temporaria).
   // Reusa processInboundMessage + diagnoseForceAi — mesmo fluxo do botao manual.
