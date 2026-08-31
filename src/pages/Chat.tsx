@@ -1115,7 +1115,7 @@ export default function Chat() {
                     elements.push(
                       <div key={m.id} className={`chat-msg-row ${m.direction}`}>
                         <div className={`chat-bubble ${m.direction}`} style={m.direction === 'outbound' && !m.wa_msg_id ? { border: '1px solid #FF6B6B', opacity: 0.8 } : undefined}>
-                          {m.media_type && m.media_type !== 'text'
+                          {m.media_type && ['image','video','audio','document','sticker'].includes(m.media_type)
                             ? <MessageMedia message={m} leadId={lead.id} />
                             : (m.content || <em style={{ opacity: 0.5 }}>Sem conteudo</em>)}
                         </div>
