@@ -19,8 +19,8 @@ import {
 import EditTaskModal from '../components/EditTaskModal'
 import FilterDropdown, { type FilterValue } from '../components/FilterDropdown'
 import {
-  MessageCircle, Search, Send, Phone, User, Edit3, Save, X, Plus,
-  StickyNote, Tag as TagIcon, GitBranch, Smartphone, ListOrdered, ChevronRight, Check, Clock, Archive, Ban, ListTodo, ChevronDown, ChevronUp, Trash2, Paperclip, FileText, MessageSquarePlus, Copy, Zap, Pause, Play, Bot,
+  MessageCircle, Search, Send, Phone, PhoneMissed, Video, User, Edit3, Save, X, Plus,
+  StickyNote, Tag as TagIcon, GitBranch, Smartphone, ListOrdered, ChevronRight, Check, Clock, Archive, Ban, ListTodo, ChevronDown, ChevronUp, Trash2, Paperclip, FileText, MessageSquarePlus, Copy, Zap, Pause, Play, Bot, MapPin, Users as UsersIcon,
   Menu as MenuIcon, MessagesSquare, Info as InfoIcon, History as HistoryIcon, ChevronLeft,
 } from 'lucide-react'
 import MessageMedia from '../components/MessageMedia'
@@ -1115,9 +1115,44 @@ export default function Chat() {
                     elements.push(
                       <div key={m.id} className={`chat-msg-row ${m.direction}`}>
                         <div className={`chat-bubble ${m.direction}`} style={m.direction === 'outbound' && !m.wa_msg_id ? { border: '1px solid #FF6B6B', opacity: 0.8 } : undefined}>
-                          {m.media_type && ['image','video','audio','document','sticker'].includes(m.media_type)
-                            ? <MessageMedia message={m} leadId={lead.id} />
-                            : (m.content || <em style={{ opacity: 0.5 }}>Sem conteudo</em>)}
+                          {(() => {
+                            const t = m.media_type
+                            if (t && ['image','video','audio','document','sticker'].includes(t)) {
+                              return <MessageMedia message={m} leadId={lead.id} />
+                            }
+                            // Renderers especiais pra tipos que nao sao midia baixavel
+                            if (t === 'call') {
+                              const isVideo = (m.content || '').includes('vídeo') || (m.content || '').includes('video')
+                              const isMissed = (m.content || '').includes('perdida') || (m.content || '').includes('recusada')
+                              const CallIcon = isMissed ? PhoneMissed : (isVideo ? Video : Phone)
+                              const color = isMissed ? '#FF6B6B' : '#34C759'
+                              return (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 2px' }}>
+                                  <div style={{ width: 36, height: 36, borderRadius: '50%', background: `${color}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                    <CallIcon size={16} style={{ color }} />
+                                  </div>
+                                  <div style={{ fontSize: 13, fontWeight: 500 }}>{(m.content || '').replace(/^📞 |^📹 /, '')}</div>
+                                </div>
+                              )
+                            }
+                            if (t === 'location') {
+                              return (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0' }}>
+                                  <MapPin size={16} style={{ color: '#EA4335', flexShrink: 0 }} />
+                                  <span style={{ fontSize: 13 }}>{(m.content || '').replace(/^📍 ?/, '')}</span>
+                                </div>
+                              )
+                            }
+                            if (t === 'contact') {
+                              return (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0' }}>
+                                  <UsersIcon size={16} style={{ color: '#5DADE2', flexShrink: 0 }} />
+                                  <span style={{ fontSize: 13 }}>{(m.content || '').replace(/^👤 ?/, '')}</span>
+                                </div>
+                              )
+                            }
+                            return m.content || <em style={{ opacity: 0.5 }}>Sem conteudo</em>
+                          })()}
                         </div>
                         <div className="chat-bubble-time">
                           {m.sender_name && <span>{m.sender_name} · </span>}
