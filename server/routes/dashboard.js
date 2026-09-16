@@ -392,8 +392,9 @@ router.post('/analyze-now', requireRole('super_admin', 'gerente'), requireAnalyt
     console.log(`[Analyze-now] account=${req.accountId} reset_lead=${resetLeadId} by user=${req.user?.id || '?'} reset_rows=${r.changes}`)
   }
 
+  const daysParam = Math.max(1, Math.min(90, parseInt(req.query.days) || 7))
   setImmediate(() => {
-    analyzeConversationsBatch(req.accountId, { maxLeads, sinceHours: 168 })
+    analyzeConversationsBatch(req.accountId, { maxLeads, sinceHours: daysParam * 24 })
       .catch(e => console.error('[Analyze-now]', e.message))
     const today = new Date().toISOString().slice(0, 10)
     try { aggregateAllAccounts(today) } catch (e) { console.error('[Aggregate-now]', e.message) }
@@ -421,7 +422,7 @@ router.put('/analysis-limit', requireRole('super_admin', 'gerente'), requireAnal
 // Estimativa de custo pra modal de confirmação no "Analisar agora"
 router.get('/analyze-estimate', requireRole('super_admin', 'gerente'), (req, res) => {
   if (!req.accountId) return res.status(400).json({ error: 'account_id required' })
-  const sinceHours = Math.max(1, Math.min(720, parseInt(req.query.days || '7') * 24))
+  const sinceHours = Math.max(1, Math.min(2160, parseInt(req.query.days || '7') * 24))
   const maxLeads = Math.max(1, Math.min(500, parseInt(req.query.max) || 50))
   const est = getAnalyzeEstimate(req.accountId, sinceHours, maxLeads)
   const isSuperAdmin = req.user?.role === 'super_admin'
