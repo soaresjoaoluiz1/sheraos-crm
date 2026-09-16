@@ -747,6 +747,202 @@ async function dailyInstanceHealthCheck() {
   console.log(`[DailyHealthCheck] Concluido — ${connected} conectadas, ${reconnected} reconectadas, ${qrNeeded} precisam QR, ${errors} erros`)
 }
 
+// Detecta "silencio anomalo" da instancia: se WhatsApp parou de gerar msgs ha muito tempo
+// mesmo com status "open" (Baileys as vezes mente). Compara CRM vs Evolution API pra achar gaps.
+async function checkInstanceSilence() {
+  try {
+    const instances = db.prepare(`
+      SELECT w.id, w.instance_name, w.api_url, w.api_key, w.status, a.name as account_name, a.slug as account_slug
+      FROM whatsapp_instances w
+      JOIN accounts a ON a.id = w.account_id
+      WHERE a.is_active = 1
+    `).all()
+
+    for (const inst of instances) {
+      // Ultima msg no CRM dessa instancia
+      const last = db.prepare(`
+        SELECT MAX(created_at) as last_at, COUNT(*) as total
+        FROM messages WHERE instance_id = ?
+      `).get(inst.id)
+      if (!last?.last_at || last.total < 10) continue // instancia nova ou sem historico, pula
+
+      const lastMs = new Date(last.last_at + 'Z').getTime() // sqlite stores UTC without Z
+      const hoursSince = (Date.now() - lastMs) / 3600000
+
+      // FIX self-heal: se instancia recebeu msg recentemente (<1h) MAS status esta em
+      // silence_warning/disconnected, LIMPA (msgs voltaram, alerta antigo era falso positivo).
+      if (hoursSince < 1 && (inst.status === 'silence_warning' || inst.status === 'disconnected')) {
+        db.prepare("UPDATE whatsapp_instances SET status='connected', paused_reason=NULL, updated_at=datetime('now') WHERE id=?").run(inst.id)
+        console.log(`[InstanceSilence] ✅ self-heal ${inst.account_name}/${inst.instance_name}: msgs voltaram, status resetado`)
+        continue
+      }
+
+      // So alerta se ultima msg foi ha > 3h (janela business) E dia de semana comercial
+      const now = new Date()
+      const isBusinessHours = now.getUTCHours() >= 11 && now.getUTCHours() <= 22 // ~08-19 BRT
+      const isWeekday = now.getUTCDay() >= 1 && now.getUTCDay() <= 5
+      if (hoursSince < 3) continue
+      if (hoursSince < 12 && !(isBusinessHours && isWeekday)) continue // fora horario, so alerta se >12h
+
+      // Verifica se Evolution TAMBEM esta silenciosa (= WhatsApp offline) ou se so o CRM parou (= webhook broken)
+      let evoLastTs = null
+      try {
+        const r = await fetch(`${inst.api_url}/chat/findMessages/${encodeURIComponent(inst.instance_name)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: inst.api_key },
+          body: JSON.stringify({ where: {}, page: 1, offset: 1 }),
+          timeout: 10000,
+        })
+        if (r.ok) {
+          const j = await r.json()
+          const rec = j?.messages?.records?.[0]
+          if (rec?.messageTimestamp) evoLastTs = rec.messageTimestamp * 1000
+        }
+      } catch (e) { /* ignora */ }
+
+      const evoHoursSince = evoLastTs ? (Date.now() - evoLastTs) / 3600000 : null
+      const kind = evoHoursSince == null
+        ? 'EVOLUTION_UNREACHABLE'
+        : (evoHoursSince > 3
+          ? 'WHATSAPP_OFFLINE'  // Evolution tb parado = WhatsApp disconectou (precisa QR)
+          : 'WEBHOOK_BROKEN')    // Evolution recebe mas CRM nao = webhook problema
+
+      console.warn(`[InstanceSilence] ⚠️  ${inst.account_name}/${inst.instance_name}: sem msgs ha ${hoursSince.toFixed(1)}h (Evolution: ${evoHoursSince == null ? 'N/A' : evoHoursSince.toFixed(1) + 'h'}) — motivo=${kind}`)
+
+      // Marca instancia com status pra UI destacar visualmente
+      const newStatus = kind === 'WHATSAPP_OFFLINE' ? 'disconnected' : 'silence_warning'
+      if (inst.status !== newStatus) {
+        db.prepare("UPDATE whatsapp_instances SET status = ?, paused_reason = ?, updated_at = datetime('now') WHERE id = ?")
+          .run(newStatus, `[${kind}] Sem msgs ha ${hoursSince.toFixed(1)}h em ${new Date().toISOString()}`, inst.id)
+      }
+
+      // Alerta em analyst_alerts pra ficar visivel no dashboard
+      try {
+        db.prepare(`
+          INSERT INTO analyst_alerts (account_id, type, severity, title, description, metadata_json, created_at)
+          SELECT
+            (SELECT account_id FROM whatsapp_instances WHERE id = ?),
+            'instance_silence', 'critical',
+            ?,
+            ?,
+            ?,
+            datetime('now')
+          WHERE NOT EXISTS (
+            SELECT 1 FROM analyst_alerts
+            WHERE type = 'instance_silence'
+              AND account_id = (SELECT account_id FROM whatsapp_instances WHERE id = ?)
+              AND resolved_at IS NULL
+              AND created_at > datetime('now','-6 hours')
+          )
+        `).run(
+          inst.id,
+          `Instancia ${inst.instance_name}: sem msgs ha ${hoursSince.toFixed(1)}h`,
+          `Motivo provavel: ${kind}. ${kind === 'WHATSAPP_OFFLINE' ? 'Precisa re-escanear QR no menu Integracoes.' : 'Verificar logs do webhook.'}`,
+          JSON.stringify({ kind, hoursSince, evoHoursSince, instance_id: inst.id }),
+          inst.id
+        )
+      } catch (e) { /* analyst_alerts pode nao existir em contas antigas */ }
+    }
+  } catch (e) {
+    console.error('[InstanceSilence] fatal:', e.message)
+  }
+}
+
+// Resolve placeholders "Lead #xxx" (@lid) automaticamente. Chamado periodicamente.
+// Estrategia dupla:
+//   1) Evolution `findMessages` com `previousRemoteJid = <@lid_do_placeholder>` — quando
+//      o cliente responde de volta, Evolution mapeia @lid → phone e a msg carrega esse campo.
+//      Se achar, extrai phone e MERGE pro lead real correspondente.
+//   2) Evolution `findContacts` — se veio pushName atualizado que bate com nome de lead
+//      existente na conta, MERGE.
+// Fully idempotente: se placeholder ja foi resolvido em ciclo anterior, is_archived=1 pula.
+async function resolvePlaceholders() {
+  try {
+    const placeholders = db.prepare(`
+      SELECT l.id, l.name, l.wa_remote_jid, l.account_id, l.instance_id,
+        w.api_url, w.api_key, w.instance_name
+      FROM leads l
+      JOIN whatsapp_instances w ON w.id = l.instance_id
+      WHERE l.is_archived = 0
+        AND l.name LIKE 'Lead #%'
+        AND l.wa_remote_jid LIKE '%@lid'
+        AND w.api_url IS NOT NULL AND w.api_key IS NOT NULL
+    `).all()
+
+    if (placeholders.length === 0) return
+    let resolved = 0, msgsMoved = 0
+
+    for (const p of placeholders) {
+      try {
+        const baseUrl = p.api_url.replace(/\/$/, '')
+        const instName = encodeURIComponent(p.instance_name)
+        const hdrs = { 'Content-Type': 'application/json', apikey: p.api_key }
+
+        // Estrategia 1: buscar msgs com previousRemoteJid = @lid_do_placeholder
+        let targetLead = null
+        try {
+          const r1 = await fetch(`${baseUrl}/chat/findMessages/${instName}`, {
+            method: 'POST', headers: hdrs,
+            body: JSON.stringify({ where: { key: { previousRemoteJid: p.wa_remote_jid } }, page: 1, offset: 5 })
+          })
+          if (r1.ok) {
+            const j = await r1.json()
+            const recs = j?.messages?.records || []
+            const withPhone = recs.find(m => m.key?.remoteJid?.endsWith('@s.whatsapp.net'))
+            if (withPhone) {
+              const phone = withPhone.key.remoteJid.replace('@s.whatsapp.net', '')
+              const cand = db.prepare('SELECT id FROM leads WHERE account_id = ? AND phone = ? AND is_archived = 0 AND id != ?').get(p.account_id, phone, p.id)
+              if (cand) targetLead = { id: cand.id, method: 'previousRemoteJid' }
+            }
+          }
+        } catch (e) { /* ignora */ }
+
+        // Estrategia 2: findContacts pushName match
+        if (!targetLead) {
+          try {
+            const r2 = await fetch(`${baseUrl}/chat/findContacts/${instName}`, {
+              method: 'POST', headers: hdrs,
+              body: JSON.stringify({ where: { remoteJid: p.wa_remote_jid } })
+            })
+            if (r2.ok) {
+              const arr = await r2.json()
+              const c = Array.isArray(arr) ? arr[0] : null
+              const pName = (c?.pushName || '').trim()
+              if (pName && pName.length >= 2 && pName !== 'Alpha Tintas Araranguá') {
+                const cands = db.prepare('SELECT id FROM leads WHERE account_id = ? AND is_archived = 0 AND id != ? AND LOWER(name) = LOWER(?)').all(p.account_id, p.id, pName)
+                if (cands.length === 1) targetLead = { id: cands[0].id, method: 'pushName' }
+              }
+            }
+          } catch (e) { /* ignora */ }
+        }
+
+        if (!targetLead) continue
+
+        // MERGE atomico
+        const tx = db.transaction(() => {
+          const upd = db.prepare('UPDATE messages SET lead_id = ? WHERE lead_id = ?').run(targetLead.id, p.id)
+          msgsMoved += upd.changes
+          db.prepare('DELETE FROM lead_wa_jids WHERE jid = ? AND lead_id != ?').run(p.wa_remote_jid, targetLead.id)
+          try {
+            db.prepare("INSERT OR IGNORE INTO lead_wa_jids (lead_id, jid, jid_type, first_seen_at, last_seen_at) VALUES (?, ?, 'lid', datetime('now'), datetime('now'))").run(targetLead.id, p.wa_remote_jid)
+          } catch (e) {}
+          db.prepare("UPDATE leads SET is_archived = 1 WHERE id = ?").run(p.id)
+        })
+        tx()
+        resolved++
+        console.log(`[ResolvePlaceholders] L#${p.id} → L#${targetLead.id} via ${targetLead.method}`)
+      } catch (e) { /* nao-fatal, pula esse placeholder */ }
+
+      // Rate limit entre calls Evolution — nao sobrecarrega
+      await new Promise(r => setTimeout(r, 200))
+    }
+
+    if (resolved > 0) console.log(`[ResolvePlaceholders] Ciclo: ${resolved} placeholders resolvidos, ${msgsMoved} msgs mescladas`)
+  } catch (e) {
+    console.error('[ResolvePlaceholders] fatal:', e.message)
+  }
+}
+
 // Agenda dailyInstanceHealthCheck pra rodar todo dia as 5h (horario BRT/America/Sao_Paulo)
 function scheduleDailyHealthCheck() {
   const now = new Date()
@@ -872,4 +1068,24 @@ export function startScheduler() {
   }, 60 * 1000)
   // Daily instance health check (auto-reconecta disconnected)
   scheduleDailyHealthCheck()
+  // Silence detection: a cada 30min verifica se alguma instancia parou de receber msgs
+  // apesar de reportar 'open' (bug Baileys). Cria analyst_alert e marca status.
+  setInterval(() => {
+    checkInstanceSilence().catch(e => console.error('[InstanceSilence tick]', e.message))
+  }, 30 * 60 * 1000)
+  // Roda 30s apos boot pra pegar problemas existentes
+  setTimeout(() => {
+    checkInstanceSilence().catch(e => console.error('[InstanceSilence boot]', e.message))
+  }, 30 * 1000)
+
+  // Resolve placeholders "Lead #xxx" @lid automaticamente: a cada 15min busca no Evolution
+  // se ja tem mapping @lid → phone (via previousRemoteJid ou pushName atualizado). Se sim, MERGE.
+  // Resolve casos onde outbound cega criou placeholder E o cliente respondeu depois.
+  setInterval(() => {
+    resolvePlaceholders().catch(e => console.error('[ResolvePlaceholders tick]', e.message))
+  }, 15 * 60 * 1000)
+  // Roda 60s apos boot pra pegar backlog acumulado
+  setTimeout(() => {
+    resolvePlaceholders().catch(e => console.error('[ResolvePlaceholders boot]', e.message))
+  }, 60 * 1000)
 }

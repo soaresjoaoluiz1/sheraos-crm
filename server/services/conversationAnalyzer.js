@@ -285,8 +285,10 @@ const TEMP_TO_INTENT = { quente: 'hot', morno: 'warm', frio: 'cold' }
 
 function canAnalyze(accountId) {
   const account = db.prepare('SELECT analysis_token_limit, anthropic_api_key FROM accounts WHERE id = ?').get(accountId)
-  // Sem chave Anthropic propria, a conta nao roda IA (sem fallback pra agencia)
-  if (!account?.anthropic_api_key?.trim()) return { ok: false, reason: 'no_api_key', used: 0, limit: 0 }
+  // FIX (2026-09-08): aceita fallback ANTHROPIC_API_KEY_GLOBAL do env quando conta nao tem propria.
+  const hasOwnKey = !!(account?.anthropic_api_key?.trim())
+  const hasGlobalKey = !!(process.env.ANTHROPIC_API_KEY_GLOBAL || process.env.ANTHROPIC_API_KEY)
+  if (!hasOwnKey && !hasGlobalKey) return { ok: false, reason: 'no_api_key', used: 0, limit: 0 }
   const limit = account?.analysis_token_limit || 200000
   const monthStart = new Date().toISOString().slice(0, 7) + '-01 00:00:00'
   const used = db.prepare(`

@@ -45,6 +45,7 @@ export default function Chat() {
   const { accountId, accounts } = useAccount()
   const [instances, setInstances] = useState<WhatsAppInstance[]>([])
   const [instanceFilter, setInstanceFilter] = useState<FilterValue[]>([])
+  const [anuncioFilter, setAnuncioFilter] = useState<'todos' | 'sim' | 'nao'>('todos')
   const [leads, setLeads] = useState<Lead[]>([])
   const [selectedLeadId, setSelectedLeadId] = useState<number | null>(() => {
     const params = new URLSearchParams(window.location.search)
@@ -231,9 +232,10 @@ export default function Chat() {
     if (attCsv) filters.attendant_id = attCsv
     const instCsv = toCsv(instanceFilter)
     if (instCsv) filters.instance_id = instCsv
+    if (anuncioFilter !== 'todos') filters.anuncio = anuncioFilter
 
     fetchLeads(accountId, filters).then(data => setLeads(data.leads))
-  }, [accountId, instanceFilter, tagFilter, stageFilter, attendantFilter, showArchived, debouncedSearch])
+  }, [accountId, instanceFilter, tagFilter, stageFilter, attendantFilter, showArchived, debouncedSearch, anuncioFilter])
   useEffect(() => { loadLeadsList() }, [loadLeadsList])
 
   // Race token: cada chamada de loadLead recebe um id incremental.
@@ -961,6 +963,17 @@ export default function Chat() {
               onChange={setAttendantFilter}
             />
           )}
+          <select
+            value={anuncioFilter}
+            onChange={(e) => setAnuncioFilter(e.target.value as 'todos' | 'sim' | 'nao')}
+            className="btn btn-sm btn-secondary"
+            style={{ fontSize: 11, padding: '4px 8px', cursor: 'pointer' }}
+            title="Filtrar por origem de anúncio"
+          >
+            <option value="todos">Anúncio: todos</option>
+            <option value="sim">📢 Só de anúncio</option>
+            <option value="nao">Só orgânicos</option>
+          </select>
           <button onClick={() => setShowArchived(s => !s)} className={`btn btn-sm ${showArchived ? 'btn-primary' : 'btn-secondary'}`} style={{ fontSize: 11 }} title="Mostrar leads arquivados">
             <Archive size={12} /> {showArchived ? 'Ocultar arquivados' : 'Mostrar arquivados'}
           </button>

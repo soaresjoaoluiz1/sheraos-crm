@@ -40,7 +40,7 @@ function normalizePhone(phone) {
 router.get('/', (req, res) => {
   if (!req.accountId) return res.status(400).json({ error: 'account_id required' })
 
-  const { stage_id, attendant_id, instance_id, funnel_id, source, tag, city, search, date_from, date_to, show_archived, page = '1', limit: rawLimit = '50' } = req.query
+  const { stage_id, attendant_id, instance_id, funnel_id, source, tag, city, search, date_from, date_to, show_archived, anuncio, page = '1', limit: rawLimit = '50' } = req.query
   // FASE 2 — clamp limit em 200 pra evitar DoS trivial via ?limit=999999
   const limit = Math.max(1, Math.min(200, parseInt(rawLimit) || 50))
   const where = ['l.account_id = ?', 'l.is_active = 1', 'l.is_blocked = 0']
@@ -95,6 +95,9 @@ router.get('/', (req, res) => {
   }
   if (funnel_id) { where.push('l.funnel_id = ?'); params.push(funnel_id) }
   if (source) { where.push('l.source = ?'); params.push(source) }
+  // Filtro por origem anuncio: anuncio=sim => veio de ad; anuncio=nao => nao veio
+  if (anuncio === 'sim' || anuncio === '1' || anuncio === 'true') { where.push('l.trabalha_anuncio = 1') }
+  else if (anuncio === 'nao' || anuncio === '0' || anuncio === 'false') { where.push('(l.trabalha_anuncio = 0 OR l.trabalha_anuncio IS NULL)') }
   if (city) { where.push('l.city LIKE ?'); params.push(`%${city}%`) }
   if (search) { where.push("(l.name LIKE ? OR l.phone LIKE ? OR l.email LIKE ?)"); params.push(`%${search}%`, `%${search}%`, `%${search}%`) }
   if (date_from) { where.push('l.created_at >= ?'); params.push(date_from) }
