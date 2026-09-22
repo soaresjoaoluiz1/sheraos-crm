@@ -743,7 +743,7 @@ export default function AttendantAnalytics() {
                       </div>
                       <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>{a.description}</div>
                       {a.suggested_action && <div style={{ fontSize: 12, marginTop: 4 }}><strong>Sugestão:</strong> {a.suggested_action}</div>}
-                      {a.lead_name && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Lead: <a href={`/crm/chat?lead_id=${a.lead_id}`} style={{ color: 'var(--accent)' }}>{a.lead_name}</a></div>}
+                      {a.lead_name && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Lead: <a href={`/crm/chat?lead=${a.lead_id}`} style={{ color: 'var(--accent)' }}>{a.lead_name}</a></div>}
                     </div>
                     <div style={{ display: 'flex', gap: 4 }}>
                       <button className="btn btn-secondary btn-sm" onClick={() => handleResolveAlert(a.id, 'dismissed')}>Dispensar</button>

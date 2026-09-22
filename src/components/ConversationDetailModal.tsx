@@ -66,7 +66,7 @@ export default function ConversationDetailModal({
                     {data.insight.lead_phone} · Atendente: {data.insight.attendant_name || '—'}
                   </div>
                 </div>
-                <a href={`/crm/chat?lead_id=${leadId}`} className="btn btn-secondary btn-sm" style={{ textDecoration: 'none' }}>
+                <a href={`/crm/chat?lead=${leadId}`} className="btn btn-secondary btn-sm" style={{ textDecoration: 'none' }}>
                   <ExternalLink size={12} /> Abrir conversa
                 </a>
               </div>
