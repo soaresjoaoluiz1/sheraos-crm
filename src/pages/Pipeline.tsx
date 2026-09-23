@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, type MouseEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect, useCallback, useMemo, type MouseEvent } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAccount } from '../context/AccountContext'
 import AccountSelector from '../components/AccountSelector'
 import FilterDropdown, { type FilterValue } from '../components/FilterDropdown'
@@ -41,11 +41,27 @@ export default function Pipeline() {
   const [expandedStages, setExpandedStages] = useState<Set<number>>(new Set())
   const [moveLeadId, setMoveLeadId] = useState<number | null>(null)
   const [tags, setTags] = useState<Tag[]>([])
-  const [tagFilter, setTagFilter] = useState<FilterValue[]>([])
   const [users, setUsers] = useState<User[]>([])
-  const [attendantFilter, setAttendantFilter] = useState<FilterValue[]>([])
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
+
+  // Filtros persistentes via URL (voltar do LeadDetail preserva selecao).
+  const [searchParams, setSearchParams] = useSearchParams()
+  const parseFilterList = (str: string | null): FilterValue[] => {
+    if (!str) return []
+    return str.split(',').filter(Boolean).map(v => (v === 'untagged' || v === 'none') ? v : parseInt(v))
+  }
+  const tagFilter = useMemo(() => parseFilterList(searchParams.get('tags')), [searchParams])
+  const attendantFilter = useMemo(() => parseFilterList(searchParams.get('att')), [searchParams])
+  const dateFrom = searchParams.get('from') || ''
+  const dateTo = searchParams.get('to') || ''
+  const updateFilter = (key: string, value: string) => {
+    const next = new URLSearchParams(searchParams)
+    if (value) next.set(key, value); else next.delete(key)
+    setSearchParams(next, { replace: true })
+  }
+  const setTagFilter = (vals: FilterValue[]) => updateFilter('tags', vals.join(','))
+  const setAttendantFilter = (vals: FilterValue[]) => updateFilter('att', vals.join(','))
+  const setDateFrom = (v: string) => updateFilter('from', v)
+  const setDateTo = (v: string) => updateFilter('to', v)
   const [expandedColumns, setExpandedColumns] = useState<Set<number>>(new Set())
   const CARDS_LIMIT = 5
 
@@ -277,7 +293,11 @@ export default function Pipeline() {
           <input type="date" className="input" style={{ width: 140 }} value={dateFrom} onChange={e => setDateFrom(e.target.value)} title="Data inicial (criacao)" />
           <input type="date" className="input" style={{ width: 140 }} value={dateTo} onChange={e => setDateTo(e.target.value)} title="Data final (criacao)" />
           {(tagFilter.length > 0 || attendantFilter.length > 0 || dateFrom || dateTo) && (
-            <button className="btn btn-secondary btn-sm" onClick={() => { setTagFilter([]); setAttendantFilter([]); setDateFrom(''); setDateTo('') }}>
+            <button className="btn btn-secondary btn-sm" onClick={() => {
+              const next = new URLSearchParams(searchParams)
+              next.delete('tags'); next.delete('att'); next.delete('from'); next.delete('to')
+              setSearchParams(next, { replace: true })
+            }}>
               Limpar filtros
             </button>
           )}

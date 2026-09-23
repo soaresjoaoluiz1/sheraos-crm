@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useAccount } from '../context/AccountContext'
 import { useSSE } from '../context/SSEContext'
@@ -43,15 +44,29 @@ function timeAgo(dateStr: string) {
 export default function Chat() {
   const { user } = useAuth()
   const { accountId, accounts } = useAccount()
+
+  // Filtros persistentes via URL (ao voltar do lead ou refresh, filtros mantem).
+  const [searchParams, setSearchParams] = useSearchParams()
+  const parseFilterList = (str: string | null): FilterValue[] => {
+    if (!str) return []
+    return str.split(',').filter(Boolean).map(v => (v === 'untagged' || v === 'none') ? v : parseInt(v))
+  }
+  const setUrlParam = (key: string, value: string) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (value) next.set(key, value); else next.delete(key)
+      return next
+    }, { replace: true })
+  }
+
   const [instances, setInstances] = useState<WhatsAppInstance[]>([])
-  const [instanceFilter, setInstanceFilter] = useState<FilterValue[]>([])
-  const [anuncioFilter, setAnuncioFilter] = useState<'todos' | 'sim' | 'nao'>('todos')
+  const instanceFilter = useMemo(() => parseFilterList(searchParams.get('inst')), [searchParams])
+  const setInstanceFilter = (vals: FilterValue[]) => setUrlParam('inst', vals.join(','))
+  const anuncioFilter = (searchParams.get('anuncio') || 'todos') as 'todos' | 'sim' | 'nao'
+  const setAnuncioFilter = (v: 'todos' | 'sim' | 'nao') => setUrlParam('anuncio', v === 'todos' ? '' : v)
   const [leads, setLeads] = useState<Lead[]>([])
-  const [selectedLeadId, setSelectedLeadId] = useState<number | null>(() => {
-    const params = new URLSearchParams(window.location.search)
-    const leadParam = params.get('lead')
-    return leadParam ? parseInt(leadParam) : null
-  })
+  const selectedLeadId = searchParams.get('lead') ? parseInt(searchParams.get('lead')!) : null
+  const setSelectedLeadId = (id: number | null) => setUrlParam('lead', id ? String(id) : '')
   const [showNewChat, setShowNewChat] = useState(false)
   const [newChatName, setNewChatName] = useState('')
   const [newChatPhone, setNewChatPhone] = useState('')
@@ -106,11 +121,19 @@ export default function Chat() {
   const [leadFollowUp, setLeadFollowUp] = useState<LeadFollowUp | null>(null)
   const [followUps, setFollowUps] = useState<FollowUp[]>([])
   const [showFollowUpMenu, setShowFollowUpMenu] = useState(false)
-  const [search, setSearch] = useState('')
-  const [tagFilter, setTagFilter] = useState<FilterValue[]>([])
-  const [attendantFilter, setAttendantFilter] = useState<FilterValue[]>([])
-  const [stageFilter, setStageFilter] = useState<FilterValue[]>([])
-  const [showArchived, setShowArchived] = useState(false)
+  const search = searchParams.get('q') || ''
+  const setSearch = (v: string) => setUrlParam('q', v)
+  const tagFilter = useMemo(() => parseFilterList(searchParams.get('tags')), [searchParams])
+  const setTagFilter = (vals: FilterValue[]) => setUrlParam('tags', vals.join(','))
+  const attendantFilter = useMemo(() => parseFilterList(searchParams.get('att')), [searchParams])
+  const setAttendantFilter = (vals: FilterValue[]) => setUrlParam('att', vals.join(','))
+  const stageFilter = useMemo(() => parseFilterList(searchParams.get('stage')), [searchParams])
+  const setStageFilter = (vals: FilterValue[]) => setUrlParam('stage', vals.join(','))
+  const showArchived = searchParams.get('archived') === '1'
+  const setShowArchived = (v: boolean | ((prev: boolean) => boolean)) => {
+    const next = typeof v === 'function' ? v(showArchived) : v
+    setUrlParam('archived', next ? '1' : '')
+  }
   const [msgText, setMsgText] = useState('')
   const [readyMessages, setReadyMessages] = useState<ReadyMessage[]>([])
   const [showReadyMsgs, setShowReadyMsgs] = useState(false)

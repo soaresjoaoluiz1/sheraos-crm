@@ -1,14 +1,24 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useAccount } from '../context/AccountContext'
 import { useSSE } from '../context/SSEContext'
 import AccountSelector from '../components/AccountSelector'
 import {
   fetchLeads, fetchFunnels, fetchUsers, fetchTags, createLead, bulkAssignLeads, bulkMoveLeads,
-  archiveLead, unarchiveLead, fetchArchivedCount, fetchWhatsAppInstances,
+  archiveLead, unarchiveLead, fetchArchivedCount, fetchWhatsAppInstances, fetchLeadSources,
   formatNumber, type Lead, type Funnel, type User as UserType, type Tag, type WhatsAppInstance,
 } from '../lib/api'
+
+const SOURCE_LABELS: Record<string, string> = {
+  whatsapp: 'WhatsApp',
+  meta_form: 'Meta Form',
+  website: 'Website',
+  manual: 'Manual',
+  anuncio: 'Anuncio',
+  indicacao: 'Indicacao',
+}
+const sourceLabel = (s: string) => SOURCE_LABELS[s] || s
 import { Plus, Download, Phone, MessageCircle, Clock, CheckSquare, Square, Users, ArrowRight, Archive, ArchiveRestore } from 'lucide-react'
 import { parseSqlDate } from '../lib/dates'
 
@@ -25,24 +35,41 @@ export default function Leads() {
   const { accountId } = useAccount()
   const navigate = useNavigate()
   const isMobile = useIsMobile()
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  // Filtros derivados da URL (source of truth) para persistirem ao voltar de LeadDetail.
+  const search = searchParams.get('q') || ''
+  const stageFilter = searchParams.get('stage') || ''
+  const sourceFilter = searchParams.get('source') || ''
+  const attendantFilter = searchParams.get('att') || ''
+  const dateFrom = searchParams.get('from') || ''
+  const dateTo = searchParams.get('to') || ''
+  const tagFilter = searchParams.get('tag') || ''
+  const showArchived = searchParams.get('archived') === '1'
+  const page = Math.max(1, parseInt(searchParams.get('page') || '1'))
+
+  const updateFilter = (key: string, value: string, resetPage = true) => {
+    const next = new URLSearchParams(searchParams)
+    if (value) next.set(key, value); else next.delete(key)
+    if (resetPage && key !== 'page') next.delete('page')
+    setSearchParams(next, { replace: true })
+  }
+  const clearFilters = () => {
+    const next = new URLSearchParams()
+    if (showArchived) next.set('archived', '1')
+    setSearchParams(next, { replace: true })
+  }
+
   const [leads, setLeads] = useState<Lead[]>([])
   const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [funnels, setFunnels] = useState<Funnel[]>([])
   const [users, setUsers] = useState<UserType[]>([])
   const [tags, setTags] = useState<Tag[]>([])
-  const [search, setSearch] = useState('')
-  const [stageFilter, setStageFilter] = useState('')
-  const [sourceFilter, setSourceFilter] = useState('')
-  const [attendantFilter, setAttendantFilter] = useState('')
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
-  const [tagFilter, setTagFilter] = useState('')
+  const [availableSources, setAvailableSources] = useState<string[]>([])
   const [showNew, setShowNew] = useState(false)
   const [creatingLead, setCreatingLead] = useState(false)
   const [newLead, setNewLead] = useState<Record<string, any>>({ name: '', phone: '', email: '', city: '', source: 'manual', empresa: '', cpf_cnpj: '', instagram: '', trabalha_anuncio: 0, investimento_anuncios: '' })
-  const [showArchived, setShowArchived] = useState(false)
   const [archivedCount, setArchivedCount] = useState<{ count: number; withActivity: number }>({ count: 0, withActivity: 0 })
   // Bulk
   const [selected, setSelected] = useState<Set<number>>(new Set())
@@ -57,6 +84,7 @@ export default function Leads() {
     fetchUsers(accountId).then(setUsers).catch(() => {})
     fetchTags(accountId).then(setTags).catch(() => {})
     fetchWhatsAppInstances(accountId).then(insts => setWhatsappInstances(insts.filter(i => i.status === 'connected'))).catch(() => {})
+    fetchLeadSources(accountId).then(setAvailableSources).catch(() => {})
   }, [accountId])
 
   const loadLeads = () => {
@@ -138,7 +166,7 @@ export default function Leads() {
         <div className="page-header-actions">
           <button
             className={`btn btn-sm ${showArchived ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => { setShowArchived(v => !v); setPage(1) }}
+            onClick={() => updateFilter('archived', showArchived ? '' : '1')}
             title={showArchived ? 'Mostrar leads ativos' : 'Mostrar leads arquivados'}>
             {showArchived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
             {showArchived ? ' Ver ativos' : ` Arquivados (${archivedCount.count})`}
@@ -165,35 +193,35 @@ export default function Leads() {
 
       {/* Filters */}
       <div className="filter-bar">
-        <input className="input search-input" placeholder="Buscar nome, telefone, email..." value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} />
-        <select className="select" value={stageFilter} onChange={e => { setStageFilter(e.target.value); setPage(1) }}>
+        <input className="input search-input" placeholder="Buscar nome, telefone, email..." value={search} onChange={e => updateFilter('q', e.target.value)} />
+        <select className="select" value={stageFilter} onChange={e => updateFilter('stage', e.target.value)}>
           <option value="">Todas etapas</option>
           {allStages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
-        <select className="select" value={sourceFilter} onChange={e => { setSourceFilter(e.target.value); setPage(1) }}>
+        <select className="select" value={sourceFilter} onChange={e => updateFilter('source', e.target.value)}>
           <option value="">Todas fontes</option>
-          <option value="whatsapp">WhatsApp</option><option value="meta_form">Meta Form</option><option value="website">Website</option><option value="manual">Manual</option>
+          {availableSources.map(s => <option key={s} value={s}>{sourceLabel(s)}</option>)}
         </select>
         {user?.role !== 'atendente' && (
-          <select className="select" value={attendantFilter} onChange={e => { setAttendantFilter(e.target.value); setPage(1) }}>
+          <select className="select" value={attendantFilter} onChange={e => updateFilter('att', e.target.value)}>
             <option value="">Todos atendentes</option>
             <option value="0">Sem atendente</option>
             {users.filter(u => u.role === 'atendente' || u.role === 'gerente').map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
           </select>
         )}
         {tags.length > 0 && (
-          <select className="select" value={tagFilter} onChange={e => { setTagFilter(e.target.value); setPage(1) }}>
+          <select className="select" value={tagFilter} onChange={e => updateFilter('tag', e.target.value)}>
             <option value="">Todas tags</option>
             {tags.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
         )}
       </div>
       <div className="filter-bar" style={{ marginTop: -8 }}>
-        <input className="input" type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1) }} style={{ width: 160 }} />
+        <input className="input" type="date" value={dateFrom} onChange={e => updateFilter('from', e.target.value)} style={{ width: 160 }} />
         <span style={{ color: '#6B6580', fontSize: 12 }}>ate</span>
-        <input className="input" type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1) }} style={{ width: 160 }} />
+        <input className="input" type="date" value={dateTo} onChange={e => updateFilter('to', e.target.value)} style={{ width: 160 }} />
         {(dateFrom || dateTo || search || stageFilter || sourceFilter || attendantFilter || tagFilter) && (
-          <button className="btn btn-secondary btn-sm" onClick={() => { setSearch(''); setStageFilter(''); setSourceFilter(''); setAttendantFilter(''); setDateFrom(''); setDateTo(''); setTagFilter(''); setPage(1) }}>Limpar filtros</button>
+          <button className="btn btn-secondary btn-sm" onClick={clearFilters}>Limpar filtros</button>
         )}
       </div>
 
@@ -246,9 +274,9 @@ export default function Leads() {
           {leads.length === 0 && <div style={{ textAlign: 'center', padding: 40, color: '#6B6580' }}>Nenhum lead encontrado</div>}
           {total > 30 && (
             <div style={{ display: 'flex', justifyContent: 'center', gap: 8, padding: 12 }}>
-              <button className="btn btn-secondary btn-sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Anterior</button>
+              <button className="btn btn-secondary btn-sm" disabled={page <= 1} onClick={() => updateFilter('page', String(page - 1), false)}>Anterior</button>
               <span style={{ fontSize: 12, color: '#9B96B0', padding: '8px 12px' }}>{page}/{Math.ceil(total / 30)}</span>
-              <button className="btn btn-secondary btn-sm" disabled={page >= Math.ceil(total / 30)} onClick={() => setPage(p => p + 1)}>Proxima</button>
+              <button className="btn btn-secondary btn-sm" disabled={page >= Math.ceil(total / 30)} onClick={() => updateFilter('page', String(page + 1), false)}>Proxima</button>
             </div>
           )}
         </div>
@@ -297,9 +325,9 @@ export default function Leads() {
           </table>
           {total > 30 && (
             <div style={{ padding: 12, display: 'flex', justifyContent: 'center', gap: 8 }}>
-              <button className="btn btn-secondary btn-sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Anterior</button>
+              <button className="btn btn-secondary btn-sm" disabled={page <= 1} onClick={() => updateFilter('page', String(page - 1), false)}>Anterior</button>
               <span style={{ fontSize: 12, color: '#9B96B0', padding: '6px 12px' }}>Pagina {page} de {Math.ceil(total / 30)}</span>
-              <button className="btn btn-secondary btn-sm" disabled={page >= Math.ceil(total / 30)} onClick={() => setPage(p => p + 1)}>Proxima</button>
+              <button className="btn btn-secondary btn-sm" disabled={page >= Math.ceil(total / 30)} onClick={() => updateFilter('page', String(page + 1), false)}>Proxima</button>
             </div>
           )}
         </div>

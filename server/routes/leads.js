@@ -234,6 +234,19 @@ router.post('/', (req, res) => {
 })
 
 // Archived count (+ count with new activity). Must be declared before `/:id`.
+// Lista as fontes distintas de leads da conta (para popular filtro dinamico no frontend).
+// Vem ANTES de '/:id' pra nao ser capturada como id.
+router.get('/sources', (req, res) => {
+  if (!req.accountId) return res.json({ sources: [] })
+  const rows = db.prepare(`
+    SELECT source, COUNT(*) as n FROM leads
+    WHERE account_id = ? AND source IS NOT NULL AND source != ''
+    GROUP BY source
+    ORDER BY n DESC
+  `).all(req.accountId)
+  res.json({ sources: rows.map(r => r.source) })
+})
+
 router.get('/archived-count', (req, res) => {
   if (!req.accountId) return res.json({ count: 0, withActivity: 0 })
   // Espelha a UNIAO usada em GET /leads pra manter consistencia (atendente conta leads da instancia dele tambem)
