@@ -163,7 +163,7 @@ router.post('/whatsapp/:id/connect', allowInstanceOwner, async (req, res) => {
   if (!instance) return
 
   try {
-    const r = await fetch(`${instance.api_url}/instance/connect/${instance.instance_name}`, {
+    const r = await fetch(`${instance.api_url}/instance/connect/${encodeURIComponent(instance.instance_name)}`, {
       headers: { apikey: instance.api_key },
     })
     const data = await r.json()
@@ -226,7 +226,7 @@ router.get('/whatsapp/:id/status', async (req, res) => {
   if (!instance) return
 
   try {
-    const r = await fetch(`${instance.api_url}/instance/connectionState/${instance.instance_name}`, {
+    const r = await fetch(`${instance.api_url}/instance/connectionState/${encodeURIComponent(instance.instance_name)}`, {
       headers: { apikey: instance.api_key },
     })
     const data = await r.json()
@@ -329,7 +329,7 @@ router.post('/whatsapp/:id/qrcode', allowInstanceOwner, async (req, res) => {
   if (!instance) return
 
   try {
-    const r = await fetch(`${instance.api_url}/instance/connect/${instance.instance_name}`, {
+    const r = await fetch(`${instance.api_url}/instance/connect/${encodeURIComponent(instance.instance_name)}`, {
       headers: { apikey: instance.api_key },
     })
     const data = await r.json()
@@ -350,7 +350,7 @@ router.post('/whatsapp/:id/disconnect', requireRole('super_admin', 'gerente', 'a
   if (!instance) return
 
   try {
-    await fetch(`${instance.api_url}/instance/logout/${instance.instance_name}`, {
+    await fetch(`${instance.api_url}/instance/logout/${encodeURIComponent(instance.instance_name)}`, {
       method: 'DELETE',
       headers: { apikey: instance.api_key },
     })
@@ -462,7 +462,7 @@ router.post('/whatsapp/:id/test', requireRole('super_admin', 'gerente', 'atenden
   if (!instance) return
 
   try {
-    const r = await fetch(`${instance.api_url}/instance/connectionState/${instance.instance_name}`, {
+    const r = await fetch(`${instance.api_url}/instance/connectionState/${encodeURIComponent(instance.instance_name)}`, {
       headers: { apikey: instance.api_key },
     })
     const data = await r.json()
