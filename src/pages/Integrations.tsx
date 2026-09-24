@@ -8,9 +8,10 @@ import {
   updateMetaCapi, testMetaCapi, updateAiConfig, testAnthropic, updateInstanceFirstMsgTemplate,
   fetchTags, fetchTagInstanceMappings, upsertTagInstanceMapping, deleteTagInstanceMapping,
   fetchDefaultFormInstance, setDefaultFormInstance, fetchSheetsStatus, setSheetsDefaultTag,
+  instanceLabel, renameWhatsAppInstanceLabel,
   type WhatsAppInstance, type User as UserType, type Account, type Tag, type TagInstanceMapping,
 } from '../lib/api'
-import { Plug, Plus, Wifi, WifiOff, Loader, Trash2, QrCode, Power, PowerOff, RefreshCw, Smartphone, Save, Check, Settings, FileSpreadsheet, Copy, Webhook, RotateCw, Download, User, Eye, EyeOff, Activity, AlertTriangle, MessageSquare, Link as LinkIcon, GitBranch } from 'lucide-react'
+import { Plug, Plus, Wifi, WifiOff, Loader, Trash2, QrCode, Power, PowerOff, RefreshCw, Smartphone, Save, Check, Settings, FileSpreadsheet, Copy, Webhook, RotateCw, Download, User, Eye, EyeOff, Activity, AlertTriangle, MessageSquare, Link as LinkIcon, GitBranch, Edit2 } from 'lucide-react'
 import InstanceAutoMessagesModal from '../components/InstanceAutoMessagesModal'
 import { BlockedBanner } from '../components/BlockedBanner'
 import { parseSqlDate } from '../lib/dates'
@@ -224,7 +225,7 @@ export default function Integrations() {
   const handleDisconnect = async (inst: WhatsAppInstance) => {
     if (!accountId) return
     // FASE 1 bloco D — confirm antes de derrubar sessao WhatsApp (evita clique acidental)
-    if (!confirm(`Desconectar "${inst.instance_name}"?\n\nO WhatsApp vai sair da sessao e todo cliente que tentar mandar msg NAO vai chegar ate reconectar (leva minutos).`)) return
+    if (!confirm(`Desconectar "${instanceLabel(inst)}"?\n\nO WhatsApp vai sair da sessao e todo cliente que tentar mandar msg NAO vai chegar ate reconectar (leva minutos).`)) return
     await disconnectWhatsApp(inst.id, accountId)
     setActiveQR(null)
     load()
@@ -349,7 +350,7 @@ export default function Integrations() {
   }
   const handleRestart = async (inst: WhatsAppInstance) => {
     if (!accountId) return
-    if (!confirm(`Reiniciar a sessao do WhatsApp "${inst.instance_name}"? Use isso quando a instancia parecer conectada mas nao receber mensagens.`)) return
+    if (!confirm(`Reiniciar a sessao do WhatsApp "${instanceLabel(inst)}"? Use isso quando a instancia parecer conectada mas nao receber mensagens.`)) return
     setRestarting(inst.id)
     try {
       await restartWhatsAppInstance(inst.id, accountId)
@@ -440,7 +441,7 @@ export default function Integrations() {
         <div className="card" style={{ marginBottom: 20, textAlign: 'center', padding: 24 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 16 }}>
             <QrCode size={20} style={{ color: '#FFB300' }} />
-            <h2 style={{ fontSize: 18, margin: 0 }}>Escaneie o QR Code — {qrInstance.instance_name}</h2>
+            <h2 style={{ fontSize: 18, margin: 0 }}>Escaneie o QR Code — {instanceLabel(qrInstance)}</h2>
           </div>
           <div style={{ background: '#fff', display: 'inline-block', padding: 16, borderRadius: 12, marginBottom: 16 }}>
             <img
@@ -474,7 +475,23 @@ export default function Integrations() {
                       <Smartphone size={18} style={{ color: getStatusColor(inst.status) }} />
                     </div>
                     <div>
-                      <div style={{ fontWeight: 600, fontSize: 15 }}>{inst.instance_name}</div>
+                      <div style={{ fontWeight: 600, fontSize: 15, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {instanceLabel(inst)}
+                        <button
+                          type="button"
+                          title="Renomear (nao afeta a sessao WhatsApp)"
+                          onClick={async () => {
+                            const current = instanceLabel(inst)
+                            const next = window.prompt('Novo nome para exibicao (nao afeta a sessao WhatsApp):', current)
+                            if (!next || next.trim() === current) return
+                            try {
+                              const updated = await renameWhatsAppInstanceLabel(inst.id, accountId!, next.trim())
+                              setInstances(prev => prev.map(i => i.id === inst.id ? { ...i, display_name: updated.display_name } : i))
+                            } catch (err: any) { alert('Erro ao renomear: ' + (err?.message || 'desconhecido')) }
+                          }}
+                          style={{ background: 'transparent', border: 'none', color: '#9B96B0', cursor: 'pointer', padding: 2, display: 'inline-flex', alignItems: 'center' }}
+                        ><Edit2 size={12} /></button>
+                      </div>
                       {inst.phone_number && <div style={{ fontSize: 12, color: 'var(--text-secondary, var(--text-muted))' }}>{inst.phone_number}</div>}
                       {(
                         <>
@@ -620,7 +637,7 @@ export default function Integrations() {
                 >
                   <option value="">— nenhuma (lead fica sem instância) —</option>
                   {connectedInsts.map(i => (
-                    <option key={i.id} value={i.id}>{i.instance_name}{i.phone_number ? ` (${i.phone_number})` : ''}</option>
+                    <option key={i.id} value={i.id}>{instanceLabel(i)}{i.phone_number ? ` (${i.phone_number})` : ''}</option>
                   ))}
                 </select>
               </div>
@@ -720,7 +737,7 @@ export default function Integrations() {
               >
                 <option value="">— escolha —</option>
                 {instances.filter(i => i.status === 'connected').map(i => (
-                  <option key={i.id} value={i.id}>{i.instance_name}{i.phone_number ? ` (${i.phone_number})` : ''}</option>
+                  <option key={i.id} value={i.id}>{instanceLabel(i)}{i.phone_number ? ` (${i.phone_number})` : ''}</option>
                 ))}
               </select>
             </div>
@@ -1258,10 +1275,10 @@ function onChange(e) {
         <div className="modal-overlay" onClick={() => !tplSaving && setTplModal(null)}>
           <div className="modal" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
             <h2 style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              💬 Mensagem inicial — {tplModal.inst.instance_name}
+              💬 Mensagem inicial — {instanceLabel(tplModal.inst)}
             </h2>
             <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12, lineHeight: 1.5 }}>
-              Quando um lead novo for atribuido (roleta, bot ou manual) a esta instancia, essa msg sai automaticamente do numero <strong>{tplModal.inst.phone_number || tplModal.inst.instance_name}</strong> pro lead.
+              Quando um lead novo for atribuido (roleta, bot ou manual) a esta instancia, essa msg sai automaticamente do numero <strong>{tplModal.inst.phone_number || instanceLabel(tplModal.inst)}</strong> pro lead.
               <br />Deixe em branco pra desativar.
             </p>
 
@@ -1322,7 +1339,7 @@ function onChange(e) {
               Deletar instância
             </h2>
             <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12, lineHeight: 1.55 }}>
-              Tem certeza que quer deletar a instância <strong style={{ color: 'var(--text)' }}>"{deleteTarget.instance_name}"</strong>?
+              Tem certeza que quer deletar a instância <strong style={{ color: 'var(--text)' }}>"{instanceLabel(deleteTarget)}"</strong>?
               <br /><br />
               Isso vai remover ela do CRM e da Evolution API. Mensagens antigas continuam no histórico do lead, mas <strong>não vai mais receber nem enviar mensagens por este número</strong>. Essa ação não pode ser desfeita.
             </p>

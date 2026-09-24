@@ -456,6 +456,18 @@ router.post('/whatsapp/sync-now', requireRole('super_admin', 'gerente', 'atenden
   }
 })
 
+// ─── Renomear label da instancia (nao muda instance_name real na Evolution) ──
+// Mantem sessao Baileys intacta. So altera o rotulo mostrado no CRM.
+router.put('/whatsapp/:id/label', requireRole('super_admin', 'gerente'), (req, res) => {
+  const instance = getOwnedInstance(req, res)
+  if (!instance) return
+  const label = String(req.body?.label || '').trim()
+  if (label.length < 1 || label.length > 60) return res.status(400).json({ error: 'label invalido (1-60 chars)' })
+  db.prepare("UPDATE whatsapp_instances SET display_name = ?, updated_at = datetime('now') WHERE id = ?").run(label, instance.id)
+  const updated = db.prepare('SELECT * FROM whatsapp_instances WHERE id = ?').get(instance.id)
+  res.json({ instance: updated })
+})
+
 // ─── Test connection (legacy, kept for compatibility) ────────────
 router.post('/whatsapp/:id/test', requireRole('super_admin', 'gerente', 'atendente'), async (req, res) => {
   const instance = getOwnedInstance(req, res)

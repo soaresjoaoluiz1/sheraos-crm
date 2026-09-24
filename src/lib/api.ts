@@ -55,7 +55,9 @@ export interface DashboardStats {
   daily: { date: string; count: number }[]
 }
 export interface AgentStat { id: number; name: string; is_active: number; leads_period: number; leads_total: number; conversions: number }
-export interface WhatsAppInstance { id: number; account_id: number; instance_name: string; api_url: string; api_key: string; status: string; phone_number: string | null; qr_code: string | null; default_attendant_id: number | null; lead_intake_mode?: 'open' | 'restricted'; first_msg_template?: string | null }
+export interface WhatsAppInstance { id: number; account_id: number; instance_name: string; display_name?: string | null; api_url: string; api_key: string; status: string; phone_number: string | null; qr_code: string | null; default_attendant_id: number | null; lead_intake_mode?: 'open' | 'restricted'; first_msg_template?: string | null }
+export const instanceLabel = (i: Pick<WhatsAppInstance, 'display_name' | 'instance_name'>) => (i.display_name && i.display_name.trim()) || i.instance_name
+export const renameWhatsAppInstanceLabel = (id: number, accountId: number, label: string) => apiFetch<{ instance: WhatsAppInstance }>(`/api/integrations/whatsapp/${id}/label?account_id=${accountId}`, { method: 'PUT', body: JSON.stringify({ label }) }).then(d => d.instance)
 export interface Broadcast {
   id: number; account_id?: number; name: string; message_template: string; message_variations?: string | null
   status: string; sent_count: number; failed_count: number; total_count: number

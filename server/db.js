@@ -1168,6 +1168,9 @@ addColumnIfNotExists('contracts', 'approved_email', 'TEXT')
 // Contracts v3: integracao com HUB ao aprovar
 addColumnIfNotExists('contracts', 'hub_client_id', 'INTEGER')
 
+// Label editavel de instancia (nao afeta instance_name real usado na Evolution).
+// Preserva sessao Baileys ao renomear no CRM.
+addColumnIfNotExists('whatsapp_instances', 'display_name', 'TEXT')
 // Lead handoff v1: primeira msg automatica do vendedor + notificacao
 addColumnIfNotExists('whatsapp_instances', 'first_msg_template', 'TEXT')
 addColumnIfNotExists('users', 'notification_instance_id', 'INTEGER REFERENCES whatsapp_instances(id) ON DELETE SET NULL')
